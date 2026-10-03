@@ -5,5 +5,5 @@
 /bin/
 *.db
 .env
-AXmiPic.exe
+
 .codegraph/

@@ -3,7 +3,10 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"flag"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -11,6 +14,7 @@ import (
 	"time"
 
 	"github.com/axmipic/axmipic/internal/api"
+	"github.com/axmipic/axmipic/internal/auth"
 	"github.com/axmipic/axmipic/internal/config"
 	"github.com/axmipic/axmipic/internal/imaging"
 	"github.com/axmipic/axmipic/internal/server"
@@ -73,14 +77,55 @@ func run() error {
 		AllowedFormats: processingFormats(cfg.Processing.AllowedFormats),
 	})
 
-	handler := api.NewHandler(uploadSvc, imagingSvc, storeBackend, cfg.Upload.MaxSizeMB, logger)
-	router := api.NewRouter(handler)
+	secret, err := jwtSecret(cfg.Auth.JWTSecret, logger)
+	if err != nil {
+		return err
+	}
+	issuer := auth.NewSessionIssuer(secret, time.Duration(cfg.Auth.SessionTTLHours)*time.Hour)
+	accounts := service.NewAccountService(repo, issuer, cfg.Auth.AllowRegistration, int64(cfg.Auth.DefaultQuotaMB)<<20)
+
+	bootstrapCtx, cancelBootstrap := context.WithTimeout(context.Background(), 30*time.Second)
+	err = accounts.EnsureBootstrapAdmin(bootstrapCtx, cfg.Auth.BootstrapAdmin)
+	cancelBootstrap()
+	if err != nil {
+		return err
+	}
+
+	router := api.NewRouter(api.Deps{
+		Upload:        uploadSvc,
+		Imaging:       imagingSvc,
+		Accounts:      accounts,
+		Storage:       storeBackend,
+		Authenticator: auth.NewAuthenticator(repo, issuer),
+		UploadLimiter: &auth.UploadLimiter{
+			User:  auth.NewRateLimiter(cfg.Limits.UploadPerMinute, cfg.Limits.UploadBurst),
+			Guest: auth.NewRateLimiter(cfg.Limits.GuestPerMinute, cfg.Limits.GuestBurst),
+		},
+		RequireAuth: cfg.Auth.RequireAuth,
+		MaxUploadMB: cfg.Upload.MaxSizeMB,
+		Logger:      logger,
+	})
 	srv := server.New(cfg, logger, router)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	return srv.Run(ctx)
+}
+
+// jwtSecret returns the configured session secret, generating a random one (and
+// warning) when none is configured. A random secret invalidates sessions on
+// restart and is unsuitable for multi-instance deployments.
+func jwtSecret(configured string, logger *slog.Logger) ([]byte, error) {
+	if configured != "" {
+		return []byte(configured), nil
+	}
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		return nil, fmt.Errorf("main: generate jwt secret: %w", err)
+	}
+	logger.Warn("auth.jwt_secret is empty; generated a random secret (sessions will not survive restart)")
+	return []byte(base64.RawURLEncoding.EncodeToString(buf)), nil
 }
 
 // processingFormats converts configured format names into imaging formats,

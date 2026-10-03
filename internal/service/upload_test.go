@@ -119,11 +119,11 @@ func TestUploadDeduplicatesIdenticalContent(t *testing.T) {
 	ctx := context.Background()
 	data := testPNG(t)
 
-	first, err := svc.Upload(ctx, service.UploadInput{Data: data, MimeType: "image/png"})
+	first, err := svc.Upload(ctx, nil, service.UploadInput{Data: data, MimeType: "image/png"})
 	if err != nil {
 		t.Fatalf("first Upload: %v", err)
 	}
-	second, err := svc.Upload(ctx, service.UploadInput{Data: data, MimeType: "image/png"})
+	second, err := svc.Upload(ctx, nil, service.UploadInput{Data: data, MimeType: "image/png"})
 	if err != nil {
 		t.Fatalf("second Upload: %v", err)
 	}
@@ -138,7 +138,7 @@ func TestUploadDeduplicatesIdenticalContent(t *testing.T) {
 func TestPresignUnsupportedByNonPresigningStorage(t *testing.T) {
 	repo := newRepo(t)
 	svc := service.NewUploadService(repo, newFakeStorage(), pngPolicy())
-	_, err := svc.Presign(context.Background(), service.PresignInput{MimeType: "image/png", Size: 10})
+	_, err := svc.Presign(context.Background(), nil, service.PresignInput{MimeType: "image/png", Size: 10})
 	if !errors.Is(err, service.ErrPresignUnsupported) {
 		t.Fatalf("error = %v, want ErrPresignUnsupported", err)
 	}
@@ -149,7 +149,7 @@ func TestPresignRecordsPendingUpload(t *testing.T) {
 	svc := service.NewUploadService(repo, &fakePresignStorage{newFakeStorage()}, pngPolicy())
 	ctx := context.Background()
 
-	result, err := svc.Presign(ctx, service.PresignInput{MimeType: "image/png", Size: 128})
+	result, err := svc.Presign(ctx, nil, service.PresignInput{MimeType: "image/png", Size: 128})
 	if err != nil {
 		t.Fatalf("Presign: %v", err)
 	}
@@ -177,7 +177,7 @@ func TestConfirmRecordsMetadataAndClearsPending(t *testing.T) {
 	}
 	svc := service.NewUploadService(repo, fs, pngPolicy())
 
-	dto, err := svc.Confirm(ctx, key)
+	dto, err := svc.Confirm(ctx, nil, key)
 	if err != nil {
 		t.Fatalf("Confirm: %v", err)
 	}
@@ -191,7 +191,7 @@ func TestConfirmRecordsMetadataAndClearsPending(t *testing.T) {
 		t.Fatalf("pending upload not cleared: %v", err)
 	}
 
-	again, err := svc.Confirm(ctx, key)
+	again, err := svc.Confirm(ctx, nil, key)
 	if err != nil {
 		t.Fatalf("Confirm (idempotent): %v", err)
 	}
@@ -203,7 +203,7 @@ func TestConfirmRecordsMetadataAndClearsPending(t *testing.T) {
 func TestConfirmRejectsUnissuedKey(t *testing.T) {
 	repo := newRepo(t)
 	svc := service.NewUploadService(repo, newFakeStorage(), pngPolicy())
-	_, err := svc.Confirm(context.Background(), "2026/01/01/never-issued.png")
+	_, err := svc.Confirm(context.Background(), nil, "2026/01/01/never-issued.png")
 	if !errors.Is(err, service.ErrNotFound) {
 		t.Fatalf("error = %v, want ErrNotFound", err)
 	}
@@ -225,7 +225,7 @@ func TestConfirmRejectsDisallowedContentType(t *testing.T) {
 	}
 	svc := service.NewUploadService(repo, fs, pngPolicy())
 
-	_, err := svc.Confirm(ctx, key)
+	_, err := svc.Confirm(ctx, nil, key)
 	if !errors.Is(err, service.ErrUnsupportedType) {
 		t.Fatalf("error = %v, want ErrUnsupportedType", err)
 	}

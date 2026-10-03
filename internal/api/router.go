@@ -9,50 +9,86 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
+	"github.com/axmipic/axmipic/internal/auth"
 	"github.com/axmipic/axmipic/internal/service"
 	"github.com/axmipic/axmipic/internal/storage"
 )
+
+// Deps are the dependencies required to build the API router.
+type Deps struct {
+	Upload        *service.UploadService
+	Imaging       *service.ImagingService
+	Accounts      *service.AccountService
+	Storage       storage.Storage
+	Authenticator *auth.Authenticator
+	UploadLimiter *auth.UploadLimiter
+	RequireAuth   bool
+	MaxUploadMB   int
+	Logger        *slog.Logger
+}
 
 // Handler holds the dependencies shared by all HTTP handlers.
 type Handler struct {
 	svc            *service.UploadService
 	imaging        *service.ImagingService
+	accounts       *service.AccountService
 	storage        storage.Storage
 	maxUploadBytes int64
 	logger         *slog.Logger
 }
 
-// NewHandler constructs the API handler set. maxUploadMB is the configured
-// single-file limit used to bound request bodies.
-func NewHandler(svc *service.UploadService, imagingSvc *service.ImagingService, backend storage.Storage, maxUploadMB int, logger *slog.Logger) *Handler {
-	return &Handler{
-		svc:            svc,
-		imaging:        imagingSvc,
-		storage:        backend,
-		maxUploadBytes: int64(maxUploadMB) << 20,
-		logger:         logger,
-	}
-}
-
 // NewRouter builds the HTTP router with middleware and routes registered.
-func NewRouter(h *Handler) http.Handler {
+func NewRouter(d Deps) http.Handler {
+	h := &Handler{
+		svc:            d.Upload,
+		imaging:        d.Imaging,
+		accounts:       d.Accounts,
+		storage:        d.Storage,
+		maxUploadBytes: int64(d.MaxUploadMB) << 20,
+		logger:         d.Logger,
+	}
+
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
-	r.Use(requestLogger(h.logger))
+	r.Use(requestLogger(d.Logger))
 	r.Use(middleware.Timeout(60 * time.Second))
 
 	r.Get("/healthz", h.health)
 	r.Get("/i/*", h.serveImage)
 
 	r.Route("/api/v1", func(r chi.Router) {
-		r.Post("/upload", h.uploadImage)
-		r.Post("/upload/presign", h.presignUpload)
-		r.Post("/upload/confirm", h.confirmUpload)
-		r.Get("/images", h.listImages)
-		r.Get("/images/{id}", h.getImage)
-		r.Delete("/images/{id}", h.deleteImage)
+		r.Group(func(r chi.Router) {
+			r.Use(d.UploadLimiter.Middleware)
+			r.Post("/auth/register", h.register)
+			r.Post("/auth/login", h.login)
+		})
+
+		r.Group(func(r chi.Router) {
+			r.Use(d.Authenticator.Authenticate)
+
+			r.Group(func(r chi.Router) {
+				if d.RequireAuth {
+					r.Use(auth.RequireAuth)
+				}
+				r.Use(d.UploadLimiter.Middleware)
+				r.Post("/upload", h.uploadImage)
+				r.Post("/upload/presign", h.presignUpload)
+				r.Post("/upload/confirm", h.confirmUpload)
+			})
+
+			r.Group(func(r chi.Router) {
+				r.Use(auth.RequireAuth)
+				r.Get("/auth/me", h.me)
+				r.Post("/tokens", h.createToken)
+				r.Get("/tokens", h.listTokens)
+				r.Delete("/tokens/{id}", h.deleteToken)
+				r.Get("/images", h.listImages)
+				r.Get("/images/{id}", h.getImage)
+				r.Delete("/images/{id}", h.deleteImage)
+			})
+		})
 	})
 
 	return r

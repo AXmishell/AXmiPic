@@ -7,6 +7,7 @@ require (
 	github.com/glebarez/sqlite v1.11.0
 	github.com/go-chi/chi/v5 v5.3.2
 	github.com/go-viper/mapstructure/v2 v2.5.0
+	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/h2non/bimg v1.1.9
 	github.com/knadh/koanf/parsers/yaml v1.1.1
@@ -15,7 +16,9 @@ require (
 	github.com/knadh/koanf/v2 v2.3.7
 	github.com/minio/minio-go/v7 v7.3.0
 	github.com/qiniu/go-sdk/v7 v7.29.0
+	golang.org/x/crypto v0.57.0
 	golang.org/x/image v0.46.0
+	golang.org/x/time v0.16.0
 	gorm.io/gorm v1.31.2
 )
 
@@ -44,7 +47,6 @@ require (
 	github.com/tinylib/msgp v1.6.4 // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
-	golang.org/x/crypto v0.55.0 // indirect
 	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect

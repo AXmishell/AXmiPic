@@ -69,7 +69,7 @@ func (h *Handler) uploadImage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	mimeType := http.DetectContentType(data)
-	dto, err := h.svc.Upload(r.Context(), service.UploadInput{Data: data, MimeType: mimeType})
+	dto, err := h.svc.Upload(r.Context(), principalOf(r), service.UploadInput{Data: data, MimeType: mimeType})
 	if err != nil {
 		h.fail(w, r, err)
 		return
@@ -89,7 +89,7 @@ func (h *Handler) presignUpload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	result, err := h.svc.Presign(r.Context(), service.PresignInput{MimeType: body.MimeType, Size: body.Size})
+	result, err := h.svc.Presign(r.Context(), principalOf(r), service.PresignInput{MimeType: body.MimeType, Size: body.Size})
 	if err != nil {
 		h.fail(w, r, err)
 		return
@@ -108,7 +108,7 @@ func (h *Handler) confirmUpload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	dto, err := h.svc.Confirm(r.Context(), body.Key)
+	dto, err := h.svc.Confirm(r.Context(), principalOf(r), body.Key)
 	if err != nil {
 		h.fail(w, r, err)
 		return

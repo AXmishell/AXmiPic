@@ -22,6 +22,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/axmipic/axmipic/internal/auth"
 	"github.com/axmipic/axmipic/internal/storage"
 	"github.com/axmipic/axmipic/internal/store"
 )
@@ -38,6 +39,12 @@ var ErrPresignUnsupported = errors.New("service: presigned upload is not support
 
 // ErrInvalidInput is returned when a request is malformed.
 var ErrInvalidInput = errors.New("service: invalid input")
+
+// ErrQuotaExceeded is returned when an upload would exceed the owner's quota.
+var ErrQuotaExceeded = errors.New("service: storage quota exceeded")
+
+// ErrForbidden is returned when a caller may not access a resource.
+var ErrForbidden = errors.New("service: forbidden")
 
 // ErrNotFound is returned when a requested image does not exist.
 var ErrNotFound = store.ErrNotFound
@@ -121,9 +128,9 @@ func NewUploadService(repo *store.Repository, backend storage.Storage, policy Up
 	return &UploadService{repo: repo, storage: backend, policy: policy, allowed: allowed}
 }
 
-// Upload validates, stores, and records an image. Identical content is
-// deduplicated by its content-addressed key.
-func (s *UploadService) Upload(ctx context.Context, in UploadInput) (*ImageDTO, error) {
+// Upload validates, stores, and records an image owned by principal. Identical
+// content is deduplicated by its content-addressed key.
+func (s *UploadService) Upload(ctx context.Context, principal *auth.Principal, in UploadInput) (*ImageDTO, error) {
 	size := int64(len(in.Data))
 	if size > s.policy.MaxSizeBytes {
 		return nil, fmt.Errorf("%w: %d bytes exceeds %d bytes", ErrFileTooLarge, size, s.policy.MaxSizeBytes)
@@ -142,6 +149,21 @@ func (s *UploadService) Upload(ctx context.Context, in UploadInput) (*ImageDTO, 
 		return nil, fmt.Errorf("upload: lookup existing image: %w", err)
 	}
 
+	ownerID := ownerIDOf(principal)
+	release, ok, err := s.reserveQuota(ctx, ownerID, size)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, ErrQuotaExceeded
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			release()
+		}
+	}()
+
 	// A content-addressed object may already exist without a metadata row if a
 	// previous write was interrupted; reuse it instead of writing again.
 	exists, err := s.storage.Exists(ctx, key)
@@ -158,6 +180,7 @@ func (s *UploadService) Upload(ctx context.Context, in UploadInput) (*ImageDTO, 
 	image := &store.Image{
 		ID:       uuid.NewString(),
 		Key:      key,
+		UserID:   ownerID,
 		URL:      s.storage.URL(key),
 		Size:     size,
 		MimeType: in.MimeType,
@@ -166,18 +189,19 @@ func (s *UploadService) Upload(ctx context.Context, in UploadInput) (*ImageDTO, 
 	}
 	if err := s.repo.Create(ctx, image); err != nil {
 		// A concurrent upload of identical content may have inserted the row
-		// first; reuse that record rather than failing the request.
+		// first; reuse that record and release our reservation.
 		if concurrent, getErr := s.repo.GetByKey(ctx, key); getErr == nil {
 			return toDTO(concurrent), nil
 		}
 		return nil, fmt.Errorf("upload: record image: %w", err)
 	}
+	committed = true
 	return toDTO(image), nil
 }
 
 // Presign validates a direct-upload request, issues a presigned request from
 // the storage backend, and records a pending upload for later confirmation.
-func (s *UploadService) Presign(ctx context.Context, in PresignInput) (*PresignResult, error) {
+func (s *UploadService) Presign(ctx context.Context, principal *auth.Principal, in PresignInput) (*PresignResult, error) {
 	presigner, ok := s.storage.(storage.Presigner)
 	if !ok {
 		return nil, ErrPresignUnsupported
@@ -205,6 +229,7 @@ func (s *UploadService) Presign(ctx context.Context, in PresignInput) (*PresignR
 
 	pending := &store.PendingUpload{
 		Key:       key,
+		UserID:    ownerIDOf(principal),
 		MimeType:  in.MimeType,
 		MaxSize:   s.policy.MaxSizeBytes,
 		ExpiresAt: req.ExpiresAt,
@@ -226,7 +251,7 @@ func (s *UploadService) Presign(ctx context.Context, in PresignInput) (*PresignR
 
 // Confirm verifies that a presigned object was uploaded and records its
 // metadata. It is idempotent for an already-recorded key.
-func (s *UploadService) Confirm(ctx context.Context, key string) (*ImageDTO, error) {
+func (s *UploadService) Confirm(ctx context.Context, principal *auth.Principal, key string) (*ImageDTO, error) {
 	if strings.TrimSpace(key) == "" {
 		return nil, fmt.Errorf("%w: key must not be empty", ErrInvalidInput)
 	}
@@ -247,6 +272,9 @@ func (s *UploadService) Confirm(ctx context.Context, key string) (*ImageDTO, err
 		_ = s.repo.DeletePendingUpload(ctx, key)
 		return nil, fmt.Errorf("confirm: pending upload expired: %w", ErrNotFound)
 	}
+	if !canAccess(principal, pending.UserID) {
+		return nil, ErrForbidden
+	}
 
 	info, err := s.storage.Stat(ctx, key)
 	if err != nil {
@@ -266,10 +294,28 @@ func (s *UploadService) Confirm(ctx context.Context, key string) (*ImageDTO, err
 		return nil, fmt.Errorf("%w: %q", ErrUnsupportedType, info.ContentType)
 	}
 
+	ownerID := pending.UserID
+	release, ok, err := s.reserveQuota(ctx, ownerID, info.Size)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		_ = s.storage.Delete(ctx, key)
+		_ = s.repo.DeletePendingUpload(ctx, key)
+		return nil, ErrQuotaExceeded
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			release()
+		}
+	}()
+
 	width, height := s.probeDimensions(ctx, key)
 	image := &store.Image{
 		ID:       uuid.NewString(),
 		Key:      key,
+		UserID:   ownerID,
 		URL:      s.storage.URL(key),
 		Size:     info.Size,
 		MimeType: info.ContentType,
@@ -284,11 +330,13 @@ func (s *UploadService) Confirm(ctx context.Context, key string) (*ImageDTO, err
 		return nil, fmt.Errorf("confirm: record image: %w", err)
 	}
 	_ = s.repo.DeletePendingUpload(ctx, key)
+	committed = true
 	return toDTO(image), nil
 }
 
-// List returns a page of images, normalizing pagination parameters.
-func (s *UploadService) List(ctx context.Context, page, pageSize int) (*ListResult, error) {
+// List returns a page of images visible to principal: all images for admins,
+// only owned images otherwise.
+func (s *UploadService) List(ctx context.Context, principal *auth.Principal, page, pageSize int) (*ListResult, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -298,7 +346,16 @@ func (s *UploadService) List(ctx context.Context, page, pageSize int) (*ListResu
 	if pageSize > 100 {
 		pageSize = 100
 	}
-	images, total, err := s.repo.List(ctx, (page-1)*pageSize, pageSize)
+
+	filter := ""
+	if !principal.IsAdmin() {
+		if principal.IsGuest() {
+			return &ListResult{Items: []ImageDTO{}, Total: 0, Page: page, PageSize: pageSize}, nil
+		}
+		filter = principal.UserID
+	}
+
+	images, total, err := s.repo.List(ctx, filter, (page-1)*pageSize, pageSize)
 	if err != nil {
 		return nil, fmt.Errorf("list images: %w", err)
 	}
@@ -309,16 +366,20 @@ func (s *UploadService) List(ctx context.Context, page, pageSize int) (*ListResu
 	return &ListResult{Items: items, Total: total, Page: page, PageSize: pageSize}, nil
 }
 
-// Get returns a single image by id.
-func (s *UploadService) Get(ctx context.Context, id string) (*ImageDTO, error) {
+// Get returns a single image by id, enforcing ownership.
+func (s *UploadService) Get(ctx context.Context, principal *auth.Principal, id string) (*ImageDTO, error) {
 	image, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("get image: %w", err)
 	}
+	if !canAccess(principal, image.UserID) {
+		return nil, ErrForbidden
+	}
 	return toDTO(image), nil
 }
 
-// GetByKey returns a single image by its storage key.
+// GetByKey returns a single image by its storage key. Public serving does not
+// enforce ownership.
 func (s *UploadService) GetByKey(ctx context.Context, key string) (*ImageDTO, error) {
 	image, err := s.repo.GetByKey(ctx, key)
 	if err != nil {
@@ -327,11 +388,15 @@ func (s *UploadService) GetByKey(ctx context.Context, key string) (*ImageDTO, er
 	return toDTO(image), nil
 }
 
-// Delete removes an image object and its metadata.
-func (s *UploadService) Delete(ctx context.Context, id string) error {
+// Delete removes an image object and its metadata, enforcing ownership and
+// releasing the owner's quota.
+func (s *UploadService) Delete(ctx context.Context, principal *auth.Principal, id string) error {
 	image, err := s.repo.GetByID(ctx, id)
 	if err != nil {
 		return fmt.Errorf("delete image: %w", err)
+	}
+	if !canAccess(principal, image.UserID) {
+		return ErrForbidden
 	}
 	if err := s.storage.Delete(ctx, image.Key); err != nil {
 		return fmt.Errorf("delete image object: %w", err)
@@ -339,7 +404,67 @@ func (s *UploadService) Delete(ctx context.Context, id string) error {
 	if err := s.repo.Delete(ctx, id); err != nil {
 		return fmt.Errorf("delete image record: %w", err)
 	}
+	if image.UserID != nil {
+		if err := s.repo.ReleaseQuota(ctx, *image.UserID, image.Size); err != nil {
+			return fmt.Errorf("delete image: release quota: %w", err)
+		}
+	}
 	return nil
+}
+
+// reserveQuota reserves amount bytes for ownerID. It returns a release function
+// (a no-op for guests) and whether the reservation succeeded.
+func (s *UploadService) reserveQuota(ctx context.Context, ownerID *string, amount int64) (func(), bool, error) {
+	if ownerID == nil {
+		return func() {}, true, nil
+	}
+	ok, err := s.repo.ReserveQuota(ctx, *ownerID, amount)
+	if err != nil {
+		return nil, false, fmt.Errorf("reserve quota: %w", err)
+	}
+	if !ok {
+		return func() {}, false, nil
+	}
+	released := false
+	return func() {
+		if released {
+			return
+		}
+		released = true
+		// The request context may already be canceled; release must still run so
+		// quota is not leaked.
+		_ = s.repo.ReleaseQuota(context.WithoutCancel(ctx), *ownerID, amount)
+	}, true, nil
+}
+
+// ownerIDOf returns the user id a principal acts as, or nil for guests.
+func ownerIDOf(principal *auth.Principal) *string {
+	if principal.IsGuest() || principal.UserID == "" {
+		return nil
+	}
+	id := principal.UserID
+	return &id
+}
+
+// canAccess reports whether principal may access a resource owned by ownerID.
+func canAccess(principal *auth.Principal, ownerID *string) bool {
+	if principal.IsAdmin() {
+		return true
+	}
+	return sameOwner(principal, ownerID)
+}
+
+// sameOwner reports whether principal owns a resource with ownerID.
+func sameOwner(principal *auth.Principal, ownerID *string) bool {
+	current := ownerIDOf(principal)
+	switch {
+	case current == nil && ownerID == nil:
+		return true
+	case current == nil || ownerID == nil:
+		return false
+	default:
+		return *current == *ownerID
+	}
 }
 
 func toDTO(image *store.Image) *ImageDTO {

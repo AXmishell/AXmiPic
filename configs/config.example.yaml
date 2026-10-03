@@ -58,5 +58,23 @@ processing:
     - "webp"
     - "avif"
 
+auth:
+  # Leave empty to auto-generate a random secret at startup (sessions reset on restart).
+  jwt_secret: ""
+  session_ttl_hours: 24
+  allow_registration: true
+  # When true, only authenticated users may upload; guests are rejected.
+  require_auth: true
+  # Per-user storage quota in MiB; 0 means unlimited.
+  default_quota_mb: 1024
+  # Optional "username:password" seeded as an admin only when no users exist.
+  bootstrap_admin: ""
+
+limits:
+  upload_per_minute: 30
+  upload_burst: 5
+  guest_per_minute: 6
+  guest_burst: 2
+
 logging:
   level: "info"

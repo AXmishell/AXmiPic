@@ -23,7 +23,7 @@ func (h *Handler) health(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) listImages(w http.ResponseWriter, r *http.Request) {
-	result, err := h.svc.List(r.Context(), queryInt(r, "page"), queryInt(r, "page_size"))
+	result, err := h.svc.List(r.Context(), principalOf(r), queryInt(r, "page"), queryInt(r, "page_size"))
 	if err != nil {
 		h.fail(w, r, err)
 		return
@@ -32,7 +32,7 @@ func (h *Handler) listImages(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) getImage(w http.ResponseWriter, r *http.Request) {
-	dto, err := h.svc.Get(r.Context(), chi.URLParam(r, "id"))
+	dto, err := h.svc.Get(r.Context(), principalOf(r), chi.URLParam(r, "id"))
 	if err != nil {
 		h.fail(w, r, err)
 		return
@@ -42,7 +42,7 @@ func (h *Handler) getImage(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) deleteImage(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	if err := h.svc.Delete(r.Context(), id); err != nil {
+	if err := h.svc.Delete(r.Context(), principalOf(r), id); err != nil {
 		h.fail(w, r, err)
 		return
 	}

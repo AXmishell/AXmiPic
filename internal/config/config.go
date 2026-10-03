@@ -54,6 +54,16 @@ var envPaths = map[string]string{
 	"processing_max_width":        "processing.max_width",
 	"processing_max_height":       "processing.max_height",
 	"processing_default_quality":  "processing.default_quality",
+	"auth_jwt_secret":             "auth.jwt_secret",
+	"auth_session_ttl_hours":      "auth.session_ttl_hours",
+	"auth_allow_registration":     "auth.allow_registration",
+	"auth_require_auth":           "auth.require_auth",
+	"auth_default_quota_mb":       "auth.default_quota_mb",
+	"auth_bootstrap_admin":        "auth.bootstrap_admin",
+	"limits_upload_per_minute":    "limits.upload_per_minute",
+	"limits_upload_burst":         "limits.upload_burst",
+	"limits_guest_per_minute":     "limits.guest_per_minute",
+	"limits_guest_burst":          "limits.guest_burst",
 	"logging_level":               "logging.level",
 }
 
@@ -64,6 +74,8 @@ type Config struct {
 	Storage    StorageConfig    `koanf:"storage"`
 	Upload     UploadConfig     `koanf:"upload"`
 	Processing ProcessingConfig `koanf:"processing"`
+	Auth       AuthConfig       `koanf:"auth"`
+	Limits     LimitsConfig     `koanf:"limits"`
 	Logging    LoggingConfig    `koanf:"logging"`
 }
 
@@ -137,6 +149,24 @@ type ProcessingConfig struct {
 	AllowedFormats []string `koanf:"allowed_formats"`
 }
 
+// AuthConfig configures accounts, sessions, and API tokens.
+type AuthConfig struct {
+	JWTSecret         string `koanf:"jwt_secret"`
+	SessionTTLHours   int    `koanf:"session_ttl_hours"`
+	AllowRegistration bool   `koanf:"allow_registration"`
+	RequireAuth       bool   `koanf:"require_auth"`
+	DefaultQuotaMB    int    `koanf:"default_quota_mb"`
+	BootstrapAdmin    string `koanf:"bootstrap_admin"`
+}
+
+// LimitsConfig configures per-caller rate limits.
+type LimitsConfig struct {
+	UploadPerMinute int `koanf:"upload_per_minute"`
+	UploadBurst     int `koanf:"upload_burst"`
+	GuestPerMinute  int `koanf:"guest_per_minute"`
+	GuestBurst      int `koanf:"guest_burst"`
+}
+
 // LoggingConfig configures logging.
 type LoggingConfig struct {
 	Level string `koanf:"level"`
@@ -169,6 +199,18 @@ func defaultConfig() Config {
 			MaxHeight:      4096,
 			DefaultQuality: 82,
 			AllowedFormats: []string{"jpeg", "png", "gif", "webp", "avif"},
+		},
+		Auth: AuthConfig{
+			SessionTTLHours:   24,
+			AllowRegistration: true,
+			RequireAuth:       true,
+			DefaultQuotaMB:    1024,
+		},
+		Limits: LimitsConfig{
+			UploadPerMinute: 30,
+			UploadBurst:     5,
+			GuestPerMinute:  6,
+			GuestBurst:      2,
 		},
 		Logging: LoggingConfig{Level: "info"},
 	}
@@ -267,6 +309,16 @@ func (c Config) validate() error {
 				return fmt.Errorf("config: processing.allowed_formats contains unknown format %q", name)
 			}
 		}
+	}
+	if c.Auth.SessionTTLHours < 1 {
+		return fmt.Errorf("config: auth.session_ttl_hours must be at least 1")
+	}
+	if c.Auth.DefaultQuotaMB < 0 {
+		return fmt.Errorf("config: auth.default_quota_mb must not be negative")
+	}
+	if c.Limits.UploadPerMinute < 0 || c.Limits.UploadBurst < 0 ||
+		c.Limits.GuestPerMinute < 0 || c.Limits.GuestBurst < 0 {
+		return fmt.Errorf("config: limits values must not be negative")
 	}
 	return nil
 }
