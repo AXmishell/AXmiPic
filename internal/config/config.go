@@ -11,7 +11,7 @@ import (
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/v2"
 
-	"github.com/axmipic/axmipic/internal/imaging"
+	"github.com/AXmishell/axmipic/internal/imaging"
 )
 
 // envPrefix is the prefix used to override configuration through the environment.

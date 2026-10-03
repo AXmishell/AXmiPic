@@ -9,9 +9,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
-	"github.com/axmipic/axmipic/internal/auth"
-	"github.com/axmipic/axmipic/internal/service"
-	"github.com/axmipic/axmipic/internal/storage"
+	"github.com/AXmishell/axmipic/internal/auth"
+	"github.com/AXmishell/axmipic/internal/service"
+	"github.com/AXmishell/axmipic/internal/storage"
 )
 
 // Deps are the dependencies required to build the API router.

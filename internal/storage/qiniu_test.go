@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/axmipic/axmipic/internal/config"
-	"github.com/axmipic/axmipic/internal/storage"
+	"github.com/AXmishell/axmipic/internal/config"
+	"github.com/AXmishell/axmipic/internal/storage"
 )
 
 func TestQiniuPresignPutIsGeneratedOffline(t *testing.T) {

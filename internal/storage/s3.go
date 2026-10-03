@@ -10,7 +10,7 @@ import (
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 
-	"github.com/axmipic/axmipic/internal/config"
+	"github.com/AXmishell/axmipic/internal/config"
 )
 
 // S3 stores objects in any S3-compatible service (AWS S3, MinIO, Cloudflare

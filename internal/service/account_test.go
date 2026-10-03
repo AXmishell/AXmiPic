@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/axmipic/axmipic/internal/auth"
-	"github.com/axmipic/axmipic/internal/service"
-	"github.com/axmipic/axmipic/internal/store"
+	"github.com/AXmishell/axmipic/internal/auth"
+	"github.com/AXmishell/axmipic/internal/service"
+	"github.com/AXmishell/axmipic/internal/store"
 )
 
 func newAccountService(t *testing.T, allowRegistration bool, quotaBytes int64) (*service.AccountService, *store.Repository) {

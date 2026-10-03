@@ -13,7 +13,7 @@ import (
 	qiniuauth "github.com/qiniu/go-sdk/v7/auth"
 	qiniustorage "github.com/qiniu/go-sdk/v7/storage"
 
-	"github.com/axmipic/axmipic/internal/config"
+	"github.com/AXmishell/axmipic/internal/config"
 )
 
 const (

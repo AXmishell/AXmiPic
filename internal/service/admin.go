@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/axmipic/axmipic/internal/auth"
-	"github.com/axmipic/axmipic/internal/imaging"
-	"github.com/axmipic/axmipic/internal/store"
+	"github.com/AXmishell/axmipic/internal/auth"
+	"github.com/AXmishell/axmipic/internal/imaging"
+	"github.com/AXmishell/axmipic/internal/store"
 )
 
 // ErrInvalidRole is returned when an unknown role is requested.

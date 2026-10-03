@@ -1,4 +1,4 @@
-module github.com/axmipic/axmipic
+module github.com/AXmishell/axmipic
 
 go 1.26.0
 

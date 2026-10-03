@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/axmipic/axmipic/internal/config"
+	"github.com/AXmishell/axmipic/internal/config"
 )
 
 // Server owns the HTTP listener lifecycle.

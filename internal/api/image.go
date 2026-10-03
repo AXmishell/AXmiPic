@@ -13,9 +13,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/axmipic/axmipic/internal/imaging"
-	"github.com/axmipic/axmipic/internal/service"
-	"github.com/axmipic/axmipic/internal/storage"
+	"github.com/AXmishell/axmipic/internal/imaging"
+	"github.com/AXmishell/axmipic/internal/service"
+	"github.com/AXmishell/axmipic/internal/storage"
 )
 
 func (h *Handler) health(w http.ResponseWriter, r *http.Request) {

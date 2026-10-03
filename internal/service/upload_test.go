@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/axmipic/axmipic/internal/service"
-	"github.com/axmipic/axmipic/internal/storage"
-	"github.com/axmipic/axmipic/internal/store"
+	"github.com/AXmishell/axmipic/internal/service"
+	"github.com/AXmishell/axmipic/internal/storage"
+	"github.com/AXmishell/axmipic/internal/store"
 )
 
 type storedObject struct {

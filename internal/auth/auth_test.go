@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/axmipic/axmipic/internal/auth"
+	"github.com/AXmishell/axmipic/internal/auth"
 )
 
 func TestPasswordHashAndVerify(t *testing.T) {

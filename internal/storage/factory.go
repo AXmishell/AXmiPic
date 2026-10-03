@@ -3,7 +3,7 @@ package storage
 import (
 	"fmt"
 
-	"github.com/axmipic/axmipic/internal/config"
+	"github.com/AXmishell/axmipic/internal/config"
 )
 
 // NewFromConfig builds the storage backend selected by cfg.Driver.

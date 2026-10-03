@@ -9,7 +9,7 @@ import (
 	"image/png"
 	"testing"
 
-	"github.com/axmipic/axmipic/internal/imaging"
+	"github.com/AXmishell/axmipic/internal/imaging"
 )
 
 func testPNG(t *testing.T, w, h int) []byte {

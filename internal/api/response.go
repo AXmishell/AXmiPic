@@ -6,8 +6,8 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/axmipic/axmipic/internal/auth"
-	"github.com/axmipic/axmipic/internal/service"
+	"github.com/AXmishell/axmipic/internal/auth"
+	"github.com/AXmishell/axmipic/internal/service"
 )
 
 // principalOf returns the authenticated principal attached to the request, or

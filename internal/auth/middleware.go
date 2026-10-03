@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/axmipic/axmipic/internal/store"
+	"github.com/AXmishell/axmipic/internal/store"
 )
 
 // Authenticator resolves Bearer credentials (API tokens or session JWTs) into a

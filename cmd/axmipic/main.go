@@ -13,15 +13,15 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/axmipic/axmipic/internal/api"
-	"github.com/axmipic/axmipic/internal/auth"
-	"github.com/axmipic/axmipic/internal/config"
-	"github.com/axmipic/axmipic/internal/imaging"
-	"github.com/axmipic/axmipic/internal/server"
-	"github.com/axmipic/axmipic/internal/service"
-	"github.com/axmipic/axmipic/internal/storage"
-	"github.com/axmipic/axmipic/internal/store"
-	"github.com/axmipic/axmipic/internal/webui"
+	"github.com/AXmishell/axmipic/internal/api"
+	"github.com/AXmishell/axmipic/internal/auth"
+	"github.com/AXmishell/axmipic/internal/config"
+	"github.com/AXmishell/axmipic/internal/imaging"
+	"github.com/AXmishell/axmipic/internal/server"
+	"github.com/AXmishell/axmipic/internal/service"
+	"github.com/AXmishell/axmipic/internal/storage"
+	"github.com/AXmishell/axmipic/internal/store"
+	"github.com/AXmishell/axmipic/internal/webui"
 )
 
 func main() {

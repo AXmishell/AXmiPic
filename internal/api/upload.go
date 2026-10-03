@@ -7,7 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/axmipic/axmipic/internal/service"
+	"github.com/AXmishell/axmipic/internal/service"
 )
 
 // multipartOverhead is extra request-body allowance for multipart boundaries

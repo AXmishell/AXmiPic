@@ -6,7 +6,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/axmipic/axmipic/internal/service"
+	"github.com/AXmishell/axmipic/internal/service"
 )
 
 func (h *Handler) adminStats(w http.ResponseWriter, r *http.Request) {

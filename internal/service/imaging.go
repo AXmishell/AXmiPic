@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/axmipic/axmipic/internal/imaging"
-	"github.com/axmipic/axmipic/internal/storage"
+	"github.com/AXmishell/axmipic/internal/imaging"
+	"github.com/AXmishell/axmipic/internal/storage"
 )
 
 // ErrProcessingFailed is returned when a transformation cannot be applied.
