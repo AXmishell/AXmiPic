@@ -1,0 +1,9 @@
+.omo/
+
+# Runtime data and build output
+/data/
+/bin/
+*.db
+.env
+AXmiPic.exe
+.codegraph/
