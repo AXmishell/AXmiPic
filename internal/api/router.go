@@ -19,12 +19,15 @@ type Deps struct {
 	Upload        *service.UploadService
 	Imaging       *service.ImagingService
 	Accounts      *service.AccountService
+	Admin         *service.AdminService
 	Storage       storage.Storage
 	Authenticator *auth.Authenticator
 	UploadLimiter *auth.UploadLimiter
-	RequireAuth   bool
-	MaxUploadMB   int
-	Logger        *slog.Logger
+	// Static, when non-nil, serves the single-page app for unmatched routes.
+	Static      http.Handler
+	RequireAuth bool
+	MaxUploadMB int
+	Logger      *slog.Logger
 }
 
 // Handler holds the dependencies shared by all HTTP handlers.
@@ -32,6 +35,7 @@ type Handler struct {
 	svc            *service.UploadService
 	imaging        *service.ImagingService
 	accounts       *service.AccountService
+	admin          *service.AdminService
 	storage        storage.Storage
 	maxUploadBytes int64
 	logger         *slog.Logger
@@ -43,6 +47,7 @@ func NewRouter(d Deps) http.Handler {
 		svc:            d.Upload,
 		imaging:        d.Imaging,
 		accounts:       d.Accounts,
+		admin:          d.Admin,
 		storage:        d.Storage,
 		maxUploadBytes: int64(d.MaxUploadMB) << 20,
 		logger:         d.Logger,
@@ -88,8 +93,19 @@ func NewRouter(d Deps) http.Handler {
 				r.Get("/images/{id}", h.getImage)
 				r.Delete("/images/{id}", h.deleteImage)
 			})
+
+			r.Group(func(r chi.Router) {
+				r.Use(auth.RequireAdmin)
+				r.Get("/admin/stats", h.adminStats)
+				r.Get("/admin/users", h.adminUsers)
+				r.Patch("/admin/users/{id}", h.adminUpdateUser)
+			})
 		})
 	})
+
+	if d.Static != nil {
+		r.Handle("/*", d.Static)
+	}
 
 	return r
 }

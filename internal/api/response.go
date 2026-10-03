@@ -69,6 +69,8 @@ func (h *Handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, http.StatusForbidden, http.StatusForbidden, err.Error())
 	case errors.Is(err, service.ErrTokenNotFound):
 		writeError(w, http.StatusNotFound, http.StatusNotFound, err.Error())
+	case errors.Is(err, service.ErrInvalidRole):
+		writeError(w, http.StatusBadRequest, http.StatusBadRequest, err.Error())
 	case errors.Is(err, service.ErrQuotaExceeded):
 		writeError(w, http.StatusInsufficientStorage, http.StatusInsufficientStorage, err.Error())
 	case errors.Is(err, service.ErrNotFound):

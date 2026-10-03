@@ -61,6 +61,7 @@ func newTestEnv(t *testing.T, requireAuth bool, quotaBytes int64) *testEnv {
 		Upload:        uploadSvc,
 		Imaging:       imagingSvc,
 		Accounts:      accounts,
+		Admin:         service.NewAdminService(repo, "local", imaging.Default()),
 		Storage:       local,
 		Authenticator: auth.NewAuthenticator(repo, issuer),
 		UploadLimiter: &auth.UploadLimiter{
@@ -85,6 +86,23 @@ func (e *testEnv) token(t *testing.T, username string) string {
 		t.Fatalf("CreateToken: %v", err)
 	}
 	return token.Token
+}
+
+func (e *testEnv) adminToken(t *testing.T, username string) (string, string) {
+	t.Helper()
+	user, err := e.accounts.Register(context.Background(), username, "password123")
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	adminRole := "admin"
+	if _, err := e.repo.UpdateUser(context.Background(), user.ID, store.UserUpdate{Role: &adminRole}); err != nil {
+		t.Fatalf("promote to admin: %v", err)
+	}
+	token, err := e.accounts.CreateToken(context.Background(), user.ID, "admin")
+	if err != nil {
+		t.Fatalf("CreateToken: %v", err)
+	}
+	return token.Token, user.ID
 }
 
 func testPNG(t *testing.T, size int) []byte {
@@ -290,5 +308,81 @@ func TestServeRejectsUnsupportedTransform(t *testing.T) {
 	env.router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/i/"+key+"?f=webp", nil))
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d (%s), want 400", rec.Code, rec.Body.String())
+	}
+}
+
+func TestAdminRequiresAdminRole(t *testing.T) {
+	env := newTestEnv(t, true, 1<<20)
+	userToken := env.token(t, "dave")
+	status, body := do(t, env.router, http.MethodGet, "/api/v1/admin/stats", "", userToken)
+	if status != http.StatusForbidden {
+		t.Fatalf("status = %d (%s), want 403", status, body)
+	}
+}
+
+func TestAdminStatsUsersAndDisable(t *testing.T) {
+	env := newTestEnv(t, true, 1<<20)
+	adminToken, _ := env.adminToken(t, "root")
+	victim, err := env.accounts.Register(context.Background(), "eve", "password123")
+	if err != nil {
+		t.Fatalf("Register victim: %v", err)
+	}
+	victimToken, err := env.accounts.CreateToken(context.Background(), victim.ID, "v")
+	if err != nil {
+		t.Fatalf("CreateToken victim: %v", err)
+	}
+
+	status, body := do(t, env.router, http.MethodGet, "/api/v1/admin/stats", "", adminToken)
+	if status != http.StatusOK {
+		t.Fatalf("stats status = %d (%s)", status, body)
+	}
+	var stats struct {
+		Data struct {
+			Users         int64  `json:"users"`
+			StorageDriver string `json:"storage_driver"`
+			Processor     string `json:"processor"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &stats); err != nil {
+		t.Fatalf("stats decode: %v", err)
+	}
+	if stats.Data.Users < 2 || stats.Data.StorageDriver != "local" || stats.Data.Processor == "" {
+		t.Fatalf("unexpected stats: %s", body)
+	}
+
+	status, body = do(t, env.router, http.MethodGet, "/api/v1/admin/users", "", adminToken)
+	if status != http.StatusOK {
+		t.Fatalf("users status = %d (%s)", status, body)
+	}
+
+	status, body = do(t, env.router, http.MethodPatch, "/api/v1/admin/users/"+victim.ID, `{"disabled":true}`, adminToken)
+	if status != http.StatusOK {
+		t.Fatalf("disable status = %d (%s)", status, body)
+	}
+	var updated struct {
+		Data struct {
+			Disabled bool `json:"disabled"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &updated); err != nil || !updated.Data.Disabled {
+		t.Fatalf("disable response: %s", body)
+	}
+
+	status, _ = do(t, env.router, http.MethodGet, "/api/v1/auth/me", "", victimToken.Token)
+	if status != http.StatusUnauthorized {
+		t.Fatalf("disabled token status = %d, want 401", status)
+	}
+}
+
+func TestAdminRejectsInvalidRole(t *testing.T) {
+	env := newTestEnv(t, true, 1<<20)
+	adminToken, _ := env.adminToken(t, "root2")
+	victim, err := env.accounts.Register(context.Background(), "frank", "password123")
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	status, body := do(t, env.router, http.MethodPatch, "/api/v1/admin/users/"+victim.ID, `{"role":"superuser"}`, adminToken)
+	if status != http.StatusBadRequest {
+		t.Fatalf("status = %d (%s), want 400", status, body)
 	}
 }

@@ -21,6 +21,7 @@ import (
 	"github.com/axmipic/axmipic/internal/service"
 	"github.com/axmipic/axmipic/internal/storage"
 	"github.com/axmipic/axmipic/internal/store"
+	"github.com/axmipic/axmipic/internal/webui"
 )
 
 func main() {
@@ -83,6 +84,7 @@ func run() error {
 	}
 	issuer := auth.NewSessionIssuer(secret, time.Duration(cfg.Auth.SessionTTLHours)*time.Hour)
 	accounts := service.NewAccountService(repo, issuer, cfg.Auth.AllowRegistration, int64(cfg.Auth.DefaultQuotaMB)<<20)
+	adminSvc := service.NewAdminService(repo, cfg.Storage.Driver, processor)
 
 	bootstrapCtx, cancelBootstrap := context.WithTimeout(context.Background(), 30*time.Second)
 	err = accounts.EnsureBootstrapAdmin(bootstrapCtx, cfg.Auth.BootstrapAdmin)
@@ -95,6 +97,7 @@ func run() error {
 		Upload:        uploadSvc,
 		Imaging:       imagingSvc,
 		Accounts:      accounts,
+		Admin:         adminSvc,
 		Storage:       storeBackend,
 		Authenticator: auth.NewAuthenticator(repo, issuer),
 		UploadLimiter: &auth.UploadLimiter{
@@ -103,6 +106,7 @@ func run() error {
 		},
 		RequireAuth: cfg.Auth.RequireAuth,
 		MaxUploadMB: cfg.Upload.MaxSizeMB,
+		Static:      webui.Handler(),
 		Logger:      logger,
 	})
 	srv := server.New(cfg, logger, router)

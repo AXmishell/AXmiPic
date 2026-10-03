@@ -36,6 +36,7 @@ type UserDTO struct {
 	ID         string    `json:"id"`
 	Username   string    `json:"username"`
 	Role       string    `json:"role"`
+	Disabled   bool      `json:"disabled"`
 	UsedBytes  int64     `json:"used_bytes"`
 	QuotaBytes int64     `json:"quota_bytes"`
 	CreatedAt  time.Time `json:"created_at"`
@@ -123,6 +124,9 @@ func (s *AccountService) Login(ctx context.Context, username, password string) (
 		return nil, fmt.Errorf("login: lookup user: %w", err)
 	}
 	if !auth.VerifyPassword(user.PasswordHash, password) {
+		return nil, ErrInvalidCredentials
+	}
+	if user.Disabled {
 		return nil, ErrInvalidCredentials
 	}
 	token, expiresAt, err := s.issuer.Issue(user.ID, user.Role)
@@ -252,6 +256,7 @@ func toUserDTO(user *store.User) *UserDTO {
 		ID:         user.ID,
 		Username:   user.Username,
 		Role:       user.Role,
+		Disabled:   user.Disabled,
 		UsedBytes:  user.UsedBytes,
 		QuotaBytes: user.QuotaBytes,
 		CreatedAt:  user.CreatedAt,

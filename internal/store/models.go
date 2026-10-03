@@ -44,6 +44,7 @@ type User struct {
 	Username     string `gorm:"uniqueIndex;size:64;not null"`
 	PasswordHash string `gorm:"size:100;not null"`
 	Role         string `gorm:"size:16;not null"`
+	Disabled     bool   `gorm:"not null;default:false"`
 	UsedBytes    int64  `gorm:"not null;default:0"`
 	QuotaBytes   int64  `gorm:"not null;default:0"` // 0 means unlimited
 	CreatedAt    time.Time
@@ -53,6 +54,18 @@ type User struct {
 // TableName returns the table backing User.
 func (User) TableName() string {
 	return "users"
+}
+
+// UserUpdate carries optional account field changes. Nil fields are ignored.
+type UserUpdate struct {
+	Role     *string
+	Disabled *bool
+}
+
+// ImageStats aggregates image counts and total bytes.
+type ImageStats struct {
+	Count      int64
+	TotalBytes int64
 }
 
 // APIToken is a long-lived programmatic credential. Only the hash is stored.

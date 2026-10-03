@@ -54,6 +54,9 @@ func (a *Authenticator) resolve(r *http.Request, credential string) (*Principal,
 		if err != nil {
 			return nil, ErrUnauthenticated
 		}
+		if user.Disabled {
+			return nil, ErrUnauthenticated
+		}
 		if err := a.repo.TouchToken(ctx, token.ID); err != nil {
 			// A failed last-used update must not block an otherwise valid request.
 			_ = err
@@ -74,7 +77,26 @@ func (a *Authenticator) resolve(r *http.Request, credential string) (*Principal,
 	if err != nil {
 		return nil, ErrUnauthenticated
 	}
+	if user.Disabled {
+		return nil, ErrUnauthenticated
+	}
 	return &Principal{UserID: user.ID, Username: user.Username, Role: Role(role)}, nil
+}
+
+// RequireAdmin rejects requests from callers that are not authenticated admins.
+func RequireAdmin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		principal, ok := FromContext(r.Context())
+		if !ok || principal.IsGuest() {
+			writeAuthError(w, http.StatusUnauthorized, "authentication required")
+			return
+		}
+		if !principal.IsAdmin() {
+			writeAuthError(w, http.StatusForbidden, "admin role required")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // RequireAuth rejects requests without an authenticated, non-guest principal.

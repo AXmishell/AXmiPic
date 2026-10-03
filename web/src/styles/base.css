@@ -1,0 +1,222 @@
+/**
+ * Base layer: reset, typography, atmosphere, scrollbars, focus, and the
+ * shared layout primitives every view composes from.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(1100px 520px at 82% -12%, rgba(94, 106, 210, 0.1), transparent 62%),
+    radial-gradient(820px 460px at -8% -4%, rgba(113, 112, 255, 0.06), transparent 58%),
+    var(--ax-canvas);
+  color: var(--ax-text-2);
+  font-family: var(--ax-font-sans);
+  font-size: var(--ax-text-base);
+  font-weight: var(--ax-weight-regular);
+  line-height: var(--ax-leading-normal);
+  letter-spacing: var(--ax-tracking-tight);
+  font-feature-settings: 'cv01', 'ss03';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  margin: 0;
+  color: var(--ax-text);
+  font-weight: var(--ax-weight-semibold);
+  line-height: var(--ax-leading-tight);
+  letter-spacing: var(--ax-tracking-display);
+}
+
+p {
+  margin: 0;
+}
+
+a {
+  color: var(--ax-accent-hover);
+  text-decoration: none;
+}
+
+button {
+  font-family: inherit;
+}
+
+::selection {
+  background: var(--ax-accent-ring);
+  color: var(--ax-text);
+}
+
+:focus-visible {
+  outline: 2px solid var(--ax-focus);
+  outline-offset: 2px;
+}
+
+/* ---- Scrollbars ---- */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+  border-radius: var(--ax-radius-full);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+  background-clip: padding-box;
+}
+
+/* ---- Shared primitives (documented in tokens.css; used across views) ---- */
+
+/* Page: enter transition. Transform/opacity only. */
+@keyframes ax-fade-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.ax-page {
+  animation: ax-fade-rise var(--ax-duration-slow) var(--ax-ease) both;
+}
+
+/* Card: elevated surface built from luminance step + inset ring + hairline. */
+.ax-card {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--ax-border-subtle);
+  border-radius: var(--ax-radius-lg);
+  box-shadow: var(--ax-ring-inset);
+}
+
+.ax-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ax-space-4);
+  min-height: 52px;
+  padding: var(--ax-space-3) var(--ax-space-5);
+  border-bottom: 1px solid var(--ax-border-subtle);
+}
+
+.ax-card__title {
+  margin: 0;
+  color: var(--ax-text);
+  font-size: var(--ax-text-base);
+  font-weight: var(--ax-weight-medium);
+  letter-spacing: var(--ax-tracking-tight);
+}
+
+.ax-card__body {
+  padding: var(--ax-space-5);
+}
+
+.ax-muted {
+  color: var(--ax-text-3);
+}
+
+.ax-mono {
+  padding: 2px 6px;
+  border-radius: var(--ax-radius-xs);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--ax-text-2);
+  font-family: var(--ax-font-mono);
+  font-size: var(--ax-text-xs);
+  overflow-wrap: anywhere;
+}
+
+.ax-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ax-space-3);
+}
+
+/* Intrinsic grid: adapts to its container; min() prevents narrow overflow. */
+.ax-grid {
+  display: grid;
+  gap: var(--ax-space-4);
+  grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr));
+}
+
+.ax-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ax-space-4);
+}
+
+.ax-cluster {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ax-space-2);
+}
+
+/* Horizontal scroll region with a single, declared job (wide tables). */
+.ax-table-scroll {
+  overflow-x: auto;
+}
+
+.ax-table-scroll > * {
+  min-width: 640px;
+}
+
+/* Screen-reader-only text (used for skip link targets and icon buttons). */
+.ax-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media (max-width: 768px) {
+  :root {
+    --ax-content-max: 100%;
+  }
+}

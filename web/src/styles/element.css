@@ -1,0 +1,253 @@
+/**
+ * Element Plus dark-theme remap onto the AXmiPic token set.
+ * The library keeps its behavior and accessibility; the surface language
+ * (luminance steps, hairline borders, 6/8/12 radius, indigo accent) is ours.
+ */
+
+html.dark {
+  /* Semantic color remap */
+  --el-color-primary: var(--ax-accent);
+  --el-color-primary-light-3: var(--ax-accent-bright);
+  --el-color-primary-light-5: var(--ax-accent-hover);
+  --el-color-primary-light-7: rgba(113, 112, 255, 0.4);
+  --el-color-primary-light-8: rgba(94, 106, 210, 0.22);
+  --el-color-primary-light-9: rgba(94, 106, 210, 0.12);
+  --el-color-primary-dark-2: #4c57c0;
+  --el-color-success: var(--ax-success);
+  --el-color-warning: var(--ax-warning);
+  --el-color-danger: var(--ax-danger);
+  --el-color-error: var(--ax-danger);
+  --el-color-info: var(--ax-info);
+
+  /* Surfaces */
+  --el-bg-color: var(--ax-panel);
+  --el-bg-color-page: var(--ax-canvas);
+  --el-bg-color-overlay: var(--ax-elevated);
+  --el-fill-color: rgba(255, 255, 255, 0.06);
+  --el-fill-color-light: rgba(255, 255, 255, 0.04);
+  --el-fill-color-lighter: rgba(255, 255, 255, 0.03);
+  --el-fill-color-extra-light: rgba(255, 255, 255, 0.02);
+  --el-fill-color-dark: rgba(255, 255, 255, 0.08);
+  --el-fill-color-darker: rgba(255, 255, 255, 0.1);
+  --el-fill-color-blank: transparent;
+
+  /* Text */
+  --el-text-color-primary: var(--ax-text);
+  --el-text-color-regular: var(--ax-text-2);
+  --el-text-color-secondary: var(--ax-text-3);
+  --el-text-color-placeholder: var(--ax-text-4);
+  --el-text-color-disabled: var(--ax-text-disabled);
+
+  /* Borders */
+  --el-border-color: rgba(255, 255, 255, 0.1);
+  --el-border-color-light: var(--ax-border);
+  --el-border-color-lighter: var(--ax-border-subtle);
+  --el-border-color-extra-light: rgba(255, 255, 255, 0.04);
+  --el-border-color-dark: var(--ax-border-strong);
+  --el-border-color-darker: rgba(255, 255, 255, 0.2);
+
+  /* Disabled states */
+  --el-disabled-bg-color: rgba(255, 255, 255, 0.03);
+  --el-disabled-text-color: var(--ax-text-disabled);
+  --el-disabled-border-color: rgba(255, 255, 255, 0.05);
+
+  /* Depth + shape + type */
+  --el-mask-color: rgba(4, 5, 8, 0.72);
+  --el-mask-color-extra-light: rgba(4, 5, 8, 0.4);
+  --el-overlay-color-lighter: rgba(4, 5, 8, 0.7);
+  --el-box-shadow: var(--ax-shadow-md);
+  --el-box-shadow-light: var(--ax-shadow-sm);
+  --el-box-shadow-lighter: var(--ax-shadow-sm);
+  --el-box-shadow-dark: var(--ax-shadow-lg);
+  --el-border-radius-base: var(--ax-radius-sm);
+  --el-border-radius-small: var(--ax-radius-xs);
+  --el-border-radius-round: var(--ax-radius-full);
+  --el-font-family: var(--ax-font-sans);
+  --el-skeleton-color: rgba(255, 255, 255, 0.04);
+  --el-skeleton-to-color: rgba(255, 255, 255, 0.09);
+  --el-transition-duration: var(--ax-duration);
+}
+
+/* ---- Buttons ---- */
+.el-button {
+  font-weight: var(--ax-weight-medium);
+  transition:
+    background-color var(--ax-duration-fast) var(--ax-ease),
+    border-color var(--ax-duration-fast) var(--ax-ease),
+    color var(--ax-duration-fast) var(--ax-ease),
+    transform var(--ax-duration-fast) var(--ax-ease);
+}
+
+.el-button:not(.is-disabled):active {
+  transform: translateY(1px);
+}
+
+.el-button--default {
+  background: rgba(255, 255, 255, 0.02);
+  border-color: var(--ax-border);
+  color: var(--ax-text-2);
+}
+
+.el-button--default:not(.is-disabled):hover,
+.el-button--default:not(.is-disabled):focus {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--ax-border-strong);
+  color: var(--ax-text);
+}
+
+/* ---- Inputs & selects ---- */
+.el-input__wrapper,
+.el-textarea__inner {
+  background: rgba(255, 255, 255, 0.02);
+  box-shadow: 0 0 0 1px var(--ax-border) inset;
+  transition: box-shadow var(--ax-duration-fast) var(--ax-ease);
+}
+
+.el-input__wrapper:hover,
+.el-textarea__inner:hover {
+  box-shadow: 0 0 0 1px var(--ax-border-strong) inset;
+}
+
+.el-input__wrapper.is-focus,
+.el-textarea__inner:focus {
+  box-shadow:
+    0 0 0 1px var(--ax-accent-bright) inset,
+    0 0 0 3px var(--ax-accent-ring);
+}
+
+.el-form-item__label {
+  color: var(--ax-text-3);
+  font-size: var(--ax-text-sm);
+  font-weight: var(--ax-weight-medium);
+}
+
+/* ---- Tables ---- */
+.el-table {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(255, 255, 255, 0.02);
+  --el-table-border-color: var(--ax-border-subtle);
+  --el-table-header-text-color: var(--ax-text-3);
+  --el-table-text-color: var(--ax-text-2);
+  --el-table-row-hover-bg-color: rgba(255, 255, 255, 0.03);
+  --el-table-fixed-left-column: transparent;
+  --el-table-fixed-right-column: transparent;
+}
+
+.el-table th.el-table__cell {
+  font-size: var(--ax-text-xs);
+  font-weight: var(--ax-weight-medium);
+  letter-spacing: 0.02em;
+}
+
+.el-table .el-table__cell {
+  padding: 10px 0;
+}
+
+/* ---- Dialogs, message boxes, dropdowns, tooltips ---- */
+.el-dialog,
+.el-message-box {
+  background: linear-gradient(180deg, var(--ax-elevated), var(--ax-raised));
+  border: 1px solid var(--ax-border);
+  border-radius: var(--ax-radius-lg);
+  box-shadow: var(--ax-shadow-lg);
+}
+
+.el-dialog__title,
+.el-message-box__title {
+  color: var(--ax-text);
+  font-size: var(--ax-text-md);
+  font-weight: var(--ax-weight-semibold);
+}
+
+.el-dialog__body,
+.el-message-box__content {
+  color: var(--ax-text-2);
+}
+
+.el-dropdown-menu,
+.el-select-dropdown {
+  padding: var(--ax-space-1);
+  background: var(--ax-elevated);
+  border: 1px solid var(--ax-border);
+  border-radius: var(--ax-radius-md);
+  box-shadow: var(--ax-shadow-md);
+}
+
+.el-dropdown-menu__item,
+.el-select-dropdown__item {
+  border-radius: var(--ax-radius-xs);
+  color: var(--ax-text-2);
+  font-weight: var(--ax-weight-regular);
+}
+
+.el-dropdown-menu__item:not(.is-disabled):hover,
+.el-select-dropdown__item.is-hovering {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--ax-text);
+}
+
+.el-dropdown-menu__item--divided {
+  border-top-color: var(--ax-border-subtle);
+}
+
+.el-popper.is-dark {
+  background: var(--ax-elevated);
+  border: 1px solid var(--ax-border);
+  color: var(--ax-text);
+  box-shadow: var(--ax-shadow-md);
+}
+
+.el-popper.is-dark .el-popper__arrow::before {
+  background: var(--ax-elevated);
+  border-color: var(--ax-border);
+}
+
+/* ---- Tags, pagination, alerts, messages, switch, progress, skeleton ---- */
+.el-tag {
+  border-radius: var(--ax-radius-xs);
+  font-weight: var(--ax-weight-medium);
+}
+
+.el-pagination {
+  --el-pagination-bg-color: transparent;
+  --el-pagination-button-bg-color: rgba(255, 255, 255, 0.03);
+  --el-pagination-hover-color: var(--ax-accent-hover);
+  --el-pagination-text-color: var(--ax-text-3);
+  font-weight: var(--ax-weight-medium);
+}
+
+.el-pagination.is-background .el-pager li.is-active {
+  background: var(--ax-accent);
+  color: #fff;
+}
+
+.el-alert {
+  border-radius: var(--ax-radius-md);
+}
+
+.el-message {
+  background: var(--ax-elevated);
+  border: 1px solid var(--ax-border);
+  border-radius: var(--ax-radius-sm);
+  box-shadow: var(--ax-shadow-md);
+}
+
+.el-message .el-message__content {
+  color: var(--ax-text-2);
+}
+
+.el-switch {
+  --el-switch-on-color: var(--ax-success);
+  --el-switch-off-color: rgba(255, 255, 255, 0.14);
+}
+
+.el-skeleton__item {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.04) 25%,
+    rgba(255, 255, 255, 0.08) 37%,
+    rgba(255, 255, 255, 0.04) 63%
+  );
+  background-size: 400% 100%;
+}

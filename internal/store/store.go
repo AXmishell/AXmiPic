@@ -272,6 +272,40 @@ func (r *Repository) TouchToken(ctx context.Context, id string) error {
 	return nil
 }
 
+// ListUsers returns all accounts ordered by creation time.
+func (r *Repository) ListUsers(ctx context.Context) ([]User, error) {
+	var users []User
+	if err := r.db.WithContext(ctx).Order("created_at ASC").Find(&users).Error; err != nil {
+		return nil, fmt.Errorf("store: list users: %w", err)
+	}
+	return users, nil
+}
+
+// UpdateUser applies optional field changes and returns the updated account.
+func (r *Repository) UpdateUser(ctx context.Context, id string, update UserUpdate) (*User, error) {
+	if _, err := r.GetUserByID(ctx, id); err != nil {
+		return nil, err
+	}
+	if err := r.db.WithContext(ctx).Model(&User{}).Where("id = ?", id).Updates(update).Error; err != nil {
+		return nil, fmt.Errorf("store: update user %q: %w", id, err)
+	}
+	return r.GetUserByID(ctx, id)
+}
+
+// ImageStats returns the image count and total stored bytes.
+func (r *Repository) ImageStats(ctx context.Context) (ImageStats, error) {
+	var stats ImageStats
+	if err := r.db.WithContext(ctx).Model(&Image{}).Count(&stats.Count).Error; err != nil {
+		return ImageStats{}, fmt.Errorf("store: count images: %w", err)
+	}
+	if err := r.db.WithContext(ctx).Model(&Image{}).
+		Select("COALESCE(SUM(size), 0)").
+		Scan(&stats.TotalBytes).Error; err != nil {
+		return ImageStats{}, fmt.Errorf("store: sum image size: %w", err)
+	}
+	return stats, nil
+}
+
 // ensureSQLiteDir creates the parent directory for a file-backed SQLite DSN.
 func ensureSQLiteDir(dsn string) error {
 	if dsn == "" || dsn == ":memory:" || strings.HasPrefix(dsn, "file:") {
