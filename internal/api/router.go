@@ -16,6 +16,7 @@ import (
 // Handler holds the dependencies shared by all HTTP handlers.
 type Handler struct {
 	svc            *service.UploadService
+	imaging        *service.ImagingService
 	storage        storage.Storage
 	maxUploadBytes int64
 	logger         *slog.Logger
@@ -23,9 +24,10 @@ type Handler struct {
 
 // NewHandler constructs the API handler set. maxUploadMB is the configured
 // single-file limit used to bound request bodies.
-func NewHandler(svc *service.UploadService, backend storage.Storage, maxUploadMB int, logger *slog.Logger) *Handler {
+func NewHandler(svc *service.UploadService, imagingSvc *service.ImagingService, backend storage.Storage, maxUploadMB int, logger *slog.Logger) *Handler {
 	return &Handler{
 		svc:            svc,
+		imaging:        imagingSvc,
 		storage:        backend,
 		maxUploadBytes: int64(maxUploadMB) << 20,
 		logger:         logger,

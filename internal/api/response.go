@@ -43,6 +43,10 @@ func (h *Handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, http.StatusBadRequest, http.StatusBadRequest, err.Error())
 	case errors.Is(err, service.ErrPresignUnsupported):
 		writeError(w, http.StatusNotImplemented, http.StatusNotImplemented, err.Error())
+	case errors.Is(err, service.ErrProcessingUnsupported):
+		writeError(w, http.StatusNotImplemented, http.StatusNotImplemented, err.Error())
+	case errors.Is(err, service.ErrProcessingFailed):
+		writeError(w, http.StatusUnprocessableEntity, http.StatusUnprocessableEntity, err.Error())
 	case errors.Is(err, service.ErrNotFound):
 		writeError(w, http.StatusNotFound, http.StatusNotFound, "image not found")
 	default:

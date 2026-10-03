@@ -46,5 +46,17 @@ upload:
     - "image/gif"
     - "image/webp"
 
+processing:
+  enabled: true
+  max_width: 4096
+  max_height: 4096
+  default_quality: 82
+  allowed_formats:
+    - "jpeg"
+    - "png"
+    - "gif"
+    - "webp"
+    - "avif"
+
 logging:
   level: "info"

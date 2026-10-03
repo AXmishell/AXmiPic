@@ -10,6 +10,8 @@ import (
 	"github.com/knadh/koanf/providers/env"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/v2"
+
+	"github.com/axmipic/axmipic/internal/imaging"
 )
 
 // envPrefix is the prefix used to override configuration through the environment.
@@ -48,16 +50,21 @@ var envPaths = map[string]string{
 	"qiniu_use_https":             "storage.qiniu.use_https",
 	"qiniu_presign_expiry_sec":    "storage.qiniu.presign_expiry_sec",
 	"upload_max_size_mb":          "upload.max_size_mb",
+	"processing_enabled":          "processing.enabled",
+	"processing_max_width":        "processing.max_width",
+	"processing_max_height":       "processing.max_height",
+	"processing_default_quality":  "processing.default_quality",
 	"logging_level":               "logging.level",
 }
 
 // Config is the top-level application configuration.
 type Config struct {
-	Server   ServerConfig   `koanf:"server"`
-	Database DatabaseConfig `koanf:"database"`
-	Storage  StorageConfig  `koanf:"storage"`
-	Upload   UploadConfig   `koanf:"upload"`
-	Logging  LoggingConfig  `koanf:"logging"`
+	Server     ServerConfig     `koanf:"server"`
+	Database   DatabaseConfig   `koanf:"database"`
+	Storage    StorageConfig    `koanf:"storage"`
+	Upload     UploadConfig     `koanf:"upload"`
+	Processing ProcessingConfig `koanf:"processing"`
+	Logging    LoggingConfig    `koanf:"logging"`
 }
 
 // ServerConfig configures the HTTP listener.
@@ -121,6 +128,15 @@ type UploadConfig struct {
 	AllowedMIMETypes []string `koanf:"allowed_mime_types"`
 }
 
+// ProcessingConfig configures on-the-fly image transformation.
+type ProcessingConfig struct {
+	Enabled        bool     `koanf:"enabled"`
+	MaxWidth       int      `koanf:"max_width"`
+	MaxHeight      int      `koanf:"max_height"`
+	DefaultQuality int      `koanf:"default_quality"`
+	AllowedFormats []string `koanf:"allowed_formats"`
+}
+
 // LoggingConfig configures logging.
 type LoggingConfig struct {
 	Level string `koanf:"level"`
@@ -146,6 +162,13 @@ func defaultConfig() Config {
 		Upload: UploadConfig{
 			MaxSizeMB:        20,
 			AllowedMIMETypes: []string{"image/jpeg", "image/png", "image/gif", "image/webp"},
+		},
+		Processing: ProcessingConfig{
+			Enabled:        true,
+			MaxWidth:       4096,
+			MaxHeight:      4096,
+			DefaultQuality: 82,
+			AllowedFormats: []string{"jpeg", "png", "gif", "webp", "avif"},
 		},
 		Logging: LoggingConfig{Level: "info"},
 	}
@@ -228,6 +251,22 @@ func (c Config) validate() error {
 	}
 	if len(c.Upload.AllowedMIMETypes) == 0 {
 		return fmt.Errorf("config: upload.allowed_mime_types must not be empty")
+	}
+	if c.Processing.Enabled {
+		if c.Processing.MaxWidth < 1 || c.Processing.MaxHeight < 1 {
+			return fmt.Errorf("config: processing max dimensions must be at least 1")
+		}
+		if c.Processing.DefaultQuality < 1 || c.Processing.DefaultQuality > 100 {
+			return fmt.Errorf("config: processing.default_quality must be between 1 and 100")
+		}
+		if len(c.Processing.AllowedFormats) == 0 {
+			return fmt.Errorf("config: processing.allowed_formats must not be empty")
+		}
+		for _, name := range c.Processing.AllowedFormats {
+			if _, ok := imaging.ParseFormat(name); !ok {
+				return fmt.Errorf("config: processing.allowed_formats contains unknown format %q", name)
+			}
+		}
 	}
 	return nil
 }

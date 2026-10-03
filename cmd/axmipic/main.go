@@ -12,6 +12,7 @@ import (
 
 	"github.com/axmipic/axmipic/internal/api"
 	"github.com/axmipic/axmipic/internal/config"
+	"github.com/axmipic/axmipic/internal/imaging"
 	"github.com/axmipic/axmipic/internal/server"
 	"github.com/axmipic/axmipic/internal/service"
 	"github.com/axmipic/axmipic/internal/storage"
@@ -58,7 +59,21 @@ func run() error {
 		PresignExpiry:    storagePresignExpiry(cfg),
 	})
 
-	handler := api.NewHandler(uploadSvc, storeBackend, cfg.Upload.MaxSizeMB, logger)
+	processor := imaging.Default()
+	capabilities := processor.Capabilities()
+	logger.Info("imaging processor ready",
+		slog.String("processor", capabilities.Name),
+		slog.Any("formats", capabilities.OutputFormats),
+	)
+	imagingSvc := service.NewImagingService(storeBackend, processor, service.ProcessingPolicy{
+		Enabled:        cfg.Processing.Enabled,
+		MaxWidth:       cfg.Processing.MaxWidth,
+		MaxHeight:      cfg.Processing.MaxHeight,
+		DefaultQuality: cfg.Processing.DefaultQuality,
+		AllowedFormats: processingFormats(cfg.Processing.AllowedFormats),
+	})
+
+	handler := api.NewHandler(uploadSvc, imagingSvc, storeBackend, cfg.Upload.MaxSizeMB, logger)
 	router := api.NewRouter(handler)
 	srv := server.New(cfg, logger, router)
 
@@ -66,6 +81,18 @@ func run() error {
 	defer stop()
 
 	return srv.Run(ctx)
+}
+
+// processingFormats converts configured format names into imaging formats,
+// skipping unknown names (already rejected during config validation).
+func processingFormats(names []string) []imaging.Format {
+	formats := make([]imaging.Format, 0, len(names))
+	for _, name := range names {
+		if f, ok := imaging.ParseFormat(name); ok {
+			formats = append(formats, f)
+		}
+	}
+	return formats
 }
 
 // storagePresignExpiry returns the presigned-upload lifetime for the active
