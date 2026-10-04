@@ -19,7 +19,11 @@ const pageTitle = computed(() => route.meta.title ?? '')
 
 async function handleCommand(command: string | number | object): Promise<void> {
   if (command === 'settings') {
-    await router.push('/settings')
+    await router.push(auth.isAdmin ? '/admin/settings' : '/user/settings')
+    return
+  }
+  if (command === 'home') {
+    await router.push('/')
     return
   }
   if (command === 'logout') {
@@ -89,6 +93,9 @@ async function handleCommand(command: string | number | object): Promise<void> {
       </button>
       <template #dropdown>
         <el-dropdown-menu>
+          <el-dropdown-item command="home">
+            <el-icon><Setting /></el-icon>返回首页
+          </el-dropdown-item>
           <el-dropdown-item command="settings">
             <el-icon><Setting /></el-icon>账号设置
           </el-dropdown-item>

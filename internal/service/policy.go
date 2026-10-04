@@ -460,9 +460,34 @@ func (s *PolicyService) ResolveForCustomer(ctx context.Context, customerID strin
 	return s.ResolveDefault(ctx)
 }
 
+// ResolveGuest 解析 Guest 访客角色组生效的策略；没有 Guest 组时回退默认组。
+func (s *PolicyService) ResolveGuest(ctx context.Context) (*EffectivePolicies, error) {
+	groups, err := s.repo.ListRoleGroups(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("resolve guest policies: %w", err)
+	}
+	for i := range groups {
+		if groups[i].RoleGroup.Name == GuestRoleGroupName {
+			group, err := s.repo.GetRoleGroupByID(ctx, groups[i].RoleGroup.ID)
+			if err != nil {
+				return nil, fmt.Errorf("resolve guest policies: %w", err)
+			}
+			return s.resolveGroup(ctx, group)
+		}
+	}
+	return s.ResolveDefault(ctx)
+}
+
 // UploadLimitsFor 实现 UploadPolicyResolver：返回某个主体生效的上传限制。
+// 访客使用 Guest 角色组策略。
 func (s *PolicyService) UploadLimitsFor(ctx context.Context, principal *auth.Principal) (UploadLimits, error) {
-	effective, err := s.ResolveForCustomer(ctx, principal.UserID)
+	var effective *EffectivePolicies
+	var err error
+	if principal.IsGuest() {
+		effective, err = s.ResolveGuest(ctx)
+	} else {
+		effective, err = s.ResolveForCustomer(ctx, principal.UserID)
+	}
 	if err != nil {
 		return UploadLimits{}, err
 	}
@@ -538,6 +563,55 @@ func (s *PolicyService) SeedDefaults(ctx context.Context) error {
 		return fmt.Errorf("seed role groups: %w", err)
 	}
 	return nil
+}
+
+// GuestRoleGroupName 是访客角色组的固定名称。
+const GuestRoleGroupName = "Guest 访客"
+
+// SeedGuestRoleGroup 创建（或返回已存在的）Guest 访客角色组，并绑定一组受限
+// 策略：更小的上传体积与配额，且关闭广场、分享、令牌等功能开关。它是幂等的。
+func (s *PolicyService) SeedGuestRoleGroup(ctx context.Context, quotaBytes, uploadMaxBytes int64) (*store.RoleGroup, error) {
+	if existing, err := s.repo.ListRoleGroups(ctx); err == nil {
+		for i := range existing {
+			if existing[i].RoleGroup.Name == GuestRoleGroupName {
+				return &existing[i].RoleGroup, nil
+			}
+		}
+	} else {
+		return nil, fmt.Errorf("seed guest role group: %w", err)
+	}
+
+	group := &store.RoleGroup{
+		ID:          uuid.NewString(),
+		Name:        GuestRoleGroupName,
+		Description: "未登录访客使用的低权角色组，仅允许有限上传。",
+		IsDefault:   false,
+	}
+	if err := s.repo.CreateRoleGroup(ctx, group); err != nil {
+		return nil, fmt.Errorf("seed guest role group: %w", err)
+	}
+	guestFeatures := []string{FeatureBatchUpload, FeaturePasteUpload, FeatureEmbedCode}
+	policies := []PolicyInput{
+		{Name: "访客配额", Type: store.PolicyTypeQuota, Enabled: true,
+			Settings: json.RawMessage(mustJSON(quotaConfig{QuotaMB: int64Ptr(quotaBytes >> 20)}))},
+		{Name: "访客上传限制", Type: store.PolicyTypeUpload, Enabled: true,
+			Settings: json.RawMessage(mustJSON(uploadConfig{
+				MaxSizeMB:        int64Ptr(uploadMaxBytes >> 20),
+				AllowedMIMETypes: s.defaults.AllowedMIMETypes,
+			}))},
+		{Name: "访客功能开关", Type: store.PolicyTypeFeature, Enabled: true,
+			Settings: json.RawMessage(mustJSON(featureConfig{Features: guestFeatures}))},
+	}
+	for _, in := range policies {
+		dto, err := s.CreatePolicy(ctx, in)
+		if err != nil {
+			return nil, fmt.Errorf("seed guest role group: %w", err)
+		}
+		if err := s.repo.AttachPolicy(ctx, group.ID, dto.ID); err != nil {
+			return nil, fmt.Errorf("seed guest role group: %w", err)
+		}
+	}
+	return group, nil
 }
 
 // CheckDefaultRoleGroup 在注册时可用：返回默认角色组（如存在）。

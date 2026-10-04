@@ -66,6 +66,12 @@ var envPaths = map[string]string{
 	"auth_require_auth":           "auth.require_auth",
 	"auth_default_quota_mb":       "auth.default_quota_mb",
 	"auth_bootstrap_admin":        "auth.bootstrap_admin",
+	"auth_allow_guest_upload":     "auth.allow_guest_upload",
+	"auth_guest_quota_mb":         "auth.guest_quota_mb",
+	"auth_guest_upload_max_mb":    "auth.guest_upload_max_mb",
+	"install_lock_file":           "install.lock_file",
+	"install_config_path":         "install.config_path",
+	"install_disabled":            "install.disabled",
 	"limits_upload_per_minute":    "limits.upload_per_minute",
 	"limits_upload_burst":         "limits.upload_burst",
 	"limits_guest_per_minute":     "limits.guest_per_minute",
@@ -114,6 +120,7 @@ type Config struct {
 	Security   SecurityConfig   `koanf:"security"`
 	SMS        SMSConfig        `koanf:"sms"`
 	Email      EmailConfig      `koanf:"email"`
+	Install    InstallConfig    `koanf:"install"`
 	Logging    LoggingConfig    `koanf:"logging"`
 }
 
@@ -212,6 +219,22 @@ type AuthConfig struct {
 	RequireAuth       bool   `koanf:"require_auth"`
 	DefaultQuotaMB    int    `koanf:"default_quota_mb"`
 	BootstrapAdmin    string `koanf:"bootstrap_admin"`
+	// AllowGuestUpload 允许未登录访客上传（使用 Guest 角色策略）。
+	AllowGuestUpload bool `koanf:"allow_guest_upload"`
+	// GuestQuotaMB 为 Guest 角色的存储配额（0 表示不限）。
+	GuestQuotaMB int `koanf:"guest_quota_mb"`
+	// GuestUploadMaxMB 为 Guest 单文件大小上限。
+	GuestUploadMaxMB int `koanf:"guest_upload_max_mb"`
+}
+
+// InstallConfig 配置安装向导与锁文件。
+type InstallConfig struct {
+	// LockFile 为安装锁文件路径；存在即视为已安装。
+	LockFile string `koanf:"lock_file"`
+	// ConfigPath 为安装向导写入的配置文件路径。
+	ConfigPath string `koanf:"config_path"`
+	// Disabled 为 true 时跳过安装检查（用于测试或容器编排）。
+	Disabled bool `koanf:"disabled"`
 }
 
 // LimitsConfig 配置按调用方的速率限制。
@@ -346,6 +369,7 @@ func defaultConfig() Config {
 		Security: SecurityConfig{Scanner: "builtin", CloudProcessor: "local"},
 		SMS:      SMSConfig{Method: "POST"},
 		Email:    EmailConfig{Port: 587},
+		Install:  InstallConfig{LockFile: "./data/install.lock", ConfigPath: "./configs/config.yaml"},
 		Logging:  LoggingConfig{Level: "info"},
 	}
 }

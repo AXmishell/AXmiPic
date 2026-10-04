@@ -6,7 +6,9 @@ import { ArrowRight, Bell, Close, Coin, Folder, Grid, Key, MagicStick, Managemen
 import QuotaMeter from '@/components/QuotaMeter.vue'
 import { useAuthStore } from '@/stores/auth'
 
-defineProps<{ open: boolean }>()
+const props = withDefaults(defineProps<{ open: boolean; variant?: 'user' | 'admin' }>(), {
+  variant: 'user',
+})
 const emit = defineEmits<{ (event: 'close'): void }>()
 
 interface NavItem {
@@ -24,40 +26,62 @@ interface NavGroup {
 const auth = useAuthStore()
 const route = useRoute()
 
-const groups = computed<NavGroup[]>(() => {
-  const list: NavGroup[] = [
-    {
-      label: '概览',
-      items: [{ label: '仪表盘', to: '/', icon: Odometer, exact: true }],
-    },
-    {
-      label: '资源',
-      items: [
-        { label: '图片管理', to: '/images', icon: Picture },
-        { label: '图片处理', to: '/processing', icon: MagicStick },
-        { label: '相册', to: '/albums', icon: Folder },
-        { label: '图片广场', to: '/plaza', icon: Grid },
-        { label: '我的分享', to: '/shares', icon: Share },
-        { label: '访问令牌', to: '/tokens', icon: Key },
-        { label: '套餐', to: '/pricing', icon: ShoppingCart },
-        { label: '工单', to: '/tickets', icon: Service },
-      ],
-    },
-  ]
-  if (auth.isAdmin) {
-    list.push({
-      label: '管理',
-      items: [
-        { label: '用户管理', to: '/users', icon: User },
-        { label: '存储配置', to: '/storage', icon: Coin },
-        { label: '角色策略', to: '/policies', icon: Management },
-        { label: '站点内容', to: '/site', icon: Bell },
-        { label: '计费管理', to: '/billing', icon: ShoppingCart },
-      ],
-    })
-  }
-  return list
-})
+/** 普通用户控制台导航。 */
+const userGroups: NavGroup[] = [
+  {
+    label: '概览',
+    items: [{ label: '用户中心', to: '/user', icon: Odometer, exact: true }],
+  },
+  {
+    label: '资源',
+    items: [
+      { label: '我的图片', to: '/user/images', icon: Picture },
+      { label: '图片处理', to: '/user/processing', icon: MagicStick },
+      { label: '我的相册', to: '/user/albums', icon: Folder },
+      { label: '图片广场', to: '/user/plaza', icon: Grid },
+      { label: '我的分享', to: '/user/shares', icon: Share },
+      { label: '访问令牌', to: '/user/tokens', icon: Key },
+    ],
+  },
+  {
+    label: '账户',
+    items: [
+      { label: '套餐', to: '/user/pricing', icon: ShoppingCart },
+      { label: '工单', to: '/user/tickets', icon: Service },
+      { label: '账号设置', to: '/user/settings', icon: Setting },
+    ],
+  },
+]
+
+/** 管理员控制台导航。 */
+const adminGroups: NavGroup[] = [
+  {
+    label: '概览',
+    items: [{ label: '仪表盘', to: '/admin', icon: Odometer, exact: true }],
+  },
+  {
+    label: '内容',
+    items: [
+      { label: '用户管理', to: '/admin/users', icon: User },
+      { label: '图片广场', to: '/admin/plaza', icon: Grid },
+      { label: '站点内容', to: '/admin/site', icon: Bell },
+    ],
+  },
+  {
+    label: '运营',
+    items: [
+      { label: '角色策略', to: '/admin/policies', icon: Management },
+      { label: '计费管理', to: '/admin/billing', icon: ShoppingCart },
+      { label: '存储配置', to: '/admin/storage', icon: Coin },
+    ],
+  },
+  {
+    label: '系统',
+    items: [{ label: '账号设置', to: '/admin/settings', icon: Setting }],
+  },
+]
+
+const groups = computed<NavGroup[]>(() => (props.variant === 'admin' ? adminGroups : userGroups))
 
 function isActive(item: NavItem): boolean {
   return item.exact ? route.path === item.to : route.path.startsWith(item.to)
@@ -67,7 +91,7 @@ function isActive(item: NavItem): boolean {
 <template>
   <aside class="sidebar" :class="{ 'is-open': open }" aria-label="主导航">
     <div class="sidebar__brand">
-      <router-link to="/" class="brand" aria-label="AXmiPic 控制台首页">
+      <router-link :to="variant === 'admin' ? '/admin' : '/user'" class="brand" aria-label="AXmiPic 控制台首页">
         <span class="brand__mark" aria-hidden="true">
           <svg viewBox="0 0 32 32" width="18" height="18">
             <defs>
@@ -81,7 +105,7 @@ function isActive(item: NavItem): boolean {
         </span>
         <span class="brand__text">
           <span class="brand__name">AXmiPic</span>
-          <span class="brand__sub">图床控制台</span>
+          <span class="brand__sub">{{ variant === 'admin' ? '管理控制台' : '用户中心' }}</span>
         </span>
       </router-link>
       <button class="sidebar__close" type="button" aria-label="关闭导航菜单" @click="emit('close')">
@@ -118,10 +142,10 @@ function isActive(item: NavItem): boolean {
         :quota="auth.user.quota_bytes"
       />
       <router-link
-        to="/settings"
+        :to="variant === 'admin' ? '/admin/settings' : '/user/settings'"
         class="nav-item nav-item--footer"
-        :class="{ 'is-active': route.path.startsWith('/settings') }"
-        :aria-current="route.path.startsWith('/settings') ? 'page' : undefined"
+        :class="{ 'is-active': route.path.endsWith('/settings') }"
+        :aria-current="route.path.endsWith('/settings') ? 'page' : undefined"
         @click="emit('close')"
       >
         <span class="nav-item__rail" aria-hidden="true" />

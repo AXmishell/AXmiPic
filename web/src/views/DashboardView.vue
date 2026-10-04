@@ -198,24 +198,24 @@ onMounted(load)
           <div class="ax-card__body stack-actions">
             <div class="quick-action">
               <div class="quick-action__text">
-                <strong>管理图片</strong>
-                <span>查看、复制链接或删除已上传的图片</span>
+                <strong>用户管理</strong>
+                <span>查看用户、调整角色组或禁用账号</span>
               </div>
-              <el-button size="small" @click="router.push('/images')">前往</el-button>
+              <el-button size="small" @click="router.push('/admin/users')">前往</el-button>
             </div>
             <div class="quick-action">
               <div class="quick-action__text">
-                <strong>访问令牌</strong>
-                <span>创建或吊销用于 API 上传的访问令牌</span>
+                <strong>站点内容</strong>
+                <span>发布公告、处理举报与独立页面</span>
               </div>
-              <el-button size="small" @click="router.push('/tokens')">前往</el-button>
+              <el-button size="small" @click="router.push('/admin/site')">前往</el-button>
             </div>
-            <div v-if="isAdmin" class="quick-action">
+            <div class="quick-action">
               <div class="quick-action__text">
-                <strong>用户管理</strong>
-                <span>调整角色、启用或禁用账号</span>
+                <strong>计费管理</strong>
+                <span>维护套餐、优惠券与工单</span>
               </div>
-              <el-button size="small" @click="router.push('/users')">前往</el-button>
+              <el-button size="small" @click="router.push('/admin/billing')">前往</el-button>
             </div>
           </div>
         </article>

@@ -153,6 +153,55 @@ func (s *AccountService) RegisterCustomer(ctx context.Context, username, passwor
 	return toUserDTO(accountFromCustomer(customer)), nil
 }
 
+// GuestUsername 是内置访客账户的用户名。
+const GuestUsername = "guest"
+
+// EnsureGuestAccount 确保存在一个低权 Guest 账户，并把它归入 guestRoleGroupID。
+// 当 allowGuestUpload 为 true 时，未登录访客将以该账户的身份上传。它返回创建
+// 的账户（已存在时返回 nil）。密码被设为随机值，因此该账户不能通过登录进入。
+func (s *AccountService) EnsureGuestAccount(ctx context.Context, guestRoleGroupID string, quotaBytes int64) (*store.Customer, error) {
+	if _, err := s.repo.GetAccountByUsername(ctx, store.RoleCustomer, GuestUsername); err == nil {
+		return nil, nil
+	} else if !errors.Is(err, store.ErrNotFound) {
+		return nil, fmt.Errorf("ensure guest: lookup: %w", err)
+	}
+	randomPassword, _, _, err := auth.GenerateAPIToken()
+	if err != nil {
+		return nil, fmt.Errorf("ensure guest: generate password: %w", err)
+	}
+	hash, err := auth.HashPassword(randomPassword)
+	if err != nil {
+		return nil, fmt.Errorf("ensure guest: hash password: %w", err)
+	}
+	var roleGroupID *string
+	if strings.TrimSpace(guestRoleGroupID) != "" {
+		roleGroupID = &guestRoleGroupID
+	}
+	customer := &store.Customer{
+		ID:           uuid.NewString(),
+		Username:     GuestUsername,
+		PasswordHash: hash,
+		QuotaBytes:   quotaBytes,
+		RoleGroupID:  roleGroupID,
+	}
+	if err := s.repo.CreateCustomer(ctx, customer); err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "unique") {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("ensure guest: create: %w", err)
+	}
+	return customer, nil
+}
+
+// GuestID 返回内置访客账户的 id；账户不存在时返回空字符串。
+func (s *AccountService) GuestID(ctx context.Context) string {
+	account, err := s.repo.GetAccountByUsername(ctx, store.RoleCustomer, GuestUsername)
+	if err != nil {
+		return ""
+	}
+	return account.ID
+}
+
 // RegisterAdmin 在 admins 表中创建一个管理员账户。
 func (s *AccountService) RegisterAdmin(ctx context.Context, username, password string) (*UserDTO, error) {
 	username = strings.ToLower(strings.TrimSpace(username))

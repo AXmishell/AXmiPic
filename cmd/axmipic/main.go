@@ -50,6 +50,12 @@ func run() error {
 	logger := newLogger(cfg.Logging.Level)
 	slog.SetDefault(logger)
 
+	installSvc := service.NewInstallService(cfg.Install.LockFile, cfg.Install.ConfigPath, cfg.Install.Disabled)
+	installed := installSvc.IsInstalled()
+	if !installed {
+		logger.Warn("AXmiPic is not installed yet; visit /install to run the setup wizard")
+	}
+
 	repo, err := store.Open(cfg.Database.Driver, cfg.Database.DSN)
 	if err != nil {
 		return err
@@ -136,24 +142,36 @@ func run() error {
 	})
 
 	bootstrapCtx, cancelBootstrap = context.WithTimeout(context.Background(), 30*time.Second)
-	err = accounts.EnsureBootstrapAdmin(bootstrapCtx, cfg.Auth.BootstrapAdmin)
-	if err == nil {
-		err = policies.SeedDefaults(bootstrapCtx)
+	if installed {
+		err = accounts.EnsureBootstrapAdmin(bootstrapCtx, cfg.Auth.BootstrapAdmin)
+		if err == nil {
+			err = policies.SeedDefaults(bootstrapCtx)
+		}
+		if err == nil {
+			err = seedGuest(bootstrapCtx, policies, accounts, cfg)
+		}
 	}
 	cancelBootstrap()
 	if err != nil {
 		return err
 	}
 
-	if adopted, adoptErr := policies.AdoptUnassigned(context.Background()); adoptErr != nil {
-		logger.Warn("failed to assign existing users to the default role group", slog.Any("error", adoptErr))
-	} else if adopted > 0 {
-		logger.Info("assigned existing users to the default role group", slog.Int64("count", adopted))
+	if installed {
+		if adopted, adoptErr := policies.AdoptUnassigned(context.Background()); adoptErr != nil {
+			logger.Warn("failed to assign existing users to the default role group", slog.Any("error", adoptErr))
+		} else if adopted > 0 {
+			logger.Info("assigned existing users to the default role group", slog.Int64("count", adopted))
+		}
 	}
 
 	uploadSvc.SetPolicyResolver(policies)
 	accounts.SetPolicyService(policies)
 	adminSvc.SetPolicyService(policies)
+
+	installSeed := func(ctx context.Context, target *store.Repository, in service.InstallInput) error {
+		return runInstallSeed(ctx, target, policies, in, cfg, logger)
+	}
+
 	switch cfg.Security.Scanner {
 	case "builtin":
 		uploadSvc.SetScanner(security.NewBlockingScanner(cfg.Upload.AllowedMIMETypes))
@@ -238,17 +256,21 @@ func run() error {
 		Site:          siteSvc,
 		Billing:       billingSvc,
 		Notify:        notifySvc,
+		Install:       installSvc,
+		InstallRepo:   store.Open,
+		InstallSeed:   installSeed,
 		Authenticator: auth.NewAuthenticator(repo, issuer),
 		UploadLimiter: &auth.UploadLimiter{
 			User:  auth.NewRateLimiter(cfg.Limits.UploadPerMinute, cfg.Limits.UploadBurst),
 			Guest: auth.NewRateLimiter(cfg.Limits.GuestPerMinute, cfg.Limits.GuestBurst),
 		},
-		ImageLimiter: auth.NewRateLimiter(cfg.Limits.ImagePerMinute, cfg.Limits.ImageBurst),
-		RequireAuth:  cfg.Auth.RequireAuth,
-		TrustProxy:   cfg.Server.TrustProxy,
-		MaxUploadMB:  cfg.Upload.MaxSizeMB,
-		Static:       webui.Handler(),
-		Logger:       logger,
+		ImageLimiter:     auth.NewRateLimiter(cfg.Limits.ImagePerMinute, cfg.Limits.ImageBurst),
+		RequireAuth:      cfg.Auth.RequireAuth,
+		AllowGuestUpload: cfg.Auth.AllowGuestUpload,
+		TrustProxy:       cfg.Server.TrustProxy,
+		MaxUploadMB:      cfg.Upload.MaxSizeMB,
+		Static:           webui.Handler(),
+		Logger:           logger,
 	})
 	srv := server.New(cfg, logger, router)
 
@@ -335,6 +357,92 @@ func processingFormats(names []string) []imaging.Format {
 		}
 	}
 	return formats
+}
+
+// seedGuest 确保 Guest 访客角色组与 Guest 账户存在，并按配置决定访客是否可上传。
+func seedGuest(ctx context.Context, policies *service.PolicyService, accounts *service.AccountService, cfg config.Config) error {
+	guestQuota := int64(cfg.Auth.GuestQuotaMB) << 20
+	guestUpload := int64(cfg.Auth.GuestUploadMaxMB) << 20
+	if guestUpload <= 0 {
+		guestUpload = int64(cfg.Upload.MaxSizeMB) << 20
+	}
+	group, err := policies.SeedGuestRoleGroup(ctx, guestQuota, guestUpload)
+	if err != nil {
+		return err
+	}
+	if _, err := accounts.EnsureGuestAccount(ctx, group.ID, guestQuota); err != nil {
+		return err
+	}
+	return nil
+}
+
+// runInstallSeed 在安装向导中针对新建仓库完成初始化：创建管理员、播种默认与
+// Guest 角色组，并创建 Guest 账户。
+func runInstallSeed(ctx context.Context, target *store.Repository, policies *service.PolicyService, in service.InstallInput, cfg config.Config, logger *slog.Logger) error {
+	issuer, err := newInstallIssuer(cfg)
+	if err != nil {
+		return err
+	}
+	accounts := service.NewAccountService(target, issuer, in.AllowRegistration, int64(cfg.Auth.DefaultQuotaMB)<<20)
+	accounts.SetPolicyService(policies)
+
+	// 基于向导输入构造策略服务（指向同一仓库）。
+	policySvc := service.NewPolicyService(target, policyDefaultsFor(cfg))
+	if err := policySvc.SeedDefaults(ctx); err != nil {
+		return err
+	}
+
+	if _, err := accounts.RegisterAdmin(ctx, in.AdminUsername, in.AdminPassword); err != nil {
+		return err
+	}
+
+	guestUpload := int64(cfg.Auth.GuestUploadMaxMB) << 20
+	if guestUpload <= 0 {
+		guestUpload = int64(cfg.Upload.MaxSizeMB) << 20
+	}
+	group, err := policySvc.SeedGuestRoleGroup(ctx, int64(cfg.Auth.GuestQuotaMB)<<20, guestUpload)
+	if err != nil {
+		return err
+	}
+	if _, err := accounts.EnsureGuestAccount(ctx, group.ID, int64(cfg.Auth.GuestQuotaMB)<<20); err != nil {
+		return err
+	}
+	logger.Info("installation initialized",
+		slog.String("admin", in.AdminUsername),
+		slog.String("guest_group", group.ID),
+	)
+	return nil
+}
+
+// newInstallIssuer 为安装过程构造一个临时的会话签发器（用于创建管理员账户）。
+func newInstallIssuer(cfg config.Config) (*auth.SessionIssuer, error) {
+	key := strings.TrimSpace(cfg.Auth.JWTSecret)
+	if key == "" {
+		key = "axmipic-install-temporary-secret"
+	}
+	return auth.NewSessionIssuer([]byte(key), time.Duration(cfg.Auth.SessionTTLHours)*time.Hour), nil
+}
+
+// policyDefaultsFor 从配置构造策略默认值。
+func policyDefaultsFor(cfg config.Config) service.PolicyDefaults {
+	return service.PolicyDefaults{
+		QuotaBytes:       int64(cfg.Auth.DefaultQuotaMB) << 20,
+		UploadMaxBytes:   int64(cfg.Upload.MaxSizeMB) << 20,
+		AllowedMIMETypes: cfg.Upload.AllowedMIMETypes,
+		Rate: service.RateSettings{
+			UploadPerMinute: cfg.Limits.UploadPerMinute,
+			UploadBurst:     cfg.Limits.UploadBurst,
+			ImagePerMinute:  cfg.Limits.ImagePerMinute,
+			ImageBurst:      cfg.Limits.ImageBurst,
+		},
+		Processing: service.ProcessingSettings{
+			Enabled:        cfg.Processing.Enabled,
+			MaxWidth:       cfg.Processing.MaxWidth,
+			MaxHeight:      cfg.Processing.MaxHeight,
+			DefaultQuality: cfg.Processing.DefaultQuality,
+			AllowedFormats: cfg.Processing.AllowedFormats,
+		},
+	}
 }
 
 // runPendingUploadJanitor 定期删除过期的待处理上传及其遗留的孤立对象。

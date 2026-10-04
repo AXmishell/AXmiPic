@@ -5,6 +5,8 @@ import { useRoute } from 'vue-router'
 import AppSidebar from '@/components/AppSidebar.vue'
 import AppTopbar from '@/components/AppTopbar.vue'
 
+withDefaults(defineProps<{ variant?: 'user' | 'admin' }>(), { variant: 'admin' })
+
 const route = useRoute()
 const drawerOpen = ref(false)
 
@@ -20,7 +22,7 @@ watch(
   <div class="app-shell">
     <a class="skip-link" href="#main-content">跳到主要内容</a>
 
-    <AppSidebar :open="drawerOpen" @close="drawerOpen = false" />
+    <AppSidebar :open="drawerOpen" :variant="variant" @close="drawerOpen = false" />
 
     <div class="app-frame">
       <AppTopbar @toggle-menu="drawerOpen = !drawerOpen" />

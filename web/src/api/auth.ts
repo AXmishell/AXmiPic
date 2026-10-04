@@ -21,3 +21,34 @@ export function fetchMe(): Promise<User> {
 export function fetchPolicies(): Promise<EffectivePolicies> {
   return request<EffectivePolicies>({ method: 'GET', url: '/auth/policies' })
 }
+
+/** 安装状态。 */
+export interface InstallStatus {
+  installed: boolean
+  lock_file?: string
+  reasons?: string[]
+}
+
+/** 安装向导提交的配置。 */
+export interface InstallInput {
+  site_name: string
+  base_url: string
+  database_driver: string
+  database_dsn: string
+  admin_username: string
+  admin_password: string
+  storage_driver: string
+  storage_root: string
+  allow_registration: boolean
+  allow_guest_upload: boolean
+}
+
+/** 读取安装状态（无需登录）。 */
+export function fetchInstallStatus(): Promise<InstallStatus> {
+  return request<InstallStatus>({ method: 'GET', url: '/install/status' })
+}
+
+/** 执行安装初始化。 */
+export function runInstall(input: InstallInput): Promise<{ installed: boolean }> {
+  return request<{ installed: boolean }>({ method: 'POST', url: '/install', data: input })
+}

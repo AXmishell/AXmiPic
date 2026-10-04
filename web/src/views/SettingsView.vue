@@ -172,7 +172,7 @@ onMounted(load)
           </header>
           <div class="ax-card__body settings-quota">
             <QuotaMeter :used="me.used_bytes" :quota="me.quota_bytes" />
-            <el-button size="small" :icon="Key" @click="router.push('/tokens')">
+            <el-button size="small" :icon="Key" @click="router.push(auth.isAdmin ? '/admin/settings' : '/user/tokens')">
               管理访问令牌
             </el-button>
           </div>

@@ -126,7 +126,7 @@ async function remove(album: Album): Promise<void> {
 }
 
 function viewImages(album: Album): void {
-  void router.push({ name: 'images', query: { album_id: album.id } })
+  void router.push({ name: 'user-images', query: { album_id: album.id } })
 }
 
 // 分享

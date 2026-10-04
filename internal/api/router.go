@@ -2,6 +2,7 @@
 package api
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/AXmishell/axmipic/internal/auth"
 	"github.com/AXmishell/axmipic/internal/service"
+	"github.com/AXmishell/axmipic/internal/store"
 )
 
 // Deps 是构建 API 路由所需的依赖项。
@@ -27,13 +29,20 @@ type Deps struct {
 	Site          *service.SiteService
 	Billing       *service.BillingService
 	Notify        *service.NotifyService
+	Install       *service.InstallService
 	Authenticator *auth.Authenticator
 	UploadLimiter *auth.UploadLimiter
 	// ImageLimiter 按 IP 对公开图片服务和转换进行限流。
 	ImageLimiter *auth.RateLimiter
+	// InstallRepo 按安装输入的数据库参数打开仓库。
+	InstallRepo func(driver, dsn string) (*store.Repository, error)
+	// InstallSeed 在安装过程中创建管理员、角色组与 Guest 账户。
+	InstallSeed func(ctx context.Context, repo *store.Repository, in service.InstallInput) error
 	// Static 非 nil 时，为未匹配的路由提供单页应用服务。
 	Static      http.Handler
 	RequireAuth bool
+	// AllowGuestUpload 允许未登录访客上传（使用 Guest 角色策略）。
+	AllowGuestUpload bool
 	// TrustProxy 启用从 X-Forwarded-For / X-Real-IP 解析客户端 IP。
 	TrustProxy  bool
 	MaxUploadMB int
@@ -53,6 +62,9 @@ type Handler struct {
 	site           *service.SiteService
 	billing        *service.BillingService
 	notify         *service.NotifyService
+	install        *service.InstallService
+	installRepo    func(driver, dsn string) (*store.Repository, error)
+	installSeed    func(ctx context.Context, repo *store.Repository, in service.InstallInput) error
 	maxUploadBytes int64
 	logger         *slog.Logger
 }
@@ -71,6 +83,9 @@ func NewRouter(d Deps) http.Handler {
 		site:           d.Site,
 		billing:        d.Billing,
 		notify:         d.Notify,
+		install:        d.Install,
+		installRepo:    d.InstallRepo,
+		installSeed:    d.InstallSeed,
 		maxUploadBytes: int64(d.MaxUploadMB) << 20,
 		logger:         d.Logger,
 	}
@@ -92,6 +107,10 @@ func NewRouter(d Deps) http.Handler {
 	r.With(d.ImageLimiter.Middleware).Head("/i/*", h.serveImage)
 
 	r.Route("/api/v1", func(r chi.Router) {
+		// 安装状态与安装接口无需认证，且在未安装时也应可用。
+		r.Get("/install/status", h.installStatus)
+		r.Post("/install", h.runInstall)
+
 		r.Group(func(r chi.Router) {
 			r.Use(d.UploadLimiter.Middleware)
 			r.Post("/auth/register", h.register)
@@ -119,7 +138,7 @@ func NewRouter(d Deps) http.Handler {
 			})
 
 			r.Group(func(r chi.Router) {
-				if d.RequireAuth {
+				if d.RequireAuth && !d.AllowGuestUpload {
 					r.Use(auth.RequireAuth)
 				}
 				r.Use(d.UploadLimiter.Middleware)

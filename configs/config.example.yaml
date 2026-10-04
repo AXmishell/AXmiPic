@@ -96,6 +96,20 @@ auth:
   # Optional "username:password" seeded as an admin when the admins table is
   # empty. Manage admins separately from ordinary users via /admin/.
   bootstrap_admin: ""
+  # Allow anonymous guests to upload using the restricted Guest role group.
+  allow_guest_upload: true
+  # Guest role limits (MiB). 0 means unlimited quota.
+  guest_quota_mb: 64
+  guest_upload_max_mb: 5
+
+install:
+  # When this lock file exists the instance is considered installed. Remove it
+  # (and the database) to re-run the setup wizard at /install.
+  lock_file: "./data/install.lock"
+  # Config file rewritten by the setup wizard.
+  config_path: "./configs/config.yaml"
+  # Skip the install check entirely (useful for tests / orchestration).
+  disabled: false
 
 limits:
   upload_per_minute: 30
