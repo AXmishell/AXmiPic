@@ -40,6 +40,7 @@ func Open(driver, dsn string) (*Repository, error) {
 		&Image{}, &PendingUpload{}, &Admin{}, &Customer{}, &APIToken{},
 		&StorageBackend{}, &Album{}, &RoleGroup{}, &Policy{}, &RoleGroupPolicy{},
 		&Share{}, &Announcement{}, &Report{}, &Page{},
+		&Plan{}, &Order{}, &Coupon{}, &CouponRedemption{}, &Ticket{}, &TicketMessage{},
 	); err != nil {
 		return nil, fmt.Errorf("store: migrate: %w", err)
 	}

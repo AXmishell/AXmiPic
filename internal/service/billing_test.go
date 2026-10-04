@@ -1,0 +1,176 @@
+package service_test
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"github.com/AXmishell/axmipic/internal/auth"
+	"github.com/AXmishell/axmipic/internal/payment"
+	"github.com/AXmishell/axmipic/internal/service"
+	"github.com/AXmishell/axmipic/internal/store"
+)
+
+func newBilling(t *testing.T) (*service.BillingService, *store.Repository) {
+	t.Helper()
+	repo := newRepo(t)
+	svc := service.NewBillingService(repo, "http://example.test",
+		[]payment.Gateway{payment.ManualGateway{}}, "manual")
+	return svc, repo
+}
+
+func TestPlanAndFreeOrder(t *testing.T) {
+	svc, repo := newBilling(t)
+	ctx := context.Background()
+	newCustomer(t, repo, "u1")
+	u1 := &auth.Principal{UserID: "u1", Username: "u1", Role: auth.RoleUser}
+
+	plan, err := svc.CreatePlan(ctx, service.PlanInput{Name: "免费套餐", PriceCents: 0, QuotaMB: 256, Active: true})
+	if err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+	if _, err := svc.CreatePlan(ctx, service.PlanInput{Name: "免费套餐", Active: true}); !errors.Is(err, service.ErrInvalidInput) {
+		t.Fatalf("duplicate plan err = %v, want ErrInvalidInput", err)
+	}
+
+	order, err := svc.CreateOrder(ctx, u1, plan.ID, "", "")
+	if err != nil {
+		t.Fatalf("CreateOrder: %v", err)
+	}
+	// 免费订单创建后即完成。
+	if order.Status != store.OrderPaid {
+		t.Fatalf("free order status = %q, want paid", order.Status)
+	}
+	account, err := repo.GetAccountByID(ctx, store.RoleCustomer, "u1")
+	if err != nil {
+		t.Fatalf("GetAccountByID: %v", err)
+	}
+	if account.QuotaBytes != 256<<20 {
+		t.Fatalf("quota = %d, want %d", account.QuotaBytes, int64(256<<20))
+	}
+
+	if _, err := svc.CreateOrder(ctx, u1, "missing", "", ""); !errors.Is(err, service.ErrPlanNotFound) {
+		t.Fatalf("missing plan err = %v, want ErrPlanNotFound", err)
+	}
+}
+
+func TestCouponDiscountAndLimits(t *testing.T) {
+	svc, repo := newBilling(t)
+	ctx := context.Background()
+	newCustomer(t, repo, "u1")
+	u1 := &auth.Principal{UserID: "u1", Username: "u1", Role: auth.RoleUser}
+
+	plan, err := svc.CreatePlan(ctx, service.PlanInput{Name: "付费套餐", PriceCents: 1000, QuotaMB: 512, Active: true})
+	if err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+	fixed, err := svc.CreateCoupon(ctx, service.CouponInput{Code: "save100", Type: store.CouponFixed, Value: 300, PerUserLimit: 1, Active: true})
+	if err != nil {
+		t.Fatalf("CreateCoupon fixed: %v", err)
+	}
+	_ = fixed
+
+	dto, discount, err := svc.ValidateCoupon(ctx, u1, "SAVE100", 1000)
+	if err != nil || discount != 300 || dto.Code != "SAVE100" {
+		t.Fatalf("ValidateCoupon = %+v, %d, %v", dto, discount, err)
+	}
+
+	order, err := svc.CreateOrder(ctx, u1, plan.ID, "save100", "")
+	if err != nil {
+		t.Fatalf("CreateOrder: %v", err)
+	}
+	if order.AmountCents != 700 || order.DiscountCents != 300 {
+		t.Fatalf("order amount = %d discount = %d", order.AmountCents, order.DiscountCents)
+	}
+	if order.Status != store.OrderPending {
+		t.Fatalf("paid order status = %q, want pending", order.Status)
+	}
+
+	// 支付后应用配额。
+	paid, err := svc.PayOrder(ctx, u1, order.ID)
+	if err != nil {
+		t.Fatalf("PayOrder: %v", err)
+	}
+	if paid.Status != store.OrderPaid {
+		t.Fatalf("status = %q, want paid", paid.Status)
+	}
+	account, _ := repo.GetAccountByID(ctx, store.RoleCustomer, "u1")
+	if account.QuotaBytes != 512<<20 {
+		t.Fatalf("quota = %d, want 512MiB", account.QuotaBytes)
+	}
+
+	// 达到每用户使用上限后不可再用。
+	if _, err := svc.CreateOrder(ctx, u1, plan.ID, "save100", ""); !errors.Is(err, service.ErrCouponInvalid) {
+		t.Fatalf("second use err = %v, want ErrCouponInvalid", err)
+	}
+
+	// 门槛校验。
+	premium, _ := svc.CreateCoupon(ctx, service.CouponInput{Code: "big", Type: store.CouponFixed, Value: 500, MinAmountCents: 5000, Active: true})
+	if _, _, err := svc.ValidateCoupon(ctx, u1, premium.Code, 1000); !errors.Is(err, service.ErrCouponBelowMinimum) {
+		t.Fatalf("below minimum err = %v, want ErrCouponBelowMinimum", err)
+	}
+	if _, _, err := svc.ValidateCoupon(ctx, u1, "missing", 1000); !errors.Is(err, service.ErrCouponNotFound) {
+		t.Fatalf("missing coupon err = %v, want ErrCouponNotFound", err)
+	}
+}
+
+func TestPercentCoupon(t *testing.T) {
+	repo := newRepo(t)
+	svc2 := service.NewBillingService(repo, "http://example.test", []payment.Gateway{payment.ManualGateway{}}, "manual")
+	ctx := context.Background()
+	newCustomer(t, repo, "u1")
+	u1 := &auth.Principal{UserID: "u1", Username: "u1", Role: auth.RoleUser}
+	plan, _ := svc2.CreatePlan(ctx, service.PlanInput{Name: "P", PriceCents: 2000, Active: true})
+	if _, err := svc2.CreateCoupon(ctx, service.CouponInput{Code: "off20", Type: store.CouponPercent, Value: 20, Active: true}); err != nil {
+		t.Fatalf("CreateCoupon: %v", err)
+	}
+	order, err := svc2.CreateOrder(ctx, u1, plan.ID, "off20", "")
+	if err != nil {
+		t.Fatalf("CreateOrder: %v", err)
+	}
+	if order.DiscountCents != 400 || order.AmountCents != 1600 {
+		t.Fatalf("order = %+v, want 400 discount / 1600 amount", order)
+	}
+}
+
+func TestTicketLifecycle(t *testing.T) {
+	svc, _ := newBilling(t)
+	ctx := context.Background()
+	user := &auth.Principal{UserID: "u1", Username: "u1", Role: auth.RoleUser}
+	admin := &auth.Principal{UserID: "a1", Username: "a1", Role: auth.RoleAdmin}
+
+	ticket, err := svc.CreateTicket(ctx, user, "无法上传", "upload", "上传时出错", "high")
+	if err != nil {
+		t.Fatalf("CreateTicket: %v", err)
+	}
+	if ticket.Status != store.TicketOpen || len(ticket.Messages) != 1 {
+		t.Fatalf("ticket = %+v", ticket)
+	}
+
+	// 管理员回复后状态变为已回复。
+	replied, err := svc.ReplyTicket(ctx, admin, ticket.ID, "请重试")
+	if err != nil {
+		t.Fatalf("ReplyTicket: %v", err)
+	}
+	if replied.Status != store.TicketAnswered || len(replied.Messages) != 2 {
+		t.Fatalf("replied = %+v", replied)
+	}
+	if replied.Messages[1].AuthorRole != "admin" {
+		t.Fatalf("reply role = %q, want admin", replied.Messages[1].AuthorRole)
+	}
+
+	// 其他用户不能查看。
+	other := &auth.Principal{UserID: "u2", Role: auth.RoleUser}
+	if _, err := svc.GetTicket(ctx, other, ticket.ID); !errors.Is(err, service.ErrForbidden) {
+		t.Fatalf("other user err = %v, want ErrForbidden", err)
+	}
+
+	closed, err := svc.SetTicketStatus(ctx, ticket.ID, store.TicketClosed)
+	if err != nil || closed.Status != store.TicketClosed {
+		t.Fatalf("SetTicketStatus = %+v, err = %v", closed, err)
+	}
+
+	if _, err := svc.CreateTicket(ctx, user, "", "x", "b", ""); !errors.Is(err, service.ErrInvalidInput) {
+		t.Fatalf("empty subject err = %v, want ErrInvalidInput", err)
+	}
+}

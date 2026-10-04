@@ -94,5 +94,20 @@ limits:
   image_per_minute: 600
   image_burst: 120
 
+payment:
+  # Default payment gateway: manual | mock | alipay | wechat
+  default_gateway: "manual"
+  # Alipay / WeChat credentials are reserved; the built-in gateways are
+  # "manual" (admin settles orders) and "mock" (development checkout).
+  alipay:
+    enabled: false
+    app_id: ""
+    private_key: ""
+    alipay_public_key: ""
+  wechat:
+    enabled: false
+    mch_id: ""
+    api_key: ""
+
 logging:
   level: "info"

@@ -67,6 +67,14 @@ var envPaths = map[string]string{
 	"limits_guest_burst":          "limits.guest_burst",
 	"limits_image_per_minute":     "limits.image_per_minute",
 	"limits_image_burst":          "limits.image_burst",
+	"payment_default_gateway":     "payment.default_gateway",
+	"payment_alipay_enabled":      "payment.alipay.enabled",
+	"payment_alipay_app_id":       "payment.alipay.app_id",
+	"payment_alipay_private_key":  "payment.alipay.private_key",
+	"payment_alipay_public_key":   "payment.alipay.alipay_public_key",
+	"payment_wechat_enabled":      "payment.wechat.enabled",
+	"payment_wechat_mch_id":       "payment.wechat.mch_id",
+	"payment_wechat_api_key":      "payment.wechat.api_key",
 	"logging_level":               "logging.level",
 }
 
@@ -79,6 +87,7 @@ type Config struct {
 	Processing ProcessingConfig `koanf:"processing"`
 	Auth       AuthConfig       `koanf:"auth"`
 	Limits     LimitsConfig     `koanf:"limits"`
+	Payment    PaymentConfig    `koanf:"payment"`
 	Logging    LoggingConfig    `koanf:"logging"`
 }
 
@@ -184,6 +193,24 @@ type LoggingConfig struct {
 	Level string `koanf:"level"`
 }
 
+// PaymentConfig 配置支付渠道。默认渠道需在已注册的渠道（manual、mock，以及
+// 后续接入的 alipay、wechat）中选择。
+type PaymentConfig struct {
+	DefaultGateway string `koanf:"default_gateway"`
+	Alipay         AppID  `koanf:"alipay"`
+	Wechat         AppID  `koanf:"wechat"`
+}
+
+// AppID 保存第三方支付渠道的应用凭据。凭据为空时对应渠道不会被注册。
+type AppID struct {
+	Enabled         bool   `koanf:"enabled"`
+	AppID           string `koanf:"app_id"`
+	PrivateKey      string `koanf:"private_key"`
+	AlipayPublicKey string `koanf:"alipay_public_key"`
+	MchID           string `koanf:"mch_id"`
+	APIKey          string `koanf:"api_key"`
+}
+
 func defaultConfig() Config {
 	return Config{
 		Server: ServerConfig{
@@ -227,6 +254,7 @@ func defaultConfig() Config {
 			ImagePerMinute:  600,
 			ImageBurst:      120,
 		},
+		Payment: PaymentConfig{DefaultGateway: "manual"},
 		Logging: LoggingConfig{Level: "info"},
 	}
 }
@@ -339,6 +367,11 @@ func (c Config) validate() error {
 		c.Limits.GuestPerMinute < 0 || c.Limits.GuestBurst < 0 ||
 		c.Limits.ImagePerMinute < 0 || c.Limits.ImageBurst < 0 {
 		return fmt.Errorf("config: limits values must not be negative")
+	}
+	switch c.Payment.DefaultGateway {
+	case "", "manual", "mock", "alipay", "wechat":
+	default:
+		return fmt.Errorf("config: payment.default_gateway %q is not supported", c.Payment.DefaultGateway)
 	}
 	return nil
 }

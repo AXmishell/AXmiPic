@@ -20,6 +20,7 @@ import (
 	"github.com/AXmishell/axmipic/internal/auth"
 	"github.com/AXmishell/axmipic/internal/config"
 	"github.com/AXmishell/axmipic/internal/imaging"
+	"github.com/AXmishell/axmipic/internal/payment"
 	"github.com/AXmishell/axmipic/internal/secret"
 	"github.com/AXmishell/axmipic/internal/server"
 	"github.com/AXmishell/axmipic/internal/service"
@@ -146,6 +147,9 @@ func run() error {
 	shareSvc := service.NewShareService(repo, cfg.Server.BaseURL)
 	siteSvc := service.NewSiteService(repo)
 
+	gateways := []payment.Gateway{payment.ManualGateway{}, payment.NewMockGateway(cfg.Server.BaseURL, logger)}
+	billingSvc := service.NewBillingService(repo, cfg.Server.BaseURL, gateways, cfg.Payment.DefaultGateway)
+
 	router := api.NewRouter(api.Deps{
 		Upload:        uploadSvc,
 		Imaging:       imagingSvc,
@@ -156,6 +160,7 @@ func run() error {
 		Policies:      policies,
 		Shares:        shareSvc,
 		Site:          siteSvc,
+		Billing:       billingSvc,
 		Authenticator: auth.NewAuthenticator(repo, issuer),
 		UploadLimiter: &auth.UploadLimiter{
 			User:  auth.NewRateLimiter(cfg.Limits.UploadPerMinute, cfg.Limits.UploadBurst),

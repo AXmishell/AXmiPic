@@ -9,6 +9,8 @@
 - **图片与相册分享**：生成分享链接，可选访问密码、有效期与最大访问次数；公开分享页为 `/s/{token}`
 - **站内公告与独立页面**：管理员发布公告（支持置顶与级别）并在仪表盘展示；维护可通过 `/p/{slug}` 公开访问的独立页面
 - **举报管理**：用户举报图片，管理员在后台处理或驳回
+- **套餐与计费**：套餐（价格、有效期、配额、角色组）与优惠券（固定/百分比、门槛、限次、时效），下单、订单管理与可插拔支付渠道
+- **工单系统**：用户提交工单并对接客服，管理员回复与关闭
 - **内容寻址与去重**：按内容 `sha256` 生成存储文件名并入库，相同内容自动去重
 - **保留原始文件名**：存储层使用重命名（哈希命名）后的文件，数据库中单独记录原文件名、存储文件名与哈希值
 - **即时图片处理**：通过 URL 查询参数实时缩放、裁剪、旋转、转码，带 ETag 缓存
@@ -335,6 +337,29 @@ curl -X POST http://localhost:8080/api/v1/upload \
 | PUT/DELETE | `/admin/pages/{id}` | 修改 / 删除页面 |
 
 公告的 `level` 取值为 `info`/`success`/`warning`/`danger`，可置顶（`pinned`）与设为草稿（`published=false`）。独立页面的 `slug` 仅允许小写字母、数字与连字符，公开地址为 `/p/{slug}`，前端以轻量 Markdown 渲染内容。
+
+### 套餐、优惠券、订单与工单
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/plans` | 启用的套餐（无需登录） |
+| GET | `/admin/plans` | 全部套餐 |
+| POST/PUT/DELETE | `/admin/plans[/{id}]` | 新建 / 修改 / 删除套餐 |
+| GET | `/admin/coupons` | 优惠券列表 |
+| POST/PUT/DELETE | `/admin/coupons[/{id}]` | 新建 / 修改 / 删除优惠券 |
+| POST | `/coupons/validate` | 校验优惠券（`{"code":"…","amount_cents":1000}`） |
+| GET/POST | `/orders` | 我的订单 / 下单（管理员可见全部订单） |
+| POST | `/orders/{id}/pay` | 完成手动/模拟订单的支付 |
+| GET/POST | `/tickets` | 我的工单 / 新建工单（管理员可见全部） |
+| GET | `/tickets/{id}` | 工单详情（含消息） |
+| POST | `/tickets/{id}/reply` | 回复工单 |
+| PATCH | `/admin/tickets/{id}` | 更新工单状态 |
+
+套餐字段：`price_cents`（价格，分）、`duration_days`（0 为永久）、`quota_mb`（0 为不限）、`role_group_id`（购买后应用的角色组，可空）、`active`、`sort_order`。优惠券的 `type` 取值为 `fixed`（金额，分）或 `percent`（百分比），并支持 `min_amount_cents` 门槛、`max_uses` 总量、`per_user_limit` 每用户限次与 `expires_at`。下单请求体为 `{"plan_id":"…","coupon_code":"…","provider":"manual"}`；支付成功（含免费订单）后自动应用套餐的配额与角色组。
+
+### 支付渠道
+
+支付通过 `internal/payment` 的可插拔 `Gateway` 接口实现。内置 `manual`（人工核销）与 `mock`（模拟收银台，仅开发用）渠道；配置中的 `payment.default_gateway` 选择默认渠道，`payment.alipay` / `payment.wechat` 预留了应用凭据字段，接入官方 SDK 时实现 `Gateway` 即可。未配置真实凭据时，订单创建后可通过 `POST /orders/{id}/pay` 或后台人工核销完成支付。
 
 ### 角色组与策略
 

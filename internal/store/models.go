@@ -312,3 +312,159 @@ type Page struct {
 func (Page) TableName() string {
 	return "pages"
 }
+
+// Plan 是可供用户购买或订阅的套餐。套餐携带一份覆盖默认角色组策略的策略
+// 描述，购买后应用到用户所属的角色组。
+type Plan struct {
+	ID          string `gorm:"primaryKey;size:36"`
+	Name        string `gorm:"uniqueIndex;size:64;not null"`
+	Description string `gorm:"size:255;not null;default:''"`
+	// PriceCents 为价格，单位为分。
+	PriceCents int64 `gorm:"not null;default:0"`
+	// DurationDays 为有效期天数；0 表示永久。
+	DurationDays int `gorm:"not null;default:0"`
+	// QuotaMB 为套餐附带的存储配额（MiB）；0 表示不限。
+	QuotaMB int64 `gorm:"not null;default:0"`
+	// RoleGroupID 为购买后应用的角色组；为空表示仅调整配额。
+	RoleGroupID *string `gorm:"size:36;null"`
+	Active      bool    `gorm:"not null;default:true"`
+	// SortOrder 控制展示顺序。
+	SortOrder int `gorm:"not null;default:0"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// TableName 返回存储 Plan 的表名。
+func (Plan) TableName() string {
+	return "plans"
+}
+
+// 订单状态。
+const (
+	// OrderPending 表示订单待支付。
+	OrderPending = "pending"
+	// OrderPaid 表示订单已支付。
+	OrderPaid = "paid"
+	// OrderCancelled 表示订单已取消。
+	OrderCancelled = "cancelled"
+)
+
+// Order 是用户对某个套餐的购买订单。
+type Order struct {
+	ID     string `gorm:"primaryKey;size:36"`
+	UserID string `gorm:"index;size:36;not null"`
+	PlanID string `gorm:"index;size:36;not null"`
+	// PlanSnapshot 记录下单时的套餐名称与价格，避免后续改价影响历史订单。
+	PlanName    string `gorm:"size:64;not null"`
+	AmountCents int64  `gorm:"not null;default:0"`
+	// CouponID 为使用的优惠券；为空表示未使用。
+	CouponID *string `gorm:"index;size:36"`
+	// DiscountCents 为优惠券抵扣的金额（分）。
+	DiscountCents int64  `gorm:"not null;default:0"`
+	Status        string `gorm:"size:16;not null;default:'pending'"`
+	// Provider 为支付渠道：manual、alipay、wechat、mock 等。
+	Provider string `gorm:"size:16;not null;default:'manual'"`
+	// TradeNo 为支付渠道返回的流水号。
+	TradeNo   string `gorm:"size:128;not null;default:''"`
+	PaidAt    *time.Time
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// TableName 返回存储 Order 的表名。
+func (Order) TableName() string {
+	return "orders"
+}
+
+// 优惠券类型。
+const (
+	// CouponFixed 表示固定金额减免（分）。
+	CouponFixed = "fixed"
+	// CouponPercent 表示按比例减免（PercentOff 为百分比扣减，例如 20 表示减 20%）。
+	CouponPercent = "percent"
+)
+
+// Coupon 是管理员创建的优惠券。
+type Coupon struct {
+	ID   string `gorm:"primaryKey;size:36"`
+	Code string `gorm:"uniqueIndex;size:64;not null"`
+	// Type 为 fixed 或 percent。
+	Type string `gorm:"size:16;not null"`
+	// Value 对 fixed 为减免金额（分），对 percent 为折扣百分比。
+	Value int64 `gorm:"not null;default:0"`
+	// MinAmountCents 为使用门槛（分）；0 表示无门槛。
+	MinAmountCents int64 `gorm:"not null;default:0"`
+	// MaxUses 为最大使用次数；0 表示不限。
+	MaxUses int64 `gorm:"not null;default:0"`
+	Used    int64 `gorm:"not null;default:0"`
+	// PerUserLimit 为每用户可用次数；0 表示不限。
+	PerUserLimit int64      `gorm:"not null;default:0"`
+	ExpiresAt    *time.Time `gorm:"index"`
+	Active       bool       `gorm:"not null;default:true"`
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
+// TableName 返回存储 Coupon 的表名。
+func (Coupon) TableName() string {
+	return "coupons"
+}
+
+// CouponRedemption 记录一次优惠券使用，用于约束每用户使用次数。
+type CouponRedemption struct {
+	ID        string `gorm:"primaryKey;size:36"`
+	CouponID  string `gorm:"index;size:36;not null"`
+	UserID    string `gorm:"index;size:36;not null"`
+	OrderID   string `gorm:"index;size:36;not null"`
+	CreatedAt time.Time
+}
+
+// TableName 返回存储 CouponRedemption 的表名。
+func (CouponRedemption) TableName() string {
+	return "coupon_redemptions"
+}
+
+// 工单状态。
+const (
+	// TicketOpen 表示工单待处理。
+	TicketOpen = "open"
+	// TicketAnswered 表示已回复。
+	TicketAnswered = "answered"
+	// TicketClosed 表示已关闭。
+	TicketClosed = "closed"
+)
+
+// Ticket 是用户提交的工单。
+type Ticket struct {
+	ID      string `gorm:"primaryKey;size:36"`
+	UserID  string `gorm:"index;size:36;not null"`
+	Subject string `gorm:"size:200;not null"`
+	// Category 为工单分类。
+	Category string `gorm:"size:32;not null;default:''"`
+	Status   string `gorm:"size:16;not null;default:'open'"`
+	// Priority 为优先级：low、normal、high。
+	Priority  string `gorm:"size:16;not null;default:'normal'"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// TableName 返回存储 Ticket 的表名。
+func (Ticket) TableName() string {
+	return "tickets"
+}
+
+// TicketMessage 是工单中的一条消息。
+type TicketMessage struct {
+	ID       string `gorm:"primaryKey;size:36"`
+	TicketID string `gorm:"index;size:36;not null"`
+	AuthorID string `gorm:"size:36;not null;default:''"`
+	// AuthorRole 为 author 或 admin。
+	AuthorRole string `gorm:"size:16;not null;default:'author'"`
+	Body       string `gorm:"type:text;not null;default:''"`
+	CreatedAt  time.Time
+}
+
+// TableName 返回存储 TicketMessage 的表名。
+func (TicketMessage) TableName() string {
+	return "ticket_messages"
+}

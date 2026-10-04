@@ -289,3 +289,109 @@ export interface PageInput {
   content: string
   published: boolean
 }
+
+/** 套餐。 */
+export interface Plan {
+  id: string
+  name: string
+  description: string
+  price_cents: number
+  duration_days: number
+  quota_mb: number
+  role_group_id?: string
+  active: boolean
+  sort_order: number
+  created_at: string
+  updated_at: string
+}
+
+export interface PlanInput {
+  name: string
+  description: string
+  price_cents: number
+  duration_days: number
+  quota_mb: number
+  role_group_id?: string
+  active: boolean
+  sort_order: number
+}
+
+/** 优惠券。 */
+export type CouponType = 'fixed' | 'percent'
+
+export interface Coupon {
+  id: string
+  code: string
+  type: CouponType
+  value: number
+  min_amount_cents: number
+  max_uses: number
+  used: number
+  per_user_limit: number
+  expires_at?: string
+  active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface CouponInput {
+  code: string
+  type: CouponType
+  value: number
+  min_amount_cents: number
+  max_uses: number
+  per_user_limit: number
+  expires_at?: string | null
+  active: boolean
+}
+
+/** 订单。 */
+export type OrderStatus = 'pending' | 'paid' | 'cancelled'
+
+export interface Order {
+  id: string
+  user_id: string
+  plan_id: string
+  plan_name: string
+  amount_cents: number
+  discount_cents: number
+  status: OrderStatus
+  provider: string
+  trade_no?: string
+  pay_url?: string
+  paid_at?: string
+  created_at: string
+  updated_at: string
+}
+
+/** 工单。 */
+export type TicketStatus = 'open' | 'answered' | 'closed'
+export type TicketPriority = 'low' | 'normal' | 'high'
+
+export interface TicketMessage {
+  id: string
+  author_id: string
+  author_role: 'author' | 'admin'
+  body: string
+  created_at: string
+}
+
+export interface Ticket {
+  id: string
+  user_id: string
+  username?: string
+  subject: string
+  category: string
+  status: TicketStatus
+  priority: TicketPriority
+  created_at: string
+  updated_at: string
+  messages?: TicketMessage[]
+}
+
+export interface TicketInput {
+  subject: string
+  category: string
+  body: string
+  priority: TicketPriority
+}

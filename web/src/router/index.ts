@@ -71,6 +71,18 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '我的分享' },
       },
       {
+        path: 'pricing',
+        name: 'pricing',
+        component: () => import('@/views/PricingView.vue'),
+        meta: { title: '套餐' },
+      },
+      {
+        path: 'tickets',
+        name: 'tickets',
+        component: () => import('@/views/TicketsView.vue'),
+        meta: { title: '工单' },
+      },
+      {
         path: 'users',
         name: 'users',
         component: () => import('@/views/UsersView.vue'),
@@ -93,6 +105,12 @@ const routes: RouteRecordRaw[] = [
         name: 'site',
         component: () => import('@/views/SiteView.vue'),
         meta: { title: '站点内容', requiresAdmin: true },
+      },
+      {
+        path: 'billing',
+        name: 'billing',
+        component: () => import('@/views/BillingView.vue'),
+        meta: { title: '计费管理', requiresAdmin: true },
       },
       {
         path: 'settings',

@@ -98,6 +98,18 @@ func (h *Handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, http.StatusNotFound, http.StatusNotFound, "report not found")
 	case errors.Is(err, service.ErrPageNotFound):
 		writeError(w, http.StatusNotFound, http.StatusNotFound, "page not found")
+	case errors.Is(err, service.ErrPlanNotFound):
+		writeError(w, http.StatusNotFound, http.StatusNotFound, "plan not found")
+	case errors.Is(err, service.ErrOrderNotFound):
+		writeError(w, http.StatusNotFound, http.StatusNotFound, "order not found")
+	case errors.Is(err, service.ErrCouponNotFound):
+		writeError(w, http.StatusNotFound, http.StatusNotFound, "coupon not found")
+	case errors.Is(err, service.ErrCouponInvalid):
+		writeError(w, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+	case errors.Is(err, service.ErrCouponBelowMinimum):
+		writeError(w, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+	case errors.Is(err, service.ErrTicketNotFound):
+		writeError(w, http.StatusNotFound, http.StatusNotFound, "ticket not found")
 	case errors.Is(err, service.ErrPolicyNotFound):
 		writeError(w, http.StatusNotFound, http.StatusNotFound, "policy not found")
 	case errors.Is(err, service.ErrRoleGroupInUse):

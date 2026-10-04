@@ -25,6 +25,7 @@ type Deps struct {
 	Policies      *service.PolicyService
 	Shares        *service.ShareService
 	Site          *service.SiteService
+	Billing       *service.BillingService
 	Authenticator *auth.Authenticator
 	UploadLimiter *auth.UploadLimiter
 	// ImageLimiter 按 IP 对公开图片服务和转换进行限流。
@@ -49,6 +50,7 @@ type Handler struct {
 	policies       *service.PolicyService
 	shares         *service.ShareService
 	site           *service.SiteService
+	billing        *service.BillingService
 	maxUploadBytes int64
 	logger         *slog.Logger
 }
@@ -65,6 +67,7 @@ func NewRouter(d Deps) http.Handler {
 		policies:       d.Policies,
 		shares:         d.Shares,
 		site:           d.Site,
+		billing:        d.Billing,
 		maxUploadBytes: int64(d.MaxUploadMB) << 20,
 		logger:         d.Logger,
 	}
@@ -107,6 +110,7 @@ func NewRouter(d Deps) http.Handler {
 				r.Post("/shares/{token}/access", h.shareAccess)
 				r.Get("/announcements", h.listAnnouncements)
 				r.Get("/pages/{slug}", h.getPage)
+				r.Get("/plans", h.listPlans)
 			})
 
 			r.Group(func(r chi.Router) {
@@ -139,6 +143,14 @@ func NewRouter(d Deps) http.Handler {
 				r.Post("/shares", h.createShare)
 				r.Delete("/shares/{id}", h.revokeShare)
 				r.Post("/reports", h.createReport)
+				r.Post("/coupons/validate", h.validateCoupon)
+				r.Get("/orders", h.listOrders)
+				r.Post("/orders", h.createOrder)
+				r.Post("/orders/{id}/pay", h.payOrder)
+				r.Get("/tickets", h.listTickets)
+				r.Post("/tickets", h.createTicket)
+				r.Get("/tickets/{id}", h.getTicket)
+				r.Post("/tickets/{id}/reply", h.replyTicket)
 			})
 
 			r.Group(func(r chi.Router) {
@@ -184,6 +196,20 @@ func NewRouter(d Deps) http.Handler {
 				r.Post("/admin/pages", h.adminCreatePage)
 				r.Put("/admin/pages/{id}", h.adminUpdatePage)
 				r.Delete("/admin/pages/{id}", h.adminDeletePage)
+
+				r.Get("/admin/plans", h.adminListPlans)
+				r.Post("/admin/plans", h.adminCreatePlan)
+				r.Put("/admin/plans/{id}", h.adminUpdatePlan)
+				r.Delete("/admin/plans/{id}", h.adminDeletePlan)
+
+				r.Get("/admin/coupons", h.adminListCoupons)
+				r.Post("/admin/coupons", h.adminCreateCoupon)
+				r.Put("/admin/coupons/{id}", h.adminUpdateCoupon)
+				r.Delete("/admin/coupons/{id}", h.adminDeleteCoupon)
+
+				r.Get("/admin/tickets/{id}", h.getTicket)
+				r.Patch("/admin/tickets/{id}", h.adminSetTicketStatus)
+				r.Post("/admin/tickets/{id}/reply", h.replyTicket)
 			})
 		})
 	})

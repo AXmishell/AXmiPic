@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, type Component } from 'vue'
 import { useRoute } from 'vue-router'
-import { ArrowRight, Bell, Close, Coin, Folder, Grid, Key, Management, Odometer, Picture, Setting, Share, User } from '@element-plus/icons-vue'
+import { ArrowRight, Bell, Close, Coin, Folder, Grid, Key, Management, Odometer, Picture, Service, Setting, Share, ShoppingCart, User } from '@element-plus/icons-vue'
 
 import QuotaMeter from '@/components/QuotaMeter.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -38,6 +38,8 @@ const groups = computed<NavGroup[]>(() => {
         { label: '图片广场', to: '/plaza', icon: Grid },
         { label: '我的分享', to: '/shares', icon: Share },
         { label: '访问令牌', to: '/tokens', icon: Key },
+        { label: '套餐', to: '/pricing', icon: ShoppingCart },
+        { label: '工单', to: '/tickets', icon: Service },
       ],
     },
   ]
@@ -49,6 +51,7 @@ const groups = computed<NavGroup[]>(() => {
         { label: '存储配置', to: '/storage', icon: Coin },
         { label: '角色策略', to: '/policies', icon: Management },
         { label: '站点内容', to: '/site', icon: Bell },
+        { label: '计费管理', to: '/billing', icon: ShoppingCart },
       ],
     })
   }
