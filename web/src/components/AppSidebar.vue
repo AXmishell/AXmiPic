@@ -48,7 +48,6 @@ const userGroups: NavGroup[] = [
     items: [
       { label: '套餐', to: '/user/pricing', icon: ShoppingCart },
       { label: '工单', to: '/user/tickets', icon: Service },
-      { label: '账号设置', to: '/user/settings', icon: Setting },
     ],
   },
 ]
@@ -77,10 +76,7 @@ const adminGroups: NavGroup[] = [
   },
   {
     label: '系统',
-    items: [
-      { label: '系统设置', to: '/admin/system', icon: Setting },
-      { label: '账号设置', to: '/admin/settings', icon: User },
-    ],
+    items: [{ label: '系统设置', to: '/admin/system', icon: Setting }],
   },
 ]
 
