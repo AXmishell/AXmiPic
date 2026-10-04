@@ -1,8 +1,14 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 
-import { fetchMe as fetchMeApi, adminLogin as adminLoginApi, login as loginApi, register as registerApi } from '@/api/auth'
-import type { Credentials, User } from '@/api/types'
+import {
+  fetchMe as fetchMeApi,
+  fetchPolicies as fetchPoliciesApi,
+  adminLogin as adminLoginApi,
+  login as loginApi,
+  register as registerApi,
+} from '@/api/auth'
+import type { Credentials, EffectivePolicies, User } from '@/api/types'
 
 const STORAGE_KEY = 'axmipic.session.v1'
 
@@ -38,11 +44,30 @@ export const useAuthStore = defineStore('auth', () => {
   const token = ref<string | null>(null)
   const expiresAt = ref('')
   const user = ref<User | null>(null)
+  const policies = ref<EffectivePolicies | null>(null)
   const hydrated = ref(false)
 
   const isAuthenticated = computed(() => Boolean(token.value))
   const isAdmin = computed(() => user.value?.role === 'admin')
   const username = computed(() => user.value?.username ?? '')
+  const features = computed(() => new Set(policies.value?.features ?? []))
+
+  /** 当前角色是否启用了某个功能开关；策略尚未加载时默认放行。 */
+  function hasFeature(name: string): boolean {
+    if (!policies.value) return true
+    return features.value.has(name)
+  }
+
+  /** 拉取当前账户生效的角色策略。 */
+  async function loadPolicies(): Promise<EffectivePolicies | null> {
+    if (!token.value) return null
+    try {
+      policies.value = await fetchPoliciesApi()
+      return policies.value
+    } catch {
+      return null
+    }
+  }
 
   function persist(): void {
     if (!token.value || !user.value) {
@@ -65,6 +90,7 @@ export const useAuthStore = defineStore('auth', () => {
     token.value = null
     expiresAt.value = ''
     user.value = null
+    policies.value = null
     try {
       localStorage.removeItem(STORAGE_KEY)
     } catch {
@@ -85,6 +111,7 @@ export const useAuthStore = defineStore('auth', () => {
     token.value = session.token
     expiresAt.value = session.expiresAt
     user.value = session.user
+    void loadPolicies()
   }
 
   async function login(credentials: Credentials): Promise<User> {
@@ -103,6 +130,7 @@ export const useAuthStore = defineStore('auth', () => {
     expiresAt.value = result.expires_at
     user.value = result.user
     persist()
+    void loadPolicies()
     return result.user
   }
 
@@ -116,6 +144,7 @@ export const useAuthStore = defineStore('auth', () => {
     const me = await fetchMeApi()
     user.value = me
     persist()
+    void loadPolicies()
     return me
   }
 
@@ -127,15 +156,20 @@ export const useAuthStore = defineStore('auth', () => {
     token,
     expiresAt,
     user,
+    policies,
+    features,
     hydrated,
     isAuthenticated,
     isAdmin,
     username,
+    havePolicies: computed(() => policies.value !== null),
     hydrate,
     login,
     adminLogin,
     register,
     refreshUser,
+    loadPolicies,
+    hasFeature,
     logout,
     clearSession,
   }

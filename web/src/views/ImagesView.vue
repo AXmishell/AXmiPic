@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { UploadRawFile } from 'element-plus'
@@ -33,6 +33,7 @@ import type { Album, ImageItem, ImagePermission } from '@/api/types'
 import EmptyState from '@/components/EmptyState.vue'
 import ErrorState from '@/components/ErrorState.vue'
 import PageHeader from '@/components/PageHeader.vue'
+import { useAuthStore } from '@/stores/auth'
 import { copyText } from '@/utils/clipboard'
 import {
   formatBytes,
@@ -49,6 +50,7 @@ const pageSize = ref(24)
 const loading = ref(false)
 const errorMessage = ref('')
 const failedIds = ref<Set<string>>(new Set())
+const auth = useAuthStore()
 
 // 查询条件
 const route = useRoute()
@@ -76,11 +78,23 @@ const assignIds = ref<string[]>([])
 const assigning = ref(false)
 
 // 上传
-const uploading = ref(false)
+type UploadStatus = 'pending' | 'uploading' | 'success' | 'error'
+interface UploadTask {
+  id: string
+  name: string
+  size: number
+  status: UploadStatus
+  progress: number
+  error?: string
+}
 const uploadRef = ref<{ clearFiles: () => void } | null>(null)
 const dragActive = ref(false)
+const uploadTasks = ref<UploadTask[]>([])
+const uploadPanelOpen = ref(true)
+const uploadRunning = ref(false)
 const ACCEPT = 'image/jpeg,image/png,image/gif,image/webp'
 const MAX_SIZE_MB = 20
+const UPLOAD_CONCURRENCY = 3
 
 // 多选
 const selectedIds = ref<Set<string>>(new Set())
@@ -111,6 +125,38 @@ const description = computed(() =>
     ? '正在加载图片列表'
     : `共 ${formatNumber(total.value)} 张图片`,
 )
+
+const uploadOverall = computed(() => {
+  const list = uploadTasks.value
+  if (list.length === 0) return 0
+  const sum = list.reduce((acc, task) => {
+    if (task.status === 'success' || task.status === 'error') return acc + 100
+    return acc + task.progress
+  }, 0)
+  return Math.round(sum / list.length)
+})
+
+const uploadFinished = computed(
+  () => uploadTasks.value.filter((t) => t.status === 'success' || t.status === 'error').length,
+)
+
+function uploadStatusLabel(task: UploadTask): string {
+  switch (task.status) {
+    case 'pending':
+      return '等待中'
+    case 'uploading':
+      return `${task.progress}%`
+    case 'success':
+      return '完成'
+    default:
+      return task.error ? '失败' : '失败'
+  }
+}
+
+function clearUploads(): void {
+  if (uploadRunning.value) return
+  uploadTasks.value = []
+}
 
 async function load(): Promise<void> {
   const seq = ++requestSeq
@@ -263,6 +309,13 @@ function validateFile(file: { size: number; type: string; name: string }): strin
   return null
 }
 
+function newTaskId(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return crypto.randomUUID()
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
 function beforeUpload(file: UploadRawFile): boolean {
   const reason = validateFile(file)
   if (reason) {
@@ -272,41 +325,86 @@ function beforeUpload(file: UploadRawFile): boolean {
   return true
 }
 
+/**
+ * 把一批文件加入上传队列，并以受限并发上传。每个文件都有独立的状态与进度，
+ * 单个文件失败不会中断其余文件。
+ */
 async function uploadFiles(files: File[]): Promise<void> {
   if (files.length === 0) return
-  uploading.value = true
-  let ok = 0
-  let failed = 0
-  for (const file of files) {
+  let candidates = files
+  if (candidates.length > 1 && !auth.hasFeature('batch_upload')) {
+    ElMessage.warning('当前角色未开启批量上传，仅上传第一张')
+    candidates = candidates.slice(0, 1)
+  }
+
+  const jobs: { file: File; task: UploadTask }[] = []
+  for (const file of candidates) {
     const reason = validateFile(file)
     if (reason) {
       ElMessage.error(reason)
-      failed += 1
       continue
     }
-    try {
-      await uploadImage(file)
-      ok += 1
-    } catch (error) {
-      ElMessage.error(toApiError(error).message)
-      failed += 1
+    const task = reactive<UploadTask>({
+      id: newTaskId(),
+      name: file.name,
+      size: file.size,
+      status: 'pending',
+      progress: 0,
+    })
+    jobs.push({ file, task })
+  }
+  if (jobs.length === 0) return
+
+  uploadTasks.value = [...jobs.map((j) => j.task), ...uploadTasks.value].slice(0, 100)
+  uploadPanelOpen.value = true
+  uploadRunning.value = true
+  uploadRef.value?.clearFiles()
+
+  let cursor = 0
+  let ok = 0
+  let failed = 0
+  const worker = async (): Promise<void> => {
+    for (;;) {
+      const index = cursor++
+      const job = jobs[index]
+      if (!job) return
+      job.task.status = 'uploading'
+      job.task.progress = 0
+      try {
+        await uploadImage(job.file, (percent) => {
+          job.task.progress = percent
+        })
+        job.task.status = 'success'
+        job.task.progress = 100
+        ok += 1
+      } catch (error) {
+        job.task.status = 'error'
+        job.task.error = toApiError(error).message
+        failed += 1
+      }
     }
   }
-  uploading.value = false
-  uploadRef.value?.clearFiles()
+
+  const workers = Math.min(UPLOAD_CONCURRENCY, jobs.length)
+  await Promise.all(Array.from({ length: workers }, worker))
+  uploadRunning.value = false
+
   if (ok > 0) {
     ElMessage.success(failed > 0 ? `已上传 ${ok} 张，${failed} 张失败` : `已上传 ${ok} 张图片`)
     page.value = 1
     await load()
+  } else if (failed > 0) {
+    ElMessage.error('上传失败')
   }
 }
 
-/** el-upload 自定义上传：接入统一的批量上传流程。 */
+/** el-upload 自定义上传：接入统一的上传队列。 */
 async function handleUpload(options: { file: File }): Promise<void> {
   await uploadFiles([options.file])
 }
 
 function onPaste(event: ClipboardEvent): void {
+  if (!auth.hasFeature('paste_upload')) return
   const files: File[] = []
   const list = event.clipboardData?.items
   if (!list) return
@@ -323,6 +421,7 @@ function onPaste(event: ClipboardEvent): void {
 }
 
 function onDragOver(event: DragEvent): void {
+  if (!auth.hasFeature('drag_upload')) return
   if (event.dataTransfer?.types.includes('Files')) {
     dragActive.value = true
   }
@@ -337,6 +436,10 @@ function onDragLeave(event: DragEvent): void {
 
 function onDrop(event: DragEvent): void {
   dragActive.value = false
+  if (!auth.hasFeature('drag_upload')) {
+    ElMessage.warning('当前角色未开启拖拽上传')
+    return
+  }
   const dropped = event.dataTransfer?.files
   if (!dropped || dropped.length === 0) return
   event.preventDefault()
@@ -347,8 +450,12 @@ function onDrop(event: DragEvent): void {
 function linkFormats(item: ImageItem): { label: string; value: string }[] {
   const url = item.url
   const name = item.original_name || item.filename || 'image'
+  const base = [{ label: '复制 URL', value: url }]
+  if (!auth.hasFeature('embed_code')) {
+    return base
+  }
   return [
-    { label: '复制 URL', value: url },
+    ...base,
     { label: '复制 HTML', value: `<img src="${url}" alt="${name}">` },
     { label: '复制 BBCode', value: `[img]${url}[/img]` },
     { label: '复制 Markdown', value: `![${name}](${url})` },
@@ -534,6 +641,7 @@ function onKeydown(event: KeyboardEvent): void {
 onMounted(() => {
   const queryAlbum = route.query.album_id
   if (typeof queryAlbum === 'string') albumFilter.value = queryAlbum
+  if (!auth.policies) void auth.loadPolicies()
   void loadAlbums()
   void load()
   document.addEventListener('paste', onPaste)
@@ -609,11 +717,11 @@ onBeforeUnmount(() => {
           ref="uploadRef"
           :show-file-list="false"
           :accept="ACCEPT"
-          multiple
+          :multiple="auth.hasFeature('batch_upload')"
           :before-upload="beforeUpload"
           :http-request="handleUpload"
         >
-          <el-button type="primary" :icon="Upload" :loading="uploading">上传图片</el-button>
+          <el-button type="primary" :icon="Upload" :loading="uploadRunning">上传图片</el-button>
         </el-upload>
         <el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button>
       </template>
@@ -789,6 +897,39 @@ onBeforeUnmount(() => {
     <div v-if="dragActive" class="images-dropzone" aria-hidden="true">
       <el-icon :size="40"><Upload /></el-icon>
       <span>松开以上传图片</span>
+    </div>
+
+    <!-- 上传队列 -->
+    <div v-if="uploadTasks.length > 0" class="upload-queue" aria-live="polite">
+      <header class="upload-queue__head">
+        <span class="upload-queue__title">
+          上传队列
+          <span class="ax-muted">{{ uploadFinished }}/{{ uploadTasks.length }}</span>
+        </span>
+        <div class="upload-queue__actions">
+          <el-button link size="small" @click="uploadPanelOpen = !uploadPanelOpen">
+            {{ uploadPanelOpen ? '收起' : '展开' }}
+          </el-button>
+          <el-button link size="small" :disabled="uploadRunning" @click="clearUploads">清空</el-button>
+        </div>
+      </header>
+      <el-progress
+        :percentage="uploadOverall"
+        :show-text="false"
+        :status="
+          !uploadRunning && uploadTasks.every((task) => task.status === 'success')
+            ? 'success'
+            : undefined
+        "
+      />
+      <ul v-show="uploadPanelOpen" class="upload-queue__list">
+        <li v-for="task in uploadTasks" :key="task.id" class="upload-queue__item">
+          <span class="upload-queue__name" :title="task.name">{{ task.name }}</span>
+          <span class="upload-queue__status" :class="`is-${task.status}`" :title="task.error">
+            {{ uploadStatusLabel(task) }}
+          </span>
+        </li>
+      </ul>
     </div>
 
     <!-- 右键菜单 -->
@@ -1136,6 +1277,82 @@ onBeforeUnmount(() => {
   border: 2px dashed var(--ax-accent-bright);
   border-radius: var(--ax-radius-lg);
   pointer-events: none;
+}
+
+/* 上传队列 */
+.upload-queue {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: var(--ax-z-drawer);
+  width: min(360px, 92vw);
+  padding: var(--ax-space-3) var(--ax-space-4);
+  background: var(--ax-elevated);
+  border: 1px solid var(--ax-border);
+  border-radius: var(--ax-radius-md);
+  box-shadow: var(--ax-shadow-md);
+}
+
+.upload-queue__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ax-space-2);
+  margin-bottom: var(--ax-space-2);
+}
+
+.upload-queue__title {
+  color: var(--ax-text);
+  font-size: var(--ax-text-sm);
+  font-weight: var(--ax-weight-medium);
+}
+
+.upload-queue__actions {
+  display: flex;
+  gap: var(--ax-space-2);
+}
+
+.upload-queue__list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 200px;
+  margin: var(--ax-space-2) 0 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.upload-queue__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ax-space-3);
+  font-size: var(--ax-text-xs);
+}
+
+.upload-queue__name {
+  overflow: hidden;
+  color: var(--ax-text-3);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.upload-queue__status {
+  flex: none;
+  color: var(--ax-text-4);
+}
+
+.upload-queue__status.is-success {
+  color: var(--ax-success);
+}
+
+.upload-queue__status.is-error {
+  color: var(--ax-danger);
+}
+
+.upload-queue__status.is-uploading {
+  color: var(--ax-accent-hover);
 }
 
 /* 右键菜单 */

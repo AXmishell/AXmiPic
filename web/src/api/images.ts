@@ -38,7 +38,10 @@ export function listPlaza(params: ListImagesParams): Promise<PageData<ImageItem>
 }
 
 /** 通过后台界面上传一张图片；文件以 multipart 形式提交。 */
-export function uploadImage(file: File): Promise<ImageItem> {
+export function uploadImage(
+  file: File,
+  onProgress?: (percent: number) => void,
+): Promise<ImageItem> {
   const form = new FormData()
   form.append('file', file)
   return request<ImageItem>({
@@ -46,6 +49,11 @@ export function uploadImage(file: File): Promise<ImageItem> {
     url: '/upload',
     data: form,
     headers: { 'Content-Type': 'multipart/form-data' },
+    onUploadProgress: (event) => {
+      if (onProgress && event.total) {
+        onProgress(Math.min(100, Math.round((event.loaded / event.total) * 100)))
+      }
+    },
   })
 }
 
