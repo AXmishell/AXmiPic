@@ -64,6 +64,53 @@ jobs:
       - name: 测试（含竞态检测）
         run: go test -race -count=1 ./...
 
+  sdk:
+    name: SDK（Go / TypeScript）
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: sdk/go/go.mod
+
+      - name: Go SDK 格式检查
+        run: |
+          unformatted="$(gofmt -l sdk/go)"
+          if [ -n "$unformatted" ]; then
+            echo "::error::以下 SDK 文件未通过 gofmt："
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Go SDK 构建与测试
+        working-directory: sdk/go
+        run: |
+          go vet ./...
+          go test -race -count=1 ./...
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: TypeScript SDK 构建与测试
+        working-directory: sdk/typescript
+        run: |
+          pnpm install --frozen-lockfile 2>/dev/null || pnpm install
+          pnpm typecheck
+          pnpm build
+          pnpm test
+
   frontend:
     name: 前端（类型检查 / 构建）
     runs-on: ubuntu-latest

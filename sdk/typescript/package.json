@@ -1,0 +1,33 @@
+{
+  "name": "@axmipic/sdk",
+  "version": "0.1.0",
+  "description": "AXmiPic 图床服务的 TypeScript/JavaScript 客户端 SDK",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test --experimental-strip-types src/client.test.ts"
+  },
+  "keywords": [
+    "axmipic",
+    "image-hosting",
+    "sdk",
+    "api-client"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "~5.9.3"
+  }
+}
