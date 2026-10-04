@@ -132,6 +132,7 @@ func run() error {
 
 	issuer := auth.NewSessionIssuer(jwtKey, time.Duration(cfg.Auth.SessionTTLHours)*time.Hour)
 	accounts := service.NewAccountService(repo, issuer, cfg.Auth.AllowRegistration, int64(cfg.Auth.DefaultQuotaMB)<<20)
+	accounts.SetCipher(cipher)
 	adminSvc := service.NewAdminService(repo, cfg.Storage.Driver, processor)
 	albumSvc := service.NewAlbumService(repo)
 
@@ -223,6 +224,22 @@ func run() error {
 		logger.Info("email notification channel enabled")
 	}
 	notifySvc := service.NewNotifyService(smsSender, emailSender)
+	accounts.SetNotifyService(notifySvc)
+	settingsSvc := service.NewSettingsService(repo, cipher, notifySvc, logger, service.SMTPConfig{
+		Enabled:  cfg.Email.Enabled,
+		Host:     cfg.Email.Host,
+		Port:     cfg.Email.Port,
+		Username: cfg.Email.Username,
+		Password: cfg.Email.Password,
+		From:     cfg.Email.From,
+		UseTLS:   cfg.Email.UseTLS,
+	})
+	settingsCtx, cancelSettings := context.WithTimeout(context.Background(), 10*time.Second)
+	err = settingsSvc.Bootstrap(settingsCtx)
+	cancelSettings()
+	if err != nil {
+		return err
+	}
 	shareSvc := service.NewShareService(repo, cfg.Server.BaseURL)
 	siteSvc := service.NewSiteService(repo)
 
@@ -291,6 +308,7 @@ func run() error {
 		Billing:       billingSvc,
 		Notify:        notifySvc,
 		Install:       installSvc,
+		Settings:      settingsSvc,
 		Runtime:       runtimeInfo,
 		InstallRepo:   store.Open,
 		InstallSeed:   installSeed,

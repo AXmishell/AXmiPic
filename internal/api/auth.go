@@ -106,3 +106,140 @@ func (h *Handler) deleteToken(w http.ResponseWriter, r *http.Request) {
 	}
 	writeOK(w, map[string]string{"id": id})
 }
+
+// ---- 二次验证（TOTP）与邮箱绑定 ----
+
+type totpVerifyRequest struct {
+	ChallengeToken string `json:"challenge_token"`
+	Code           string `json:"code"`
+}
+
+// verifyTOTPLogin 完成登录时的 TOTP 二次验证。
+func (h *Handler) verifyTOTPLogin(w http.ResponseWriter, r *http.Request) {
+	var body totpVerifyRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxJSONBody)).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	session, err := h.accounts.VerifyTOTPLogin(r.Context(), body.ChallengeToken, body.Code)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeOK(w, session)
+}
+
+// securityInfo 返回当前账户的安全设置状态。
+func (h *Handler) securityInfo(w http.ResponseWriter, r *http.Request) {
+	info, err := h.accounts.Security(r.Context(), principalOf(r))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeOK(w, info)
+}
+
+// setupTOTP 生成 TOTP 密钥并返回 otpauth 链接。
+func (h *Handler) setupTOTP(w http.ResponseWriter, r *http.Request) {
+	setup, err := h.accounts.SetupTOTP(r.Context(), principalOf(r))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeOK(w, setup)
+}
+
+type totpCodeRequest struct {
+	Code string `json:"code"`
+}
+
+// enableTOTP 校验动态码后启用二次验证。
+func (h *Handler) enableTOTP(w http.ResponseWriter, r *http.Request) {
+	var body totpCodeRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxJSONBody)).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	user, err := h.accounts.EnableTOTP(r.Context(), principalOf(r), body.Code)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeOK(w, user)
+}
+
+type totpDisableRequest struct {
+	Code     string `json:"code"`
+	Password string `json:"password"`
+}
+
+// disableTOTP 关闭二次验证（需动态码或密码）。
+func (h *Handler) disableTOTP(w http.ResponseWriter, r *http.Request) {
+	var body totpDisableRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxJSONBody)).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	user, err := h.accounts.DisableTOTP(r.Context(), principalOf(r), body.Code, body.Password)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeOK(w, user)
+}
+
+type emailRequest struct {
+	Email string `json:"email"`
+}
+
+// sendEmailCode 向目标邮箱发送验证码。
+func (h *Handler) sendEmailCode(w http.ResponseWriter, r *http.Request) {
+	var body emailRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxJSONBody)).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if err := h.accounts.SendEmailVerification(r.Context(), principalOf(r), body.Email); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeOK(w, map[string]string{"status": "sent"})
+}
+
+type emailVerifyRequest struct {
+	Email    string `json:"email"`
+	Code     string `json:"code"`
+	Password string `json:"password"`
+}
+
+// verifyEmail 校验验证码并绑定邮箱；换绑已绑定的邮箱时需提供当前密码。
+func (h *Handler) verifyEmail(w http.ResponseWriter, r *http.Request) {
+	var body emailVerifyRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxJSONBody)).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	user, err := h.accounts.VerifyEmail(r.Context(), principalOf(r), body.Email, body.Code, body.Password)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeOK(w, user)
+}
+
+// unbindEmail 解绑邮箱（需当前密码）。
+func (h *Handler) unbindEmail(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxJSONBody)).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	user, err := h.accounts.UnbindEmail(r.Context(), principalOf(r), body.Password)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeOK(w, user)
+}

@@ -7,8 +7,14 @@ import {
   adminLogin as adminLoginApi,
   login as loginApi,
   register as registerApi,
+  verifyTOTPLogin as verifyTOTPLoginApi,
 } from '@/api/auth'
-import type { Credentials, EffectivePolicies, User } from '@/api/types'
+import type { Credentials, EffectivePolicies, LoginResult, User } from '@/api/types'
+
+/** 登录结果：直接成功，或需要完成 TOTP 二次验证。 */
+export type LoginOutcome =
+  | { totpRequired: false; user: User }
+  | { totpRequired: true; challengeToken: string }
 
 const STORAGE_KEY = 'axmipic.session.v1'
 
@@ -114,20 +120,37 @@ export const useAuthStore = defineStore('auth', () => {
     void loadPolicies()
   }
 
-  async function login(credentials: Credentials): Promise<User> {
+  async function login(credentials: Credentials): Promise<LoginOutcome> {
     const result = await loginApi(credentials)
-    return applySession(result)
+    return handleLoginResult(result)
   }
 
   /** 通过独立的管理员入口登录。 */
-  async function adminLogin(credentials: Credentials): Promise<User> {
+  async function adminLogin(credentials: Credentials): Promise<LoginOutcome> {
     const result = await adminLoginApi(credentials)
+    return handleLoginResult(result)
+  }
+
+  /** 登录响应可能是直接会话，也可能是 TOTP 挑战。 */
+  function handleLoginResult(result: LoginResult): LoginOutcome {
+    if (result.totp_required && result.challenge_token) {
+      return { totpRequired: true, challengeToken: result.challenge_token }
+    }
+    return { totpRequired: false, user: applySession(result) }
+  }
+
+  /** 完成 TOTP 二次验证并建立会话。 */
+  async function verifyTOTP(challengeToken: string, code: string): Promise<User> {
+    const result = await verifyTOTPLoginApi(challengeToken, code)
     return applySession(result)
   }
 
-  function applySession(result: { token: string; expires_at: string; user: User }): User {
+  function applySession(result: LoginResult): User {
+    if (!result.token || !result.user) {
+      throw new Error('登录响应缺少会话令牌')
+    }
     token.value = result.token
-    expiresAt.value = result.expires_at
+    expiresAt.value = result.expires_at ?? ''
     user.value = result.user
     persist()
     void loadPolicies()
@@ -135,7 +158,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   /** 注册账号后使用相同凭证自动登录。 */
-  async function register(credentials: Credentials): Promise<User> {
+  async function register(credentials: Credentials): Promise<LoginOutcome> {
     await registerApi(credentials)
     return login(credentials)
   }
@@ -167,6 +190,7 @@ export const useAuthStore = defineStore('auth', () => {
     login,
     adminLogin,
     register,
+    verifyTOTP,
     refreshUser,
     loadPolicies,
     hasFeature,

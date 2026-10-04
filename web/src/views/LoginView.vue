@@ -19,6 +19,11 @@ const formRef = ref<FormInstance>()
 const loading = ref(false)
 const form = reactive({ username: '', password: '' })
 
+// TOTP 二次验证步骤。
+const totpChallenge = ref('')
+const totpCode = ref('')
+const totpLoading = ref(false)
+
 const rules: FormRules = {
   username: [
     { required: true, message: '请输入用户名', trigger: 'blur' },
@@ -31,10 +36,12 @@ const rules: FormRules = {
 }
 
 const heading = computed(() => {
+  if (totpChallenge.value) return '两步验证'
   if (mode.value === 'admin') return '管理员登录'
   return mode.value === 'login' ? '欢迎回来' : '创建新账号'
 })
 const subheading = computed(() => {
+  if (totpChallenge.value) return '请输入身份验证器中的 6 位动态验证码以完成登录'
   if (mode.value === 'admin') return '使用管理员账号进入管理控制台'
   return mode.value === 'login' ? '登录以管理图片、访问令牌与存储配额' : '注册成功后将自动登录并进入控制台'
 })
@@ -62,23 +69,56 @@ async function handleSubmit(): Promise<void> {
   loading.value = true
   try {
     const credentials = { username: form.username.trim(), password: form.password }
+    let outcome
     if (mode.value === 'admin') {
-      await auth.adminLogin(credentials)
-      ElMessage.success('登录成功')
+      outcome = await auth.adminLogin(credentials)
     } else if (mode.value === 'login') {
-      await auth.login(credentials)
-      ElMessage.success('登录成功')
+      outcome = await auth.login(credentials)
     } else {
-      await auth.register(credentials)
-      ElMessage.success('注册成功，已自动登录')
+      outcome = await auth.register(credentials)
     }
-    const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/'
-    await router.replace(redirect.startsWith('/') ? redirect : '/')
+    if (outcome.totpRequired) {
+      totpChallenge.value = outcome.challengeToken
+      totpCode.value = ''
+      ElMessage.info('请输入动态验证码完成登录')
+      return
+    }
+    ElMessage.success(mode.value === 'register' ? '注册成功，已自动登录' : '登录成功')
+    await redirectAfterLogin()
   } catch (error) {
     ElMessage.error(error instanceof ApiError ? error.message : '操作失败，请稍后重试')
   } finally {
     loading.value = false
   }
+}
+
+/** 完成 TOTP 二次验证并进入控制台。 */
+async function submitTOTP(): Promise<void> {
+  const code = totpCode.value.trim()
+  if (!/^\d{6}$/.test(code)) {
+    ElMessage.warning('请输入 6 位动态验证码')
+    return
+  }
+  totpLoading.value = true
+  try {
+    await auth.verifyTOTP(totpChallenge.value, code)
+    ElMessage.success('登录成功')
+    await redirectAfterLogin()
+  } catch (error) {
+    ElMessage.error(error instanceof ApiError ? error.message : '验证失败，请重试')
+  } finally {
+    totpLoading.value = false
+  }
+}
+
+function cancelTOTP(): void {
+  totpChallenge.value = ''
+  totpCode.value = ''
+}
+
+async function redirectAfterLogin(): Promise<void> {
+  const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/'
+  await router.replace(redirect.startsWith('/') ? redirect : '/')
 }
 </script>
 
@@ -160,6 +200,7 @@ async function handleSubmit(): Promise<void> {
         <p class="auth__desc">{{ subheading }}</p>
 
         <el-form
+          v-if="!totpChallenge"
           ref="formRef"
           :model="form"
           :rules="rules"
@@ -199,7 +240,31 @@ async function handleSubmit(): Promise<void> {
           </el-button>
         </el-form>
 
-        <p class="auth__switch">
+        <form v-else class="auth__totp" @submit.prevent="submitTOTP">
+          <el-input
+            v-model="totpCode"
+            size="large"
+            maxlength="6"
+            placeholder="6 位动态验证码"
+            inputmode="numeric"
+            autocomplete="one-time-code"
+            autofocus
+          />
+          <el-button
+            type="primary"
+            size="large"
+            class="auth__submit"
+            :loading="totpLoading"
+            @click="submitTOTP"
+          >
+            验证并登录
+          </el-button>
+          <button type="button" class="auth__switch-btn auth__totp-back" @click="cancelTOTP">
+            返回重新输入账号
+          </button>
+        </form>
+
+        <p v-if="!totpChallenge" class="auth__switch">
           <template v-if="mode === 'register'">
             已有账号？
             <button type="button" class="auth__switch-btn" @click="switchMode">去登录</button>
@@ -415,6 +480,17 @@ async function handleSubmit(): Promise<void> {
 .auth__submit {
   width: 100%;
   margin-top: var(--ax-space-2);
+}
+
+.auth__totp {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ax-space-2);
+}
+
+.auth__totp-back {
+  margin-top: var(--ax-space-3);
+  align-self: center;
 }
 
 .auth__switch {

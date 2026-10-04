@@ -66,6 +66,19 @@ func (h *Handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, http.StatusConflict, http.StatusConflict, err.Error())
 	case errors.Is(err, service.ErrInvalidCredentials):
 		writeError(w, http.StatusUnauthorized, http.StatusUnauthorized, err.Error())
+	case errors.Is(err, service.ErrInvalidChallenge), errors.Is(err, service.ErrInvalidTOTPCode):
+		writeError(w, http.StatusUnauthorized, http.StatusUnauthorized, err.Error())
+	case errors.Is(err, service.ErrTOTPUnavailable), errors.Is(err, service.ErrTOTPAlreadyEnabled),
+		errors.Is(err, service.ErrTOTPNotEnabled), errors.Is(err, service.ErrTOTPNotConfigured):
+		writeError(w, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+	case errors.Is(err, service.ErrInvalidEmail), errors.Is(err, service.ErrEmailCodeInvalid):
+		writeError(w, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+	case errors.Is(err, service.ErrEmailInUse):
+		writeError(w, http.StatusConflict, http.StatusConflict, err.Error())
+	case errors.Is(err, service.ErrEmailRateLimited):
+		writeError(w, http.StatusTooManyRequests, http.StatusTooManyRequests, err.Error())
+	case errors.Is(err, service.ErrEmailNotConfigured):
+		writeError(w, http.StatusBadRequest, http.StatusBadRequest, err.Error())
 	case errors.Is(err, service.ErrRegistrationDisabled):
 		writeError(w, http.StatusForbidden, http.StatusForbidden, err.Error())
 	case errors.Is(err, service.ErrTokenNotFound):
@@ -106,6 +119,8 @@ func (h *Handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, http.StatusBadRequest, http.StatusBadRequest, err.Error())
 	case errors.Is(err, service.ErrNotifyFailed):
 		writeError(w, http.StatusBadGateway, http.StatusBadGateway, err.Error())
+	case errors.Is(err, service.ErrSettingsConfig):
+		writeError(w, http.StatusBadRequest, http.StatusBadRequest, err.Error())
 	case errors.Is(err, service.ErrPlanNotFound):
 		writeError(w, http.StatusNotFound, http.StatusNotFound, "plan not found")
 	case errors.Is(err, service.ErrOrderNotFound):

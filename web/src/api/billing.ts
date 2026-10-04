@@ -113,6 +113,38 @@ export function sendTestNotify(payload: {
   return request<{ status: string }>({ method: 'POST', url: '/admin/notify/test', data: payload })
 }
 
+/** SMTP 邮件渠道设置。密码只返回是否已设置，不回传明文。 */
+export interface SMTPConfig {
+  enabled: boolean
+  host: string
+  port: number
+  username: string
+  from: string
+  use_tls: boolean
+  password_set: boolean
+}
+
+/** 更新 SMTP 设置的输入；password 为空表示保持原密码。 */
+export interface SMTPInput {
+  enabled: boolean
+  host: string
+  port: number
+  username: string
+  password: string
+  from: string
+  use_tls: boolean
+}
+
+/** 管理端：读取 SMTP 设置。 */
+export function getSMTPConfig(): Promise<SMTPConfig> {
+  return request<SMTPConfig>({ method: 'GET', url: '/admin/notify/smtp' })
+}
+
+/** 管理端：保存 SMTP 设置并即时生效。 */
+export function updateSMTPConfig(input: SMTPInput): Promise<SMTPConfig> {
+  return request<SMTPConfig>({ method: 'PUT', url: '/admin/notify/smtp', data: input })
+}
+
 /** 管理端：安全扫描器信息。 */
 export function getSecurityInfo(): Promise<{ scanner?: string }> {
   return request<{ scanner?: string }>({ method: 'GET', url: '/admin/security' })
@@ -152,4 +184,25 @@ export interface RuntimeInfo {
 /** 管理端：运行环境信息。 */
 export function getRuntimeInfo(): Promise<RuntimeInfo> {
   return request<RuntimeInfo>({ method: 'GET', url: '/admin/runtime' })
+}
+
+/** 进程实时运行时指标。 */
+export interface ProcessInfo {
+  goroutines: number
+  heap_alloc_bytes: number
+  heap_inuse_bytes: number
+  heap_objects: number
+  heap_sys_bytes: number
+  sys_bytes: number
+  stack_inuse_bytes: number
+  gc_count: number
+  num_cpu: number
+  uptime_seconds: number
+  go_version: string
+  platform: string
+}
+
+/** 管理端：进程运行时指标。 */
+export function getProcessInfo(): Promise<ProcessInfo> {
+  return request<ProcessInfo>({ method: 'GET', url: '/admin/process' })
 }

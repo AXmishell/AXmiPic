@@ -30,6 +30,8 @@ type Deps struct {
 	Billing  *service.BillingService
 	Notify   *service.NotifyService
 	Install  *service.InstallService
+	// Settings 管理运行时可修改的系统设置（如 SMTP）。
+	Settings *service.SettingsService
 	// Runtime 是实例运行环境信息，供管理端展示（不含密钥）。
 	Runtime       RuntimeInfo
 	Authenticator *auth.Authenticator
@@ -65,6 +67,7 @@ type Handler struct {
 	billing        *service.BillingService
 	notify         *service.NotifyService
 	install        *service.InstallService
+	settings       *service.SettingsService
 	runtime        RuntimeInfo
 	installRepo    func(driver, dsn string) (*store.Repository, error)
 	installSeed    func(ctx context.Context, repo *store.Repository, in service.InstallInput) error
@@ -87,6 +90,7 @@ func NewRouter(d Deps) http.Handler {
 		billing:        d.Billing,
 		notify:         d.Notify,
 		install:        d.Install,
+		settings:       d.Settings,
 		runtime:        d.Runtime,
 		installRepo:    d.InstallRepo,
 		installSeed:    d.InstallSeed,
@@ -119,6 +123,7 @@ func NewRouter(d Deps) http.Handler {
 			r.Use(d.UploadLimiter.Middleware)
 			r.Post("/auth/register", h.register)
 			r.Post("/auth/login", h.login)
+			r.Post("/auth/totp/verify", h.verifyTOTPLogin)
 			r.Post("/admin/auth/login", h.adminLogin)
 		})
 
@@ -154,6 +159,13 @@ func NewRouter(d Deps) http.Handler {
 			r.Group(func(r chi.Router) {
 				r.Use(auth.RequireAuth)
 				r.Get("/auth/me", h.me)
+				r.Get("/auth/security", h.securityInfo)
+				r.Post("/auth/totp/setup", h.setupTOTP)
+				r.Post("/auth/totp/enable", h.enableTOTP)
+				r.Post("/auth/totp/disable", h.disableTOTP)
+				r.Post("/auth/email/code", h.sendEmailCode)
+				r.Post("/auth/email/verify", h.verifyEmail)
+				r.Post("/auth/email/unbind", h.unbindEmail)
 				r.Get("/auth/policies", h.authPolicies)
 				r.Post("/tokens", h.createToken)
 				r.Get("/tokens", h.listTokens)
@@ -241,9 +253,12 @@ func NewRouter(d Deps) http.Handler {
 
 				r.Get("/admin/notify/channels", h.adminNotifyChannels)
 				r.Post("/admin/notify/test", h.adminTestNotify)
+				r.Get("/admin/notify/smtp", h.adminGetSMTP)
+				r.Put("/admin/notify/smtp", h.adminUpdateSMTP)
 				r.Get("/admin/security", h.adminSecurityInfo)
 				r.Get("/admin/imaging/drivers", h.adminImagingDrivers)
 				r.Get("/admin/runtime", h.adminRuntimeInfo)
+				r.Get("/admin/process", h.adminProcessInfo)
 			})
 		})
 	})

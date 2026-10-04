@@ -3,6 +3,8 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"runtime"
+	"time"
 
 	"github.com/AXmishell/axmipic/internal/imaging"
 )
@@ -101,4 +103,54 @@ func (h *Handler) adminRuntimeInfo(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeOK(w, info)
+}
+
+// ProcessInfo 描述进程的实时运行时指标。
+type ProcessInfo struct {
+	// Goroutines 为当前 goroutine 数量。
+	Goroutines int `json:"goroutines"`
+	// HeapAlloc 为已分配且仍在使用的堆内存字节数。
+	HeapAllocBytes uint64 `json:"heap_alloc_bytes"`
+	// HeapInuse 为正在使用的堆内存字节数（含尚未释放的 span）。
+	HeapInuseBytes uint64 `json:"heap_inuse_bytes"`
+	// HeapObjects 为存活堆对象数量。
+	HeapObjects uint64 `json:"heap_objects"`
+	// HeapSys 为从操作系统保留的堆内存字节数。
+	HeapSysBytes uint64 `json:"heap_sys_bytes"`
+	// Sys 为从操作系统获取的虚拟内存总字节数。
+	SysBytes uint64 `json:"sys_bytes"`
+	// StackInuse 为栈内存使用字节数。
+	StackInuseBytes uint64 `json:"stack_inuse_bytes"`
+	// GCCount 为已完成的 GC 次数。
+	GCCount uint32 `json:"gc_count"`
+	// NumCPU 为可用逻辑 CPU 数量。
+	NumCPU int `json:"num_cpu"`
+	// UptimeSeconds 为进程已运行秒数。
+	UptimeSeconds int64 `json:"uptime_seconds"`
+	// GoVersion 与 Platform 为运行环境信息。
+	GoVersion string `json:"go_version"`
+	Platform  string `json:"platform"`
+}
+
+// processStartedAt 记录进程启动时间，用于计算运行时长。
+var processStartedAt = time.Now()
+
+// adminProcessInfo 返回进程的实时运行时指标（Goroutine、堆内存、堆对象数等）。
+func (h *Handler) adminProcessInfo(w http.ResponseWriter, r *http.Request) {
+	var mem runtime.MemStats
+	runtime.ReadMemStats(&mem)
+	writeOK(w, ProcessInfo{
+		Goroutines:      runtime.NumGoroutine(),
+		HeapAllocBytes:  mem.HeapAlloc,
+		HeapInuseBytes:  mem.HeapInuse,
+		HeapObjects:     mem.HeapObjects,
+		HeapSysBytes:    mem.HeapSys,
+		SysBytes:        mem.Sys,
+		StackInuseBytes: mem.StackInuse,
+		GCCount:         mem.NumGC,
+		NumCPU:          runtime.NumCPU(),
+		UptimeSeconds:   int64(time.Since(processStartedAt).Seconds()),
+		GoVersion:       runtime.Version(),
+		Platform:        runtime.GOOS + "/" + runtime.GOARCH,
+	})
 }

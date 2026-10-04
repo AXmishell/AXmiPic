@@ -39,7 +39,7 @@ func Open(driver, dsn string) (*Repository, error) {
 	if err := db.AutoMigrate(
 		&Image{}, &PendingUpload{}, &Admin{}, &Customer{}, &APIToken{},
 		&StorageBackend{}, &Album{}, &RoleGroup{}, &Policy{}, &RoleGroupPolicy{},
-		&Share{}, &Announcement{}, &Report{}, &Page{},
+		&Share{}, &Announcement{}, &Report{}, &Page{}, &Setting{},
 		&Plan{}, &Order{}, &Coupon{}, &CouponRedemption{}, &Ticket{}, &TicketMessage{},
 	); err != nil {
 		return nil, fmt.Errorf("store: migrate: %w", err)

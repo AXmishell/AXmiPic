@@ -81,8 +81,14 @@ type Admin struct {
 	Username     string `gorm:"uniqueIndex;size:64;not null"`
 	PasswordHash string `gorm:"size:100;not null"`
 	Disabled     bool   `gorm:"not null;default:false"`
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	// Email 为已绑定的邮箱（未验证时仅作暂存）；空字符串表示未绑定。
+	Email         string `gorm:"size:255;not null;default:''"`
+	EmailVerified bool   `gorm:"not null;default:false"`
+	// TOTPSecret 为 TOTP 密钥的密文；TOTPEnabled 表示二次验证是否已启用。
+	TOTPSecret  string `gorm:"type:text;not null;default:''"`
+	TOTPEnabled bool   `gorm:"not null;default:false"`
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
 // TableName 返回存储 Admin 的表名。
@@ -100,6 +106,12 @@ type Customer struct {
 	QuotaBytes   int64  `gorm:"not null;default:0"` // 0 表示不限额
 	// RoleGroupID 指向用户所属的角色组；为空表示使用默认角色组。
 	RoleGroupID *string `gorm:"index;size:36"`
+	// Email 为已绑定的邮箱（未验证时仅作暂存）；空字符串表示未绑定。
+	Email         string `gorm:"size:255;not null;default:''"`
+	EmailVerified bool   `gorm:"not null;default:false"`
+	// TOTPSecret 为 TOTP 密钥的密文；TOTPEnabled 表示二次验证是否已启用。
+	TOTPSecret  string `gorm:"type:text;not null;default:''"`
+	TOTPEnabled bool   `gorm:"not null;default:false"`
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 }
@@ -156,6 +168,20 @@ type StorageBackend struct {
 // TableName 返回存储 StorageBackend 的表名。
 func (StorageBackend) TableName() string {
 	return "storage_backends"
+}
+
+// Setting 是一条运行时可修改的键值设置。敏感值（如 SMTP 密码）在写入前
+// 由服务层加密，数据库只保存密文。
+type Setting struct {
+	Key       string `gorm:"primaryKey;size:64"`
+	Value     string `gorm:"type:text;not null;default:''"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// TableName 返回存储 Setting 的表名。
+func (Setting) TableName() string {
+	return "settings"
 }
 
 // RoleGroup 是管理员定义的一组权限与策略集合，可分配给普通用户，从而

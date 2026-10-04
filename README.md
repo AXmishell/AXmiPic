@@ -305,7 +305,28 @@ processing:
 | POST | `/auth/register` | 注册普通用户 |
 | POST | `/auth/login` | 普通用户登录 |
 | POST | `/admin/auth/login` | 管理员登录（独立入口） |
+| POST | `/auth/totp/verify` | 完成登录时的 TOTP 二次验证（`challenge_token` + `code`） |
 | GET | `/auth/me` | 当前账号信息 |
+| GET | `/auth/security` | 当前账号的安全设置状态（TOTP、邮箱） |
+| POST | `/auth/totp/setup` | 生成 TOTP 密钥并返回 `secret` 与 `otpauth` 链接 |
+| POST | `/auth/totp/enable` | 校验动态码后启用二次验证 |
+| POST | `/auth/totp/disable` | 关闭二次验证（动态码或密码） |
+| POST | `/auth/email/code` | 向目标邮箱发送验证码（每账号每分钟 1 条、每天上限 10 条） |
+| POST | `/auth/email/verify` | 校验验证码并绑定邮箱；换绑不同邮箱时需提供当前密码 |
+| POST | `/auth/email/unbind` | 解绑邮箱（需当前密码） |
+
+启用 TOTP 后，`/auth/login` 与 `/admin/auth/login` 不再直接返回会话，而是返回
+`{"totp_required": true, "challenge_token": "…"}`；客户端需携带该令牌与
+身份验证器生成的 6 位动态码调用 `/auth/totp/verify` 换取正式会话。TOTP 密钥
+经主密钥加密后保存，登录挑战令牌带有独立作用域，不能作为会话使用。邮箱绑定
+通过验证码验证邮箱真实可用，未配置真实邮件渠道时验证码会回退记录到服务端日志。
+普通用户与管理员均可使用以上安全能力。
+
+邮箱换绑策略：绑定与换绑共用发码/验证接口，换绑只需验证新邮箱，但**当目标邮箱
+与当前已验证邮箱不同时必须提供当前密码**；换绑成功后向旧邮箱发送一条变更通知；
+验证码发送按账号限流（每分钟 1 条、突发 2 条、每天上限 10 条），超限返回
+HTTP 429。验证码 10 分钟内有效、一次性、最多尝试 5 次，且与其他账号已绑定的
+邮箱冲突时返回 HTTP 409。
 
 ### 上传
 
@@ -476,10 +497,13 @@ curl -X POST http://localhost:8080/api/v1/upload \
 |------|------|------|
 | GET | `/admin/security` | 当前启用的扫描器 |
 | GET | `/admin/runtime` | 实例运行环境信息（站点地址、数据库/存储/处理器、配额与限流等，不含密钥） |
+| GET | `/admin/process` | 进程实时运行时指标（Goroutine、堆内存、堆对象数、GC、运行时长等） |
 | GET | `/admin/notify/channels` | 已配置的短信与邮件渠道 |
 | POST | `/admin/notify/test` | 发送测试通知（`{"channel":"sms","to":"…","body":"…"}`） |
+| GET | `/admin/notify/smtp` | 读取 SMTP 邮件渠道设置（密码仅返回是否已设置） |
+| PUT | `/admin/notify/smtp` | 保存 SMTP 设置并即时生效（`password` 为空表示保持原密码） |
 
-扫描器在 `multipart` 上传与预签名直传确认两个入口都会执行；命中危险内容时返回 HTTP 422 并拒绝入库。通知渠道的兜底实现会把消息写入服务端日志，便于开发调试。管理端「账号设置 → 系统集成」提供渠道查看与发送测试。
+扫描器在 `multipart` 上传与预签名直传确认两个入口都会执行；命中危险内容时返回 HTTP 422 并拒绝入库。通知渠道的兜底实现会把消息写入服务端日志，便于开发调试。管理端「系统设置 → 通知设置」提供 SMTP 配置、渠道查看与发送测试；SMTP 密码经主密钥加密后保存在数据库的 `settings` 表中，保存后邮件渠道即时切换，无需重启。
 
 ### 角色组与策略
 

@@ -2,14 +2,21 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/subtle"
 	"errors"
 	"fmt"
+	"log/slog"
+	"math/big"
+	"net/mail"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/AXmishell/axmipic/internal/auth"
+	"github.com/AXmishell/axmipic/internal/secret"
 	"github.com/AXmishell/axmipic/internal/store"
 )
 
@@ -23,6 +30,41 @@ var (
 	ErrRegistrationDisabled = errors.New("service: registration is disabled")
 	// ErrTokenNotFound 表示某个 API 令牌不存在。
 	ErrTokenNotFound = errors.New("service: token not found")
+	// ErrInvalidChallenge 表示 TOTP 登录挑战令牌无效或已过期。
+	ErrInvalidChallenge = errors.New("service: invalid or expired login challenge")
+	// ErrTOTPUnavailable 表示服务未配置加密主密钥，无法启用 TOTP。
+	ErrTOTPUnavailable = errors.New("service: totp is unavailable")
+	// ErrTOTPAlreadyEnabled 表示二次验证已经处于启用状态。
+	ErrTOTPAlreadyEnabled = errors.New("service: totp is already enabled")
+	// ErrTOTPNotEnabled 表示二次验证尚未启用。
+	ErrTOTPNotEnabled = errors.New("service: totp is not enabled")
+	// ErrTOTPNotConfigured 表示尚未生成 TOTP 密钥。
+	ErrTOTPNotConfigured = errors.New("service: totp has not been set up")
+	// ErrInvalidTOTPCode 表示动态验证码错误。
+	ErrInvalidTOTPCode = errors.New("service: invalid totp code")
+	// ErrInvalidEmail 表示邮箱地址格式不合法。
+	ErrInvalidEmail = errors.New("service: invalid email address")
+	// ErrEmailInUse 表示邮箱已被其他账户绑定。
+	ErrEmailInUse = errors.New("service: email already in use")
+	// ErrEmailNotConfigured 表示邮件渠道未配置，无法发送验证码。
+	ErrEmailNotConfigured = errors.New("service: email channel is not configured")
+	// ErrEmailCodeInvalid 表示邮箱验证码错误或已过期。
+	ErrEmailCodeInvalid = errors.New("service: invalid or expired email verification code")
+	// ErrEmailRateLimited 表示邮箱验证码请求过于频繁。
+	ErrEmailRateLimited = errors.New("service: too many email verification requests")
+)
+
+// emailCodeTTL 是邮箱验证码的有效期。
+const emailCodeTTL = 10 * time.Minute
+
+// emailCodeMaxAttempts 是单个验证码允许的最大尝试次数。
+const emailCodeMaxAttempts = 5
+
+// 邮箱验证码发送频率限制：每个账户每分钟至多 1 条（突发 2 条），每天至多 10 条。
+const (
+	emailCodePerMinute = 1
+	emailCodeBurst     = 2
+	emailCodeDailyMax  = 10
 )
 
 const (
@@ -53,15 +95,41 @@ type UserDTO struct {
 	UsedBytes  int64  `json:"used_bytes"`
 	QuotaBytes int64  `json:"quota_bytes"`
 	// RoleGroupID 是普通用户所属的角色组；管理员与未分配用户为空。
-	RoleGroupID string    `json:"role_group_id,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
+	RoleGroupID string `json:"role_group_id,omitempty"`
+	// Email 为已绑定的邮箱；EmailVerified 表示是否已通过验证。
+	Email         string    `json:"email,omitempty"`
+	EmailVerified bool      `json:"email_verified"`
+	TOTPEnabled   bool      `json:"totp_enabled"`
+	CreatedAt     time.Time `json:"created_at"`
 }
 
-// SessionDTO 由登录操作返回。
+// SessionDTO 由登录操作返回。当账号启用了 TOTP 时，Token 为空且
+// TOTPRequired 为真，调用方需用 ChallengeToken 完成二次验证。
 type SessionDTO struct {
-	Token     string    `json:"token"`
-	ExpiresAt time.Time `json:"expires_at"`
+	Token     string    `json:"token,omitempty"`
+	ExpiresAt time.Time `json:"expires_at,omitempty"`
 	User      UserDTO   `json:"user"`
+	// TOTPRequired 表示还需完成 TOTP 二次验证。
+	TOTPRequired bool `json:"totp_required,omitempty"`
+	// ChallengeToken 为完成 TOTP 验证所需的短期令牌。
+	ChallengeToken string `json:"challenge_token,omitempty"`
+}
+
+// TOTPSetupDTO 是开始配置 TOTP 时返回的信息。
+type TOTPSetupDTO struct {
+	// Secret 为 Base32 编码的密钥，供手动录入。
+	Secret string `json:"secret"`
+	// URI 为 otpauth:// 链接，供 Authenticator 扫描。
+	URI string `json:"uri"`
+}
+
+// SecurityDTO 汇总账户的安全设置状态。
+type SecurityDTO struct {
+	Email          string `json:"email"`
+	EmailVerified  bool   `json:"email_verified"`
+	TOTPEnabled    bool   `json:"totp_enabled"`
+	TOTPAvailable  bool   `json:"totp_available"`
+	EmailAvailable bool   `json:"email_available"`
 }
 
 // TokenDTO 是 API 令牌在 API 中的表示形式。明文 Token 仅在令牌创建时
@@ -82,6 +150,29 @@ type AccountService struct {
 	allowRegistration bool
 	defaultQuotaBytes int64
 	policies          *PolicyService
+	cipher            *secret.Cipher
+	notify            *NotifyService
+
+	codeMu     sync.Mutex
+	emailCodes map[string]pendingEmailCode
+	// emailDaily 记录每个账户当天的验证码发送次数（键为 role:id）。
+	emailDaily map[string]emailDailyCounts
+	// emailLimiter 限制单账户的验证码发送频率。
+	emailLimiter *auth.RateLimiter
+}
+
+// pendingEmailCode 是一条待验证的邮箱验证码。
+type pendingEmailCode struct {
+	email    string
+	code     string
+	expires  time.Time
+	attempts int
+}
+
+// emailDailyCounts 记录某个账户在一个自然日内的验证码发送次数。
+type emailDailyCounts struct {
+	day   string
+	count int
 }
 
 // NewAccountService 构造一个 AccountService。
@@ -91,7 +182,20 @@ func NewAccountService(repo *store.Repository, issuer *auth.SessionIssuer, allow
 		issuer:            issuer,
 		allowRegistration: allowRegistration,
 		defaultQuotaBytes: defaultQuotaBytes,
+		emailCodes:        map[string]pendingEmailCode{},
+		emailDaily:        map[string]emailDailyCounts{},
+		emailLimiter:      auth.NewRateLimiter(emailCodePerMinute, emailCodeBurst),
 	}
+}
+
+// SetCipher 安装加密主密钥，用于加密保存 TOTP 密钥。未安装时 TOTP 不可用。
+func (s *AccountService) SetCipher(cipher *secret.Cipher) {
+	s.cipher = cipher
+}
+
+// SetNotifyService 安装通知服务，用于发送邮箱验证码。
+func (s *AccountService) SetNotifyService(notifySvc *NotifyService) {
+	s.notify = notifySvc
 }
 
 // SetPolicyService 安装角色组/策略服务，使注册与账户视图能够使用策略。
@@ -258,11 +362,338 @@ func (s *AccountService) login(ctx context.Context, role store.AccountRole, user
 	if account.Disabled {
 		return nil, ErrInvalidCredentials
 	}
+	if account.TOTPEnabled && account.TOTPSecret != "" {
+		challenge, expiresAt, err := s.issuer.IssueChallenge(account.ID, string(account.Role))
+		if err != nil {
+			return nil, err
+		}
+		return &SessionDTO{TOTPRequired: true, ChallengeToken: challenge, ExpiresAt: expiresAt, User: *toUserDTO(account)}, nil
+	}
 	token, expiresAt, err := s.issuer.Issue(account.ID, string(account.Role))
 	if err != nil {
 		return nil, err
 	}
 	return &SessionDTO{Token: token, ExpiresAt: expiresAt, User: *toUserDTO(account)}, nil
+}
+
+// VerifyTOTPLogin 依据登录挑战令牌与动态码签发正式会话。
+func (s *AccountService) VerifyTOTPLogin(ctx context.Context, challengeToken, code string) (*SessionDTO, error) {
+	userID, role, err := s.issuer.ParseChallenge(strings.TrimSpace(challengeToken))
+	if err != nil {
+		return nil, ErrInvalidChallenge
+	}
+	account, err := s.repo.GetAccountByID(ctx, store.AccountRole(role), userID)
+	if err != nil {
+		return nil, ErrInvalidChallenge
+	}
+	if account.Disabled || !account.TOTPEnabled || account.TOTPSecret == "" {
+		return nil, ErrInvalidChallenge
+	}
+	secret, err := s.decryptTOTPSecret(account.TOTPSecret)
+	if err != nil {
+		return nil, ErrInvalidChallenge
+	}
+	if !auth.VerifyTOTP(secret, code, time.Now()) {
+		return nil, ErrInvalidTOTPCode
+	}
+	token, expiresAt, err := s.issuer.Issue(account.ID, string(account.Role))
+	if err != nil {
+		return nil, err
+	}
+	return &SessionDTO{Token: token, ExpiresAt: expiresAt, User: *toUserDTO(account)}, nil
+}
+
+// Security 返回账户当前的安全设置状态。
+func (s *AccountService) Security(ctx context.Context, principal *auth.Principal) (*SecurityDTO, error) {
+	account, err := s.repo.GetAccountByID(ctx, principal.StoreRole(), principal.UserID)
+	if err != nil {
+		return nil, fmt.Errorf("security: %w", err)
+	}
+	return &SecurityDTO{
+		Email:          account.Email,
+		EmailVerified:  account.EmailVerified,
+		TOTPEnabled:    account.TOTPEnabled,
+		TOTPAvailable:  s.cipher != nil,
+		EmailAvailable: s.notify != nil,
+	}, nil
+}
+
+// SetupTOTP 生成新的 TOTP 密钥并暂存（尚未启用），返回密钥与 otpauth 链接。
+// 已启用时返回 ErrTOTPAlreadyEnabled。
+func (s *AccountService) SetupTOTP(ctx context.Context, principal *auth.Principal) (*TOTPSetupDTO, error) {
+	if s.cipher == nil {
+		return nil, ErrTOTPUnavailable
+	}
+	account, err := s.repo.GetAccountByID(ctx, principal.StoreRole(), principal.UserID)
+	if err != nil {
+		return nil, fmt.Errorf("setup totp: %w", err)
+	}
+	if account.TOTPEnabled {
+		return nil, ErrTOTPAlreadyEnabled
+	}
+	secret, err := auth.GenerateTOTPSecret()
+	if err != nil {
+		return nil, err
+	}
+	encrypted, err := s.cipher.Encrypt(secret)
+	if err != nil {
+		return nil, fmt.Errorf("setup totp: encrypt: %w", err)
+	}
+	if _, err := s.repo.UpdateAccountSecurity(ctx, principal.StoreRole(), principal.UserID, map[string]any{
+		"totp_secret":  encrypted,
+		"totp_enabled": false,
+	}); err != nil {
+		return nil, err
+	}
+	return &TOTPSetupDTO{Secret: secret, URI: auth.OTPAuthURI("AXmiPic", account.Username, secret)}, nil
+}
+
+// EnableTOTP 校验动态码后启用二次验证。
+func (s *AccountService) EnableTOTP(ctx context.Context, principal *auth.Principal, code string) (*UserDTO, error) {
+	if s.cipher == nil {
+		return nil, ErrTOTPUnavailable
+	}
+	account, err := s.repo.GetAccountByID(ctx, principal.StoreRole(), principal.UserID)
+	if err != nil {
+		return nil, fmt.Errorf("enable totp: %w", err)
+	}
+	if account.TOTPEnabled {
+		return nil, ErrTOTPAlreadyEnabled
+	}
+	if account.TOTPSecret == "" {
+		return nil, ErrTOTPNotConfigured
+	}
+	secret, err := s.decryptTOTPSecret(account.TOTPSecret)
+	if err != nil {
+		return nil, ErrTOTPNotConfigured
+	}
+	if !auth.VerifyTOTP(secret, code, time.Now()) {
+		return nil, ErrInvalidTOTPCode
+	}
+	updated, err := s.repo.UpdateAccountSecurity(ctx, principal.StoreRole(), principal.UserID, map[string]any{
+		"totp_enabled": true,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return toUserDTO(updated), nil
+}
+
+// DisableTOTP 关闭二次验证。需要提供当前密码或有效的动态码之一。
+func (s *AccountService) DisableTOTP(ctx context.Context, principal *auth.Principal, code, password string) (*UserDTO, error) {
+	account, err := s.repo.GetAccountByID(ctx, principal.StoreRole(), principal.UserID)
+	if err != nil {
+		return nil, fmt.Errorf("disable totp: %w", err)
+	}
+	if !account.TOTPEnabled {
+		return nil, ErrTOTPNotEnabled
+	}
+	verified := false
+	if strings.TrimSpace(code) != "" {
+		if secret, err := s.decryptTOTPSecret(account.TOTPSecret); err == nil {
+			verified = auth.VerifyTOTP(secret, code, time.Now())
+		}
+	} else if strings.TrimSpace(password) != "" {
+		verified = auth.VerifyPassword(account.PasswordHash, password)
+	}
+	if !verified {
+		return nil, ErrInvalidTOTPCode
+	}
+	updated, err := s.repo.UpdateAccountSecurity(ctx, principal.StoreRole(), principal.UserID, map[string]any{
+		"totp_secret":  "",
+		"totp_enabled": false,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return toUserDTO(updated), nil
+}
+
+// SendEmailVerification 向目标邮箱发送 6 位验证码。验证通过前不会改动账户邮箱。
+// 发送受频率限制：每分钟至多 1 条（突发 2 条），每天至多 10 条。
+func (s *AccountService) SendEmailVerification(ctx context.Context, principal *auth.Principal, email string) error {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if _, err := mail.ParseAddress(email); err != nil {
+		return fmt.Errorf("%w: %s", ErrInvalidEmail, email)
+	}
+	if s.notify == nil {
+		return ErrEmailNotConfigured
+	}
+	if !s.allowEmailSend(principal) {
+		return ErrEmailRateLimited
+	}
+	inUse, err := s.repo.EmailInUse(ctx, email, principal.UserID)
+	if err != nil {
+		return err
+	}
+	if inUse {
+		return ErrEmailInUse
+	}
+	code, err := generateNumericCode()
+	if err != nil {
+		return err
+	}
+	body := fmt.Sprintf("你的 AXmiPic 邮箱验证码是：%s\n\n验证码 %d 分钟内有效，请勿转发给他人。", code, int(emailCodeTTL.Minutes()))
+	if err := s.notify.SendEmail(ctx, email, "AXmiPic 邮箱验证码", body); err != nil {
+		return err
+	}
+	s.storeEmailCode(principal, email, code)
+	s.recordEmailSend(principal)
+	return nil
+}
+
+// VerifyEmail 校验验证码并（换）绑定邮箱。若账户此前已绑定邮箱，则换绑必须
+// 提供当前密码；换绑成功后会向旧邮箱发送一条变更通知。
+func (s *AccountService) VerifyEmail(ctx context.Context, principal *auth.Principal, email, code, password string) (*UserDTO, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	account, err := s.repo.GetAccountByID(ctx, principal.StoreRole(), principal.UserID)
+	if err != nil {
+		return nil, fmt.Errorf("verify email: %w", err)
+	}
+	// 换绑到不同的邮箱时才要求当前密码，防止会话被盗后静默改绑。
+	changing := account.EmailVerified && strings.TrimSpace(account.Email) != "" &&
+		!strings.EqualFold(account.Email, email)
+	if changing {
+		if strings.TrimSpace(password) == "" {
+			return nil, fmt.Errorf("%w: password is required to change the bound email", ErrInvalidCredentials)
+		}
+		if !auth.VerifyPassword(account.PasswordHash, password) {
+			return nil, ErrInvalidCredentials
+		}
+	}
+	if !s.consumeEmailCode(principal, email, code) {
+		return nil, ErrEmailCodeInvalid
+	}
+	updated, err := s.repo.UpdateAccountSecurity(ctx, principal.StoreRole(), principal.UserID, map[string]any{
+		"email":          email,
+		"email_verified": true,
+	})
+	if err != nil {
+		return nil, err
+	}
+	// 换绑成功后通知旧邮箱，便于用户察觉异常变更。发送失败不影响结果。
+	if changing && !strings.EqualFold(account.Email, email) {
+		s.notifyEmailChange(account.Email, email)
+	}
+	return toUserDTO(updated), nil
+}
+
+// notifyEmailChange 向旧邮箱发送一条变更通知（尽力而为）。
+func (s *AccountService) notifyEmailChange(oldEmail, newEmail string) {
+	if s.notify == nil || strings.TrimSpace(oldEmail) == "" {
+		return
+	}
+	body := fmt.Sprintf("你的 AXmiPic 账号邮箱已由 %s 变更为 %s。\n\n如果这不是你本人的操作，请立即修改密码并检查账号安全设置。", oldEmail, newEmail)
+	if err := s.notify.SendEmail(context.Background(), oldEmail, "AXmiPic 邮箱变更通知", body); err != nil {
+		slog.Default().Warn("failed to notify old email about change", slog.Any("error", err))
+	}
+}
+
+// UnbindEmail 解绑邮箱，需要提供当前密码。
+func (s *AccountService) UnbindEmail(ctx context.Context, principal *auth.Principal, password string) (*UserDTO, error) {
+	account, err := s.repo.GetAccountByID(ctx, principal.StoreRole(), principal.UserID)
+	if err != nil {
+		return nil, fmt.Errorf("unbind email: %w", err)
+	}
+	if !auth.VerifyPassword(account.PasswordHash, password) {
+		return nil, ErrInvalidCredentials
+	}
+	updated, err := s.repo.UpdateAccountSecurity(ctx, principal.StoreRole(), principal.UserID, map[string]any{
+		"email":          "",
+		"email_verified": false,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return toUserDTO(updated), nil
+}
+
+func (s *AccountService) decryptTOTPSecret(encrypted string) (string, error) {
+	if s.cipher == nil {
+		return "", ErrTOTPUnavailable
+	}
+	secret, err := s.cipher.Decrypt(encrypted)
+	if err != nil {
+		return "", fmt.Errorf("decrypt totp secret: %w", err)
+	}
+	return secret, nil
+}
+
+func (s *AccountService) storeEmailCode(principal *auth.Principal, email, code string) {
+	s.codeMu.Lock()
+	defer s.codeMu.Unlock()
+	s.emailCodes[emailCodeKey(principal)] = pendingEmailCode{
+		email:   email,
+		code:    code,
+		expires: time.Now().Add(emailCodeTTL),
+	}
+}
+
+// allowEmailSend 判断账户是否还能请求验证码：先看当日额度，再消耗频率令牌。
+func (s *AccountService) allowEmailSend(principal *auth.Principal) bool {
+	key := emailCodeKey(principal)
+	today := time.Now().Format("2006-01-02")
+	s.codeMu.Lock()
+	entry := s.emailDaily[key]
+	overDaily := entry.day == today && entry.count >= emailCodeDailyMax
+	s.codeMu.Unlock()
+	if overDaily {
+		return false
+	}
+	return s.emailLimiter.Allow("user:" + key)
+}
+
+// recordEmailSend 在成功发送后累加账户当日发送次数。
+func (s *AccountService) recordEmailSend(principal *auth.Principal) {
+	key := emailCodeKey(principal)
+	today := time.Now().Format("2006-01-02")
+	s.codeMu.Lock()
+	defer s.codeMu.Unlock()
+	entry := s.emailDaily[key]
+	if entry.day != today {
+		entry = emailDailyCounts{day: today}
+	}
+	entry.count++
+	s.emailDaily[key] = entry
+}
+
+// consumeEmailCode 校验并消费验证码，防止重放。校验失败会增加尝试次数。
+func (s *AccountService) consumeEmailCode(principal *auth.Principal, email, code string) bool {
+	key := emailCodeKey(principal)
+	s.codeMu.Lock()
+	defer s.codeMu.Unlock()
+	pending, ok := s.emailCodes[key]
+	if !ok {
+		return false
+	}
+	if time.Now().After(pending.expires) || pending.email != email {
+		delete(s.emailCodes, key)
+		return false
+	}
+	if pending.attempts >= emailCodeMaxAttempts {
+		delete(s.emailCodes, key)
+		return false
+	}
+	if subtle.ConstantTimeCompare([]byte(pending.code), []byte(strings.TrimSpace(code))) == 1 {
+		delete(s.emailCodes, key)
+		return true
+	}
+	pending.attempts++
+	s.emailCodes[key] = pending
+	return false
+}
+
+func emailCodeKey(principal *auth.Principal) string {
+	return string(principal.Role) + ":" + principal.UserID
+}
+
+// generateNumericCode 生成一个无前导零的 6 位数字验证码。
+func generateNumericCode() (string, error) {
+	n, err := rand.Int(rand.Reader, big.NewInt(900000))
+	if err != nil {
+		return "", fmt.Errorf("generate code: %w", err)
+	}
+	return fmt.Sprintf("%06d", n.Int64()+100000), nil
 }
 
 // Me 返回某个主体的账户，并根据该主体的角色解析出正确的表。
@@ -383,41 +814,52 @@ func isUsernameRune(r rune) bool {
 
 func accountFromAdmin(admin *store.Admin) *store.Account {
 	return &store.Account{
-		ID:           admin.ID,
-		Username:     admin.Username,
-		PasswordHash: admin.PasswordHash,
-		Role:         store.RoleAdmin,
-		Disabled:     admin.Disabled,
-		CreatedAt:    admin.CreatedAt,
-		UpdatedAt:    admin.UpdatedAt,
+		ID:            admin.ID,
+		Username:      admin.Username,
+		PasswordHash:  admin.PasswordHash,
+		Role:          store.RoleAdmin,
+		Disabled:      admin.Disabled,
+		Email:         admin.Email,
+		EmailVerified: admin.EmailVerified,
+		TOTPSecret:    admin.TOTPSecret,
+		TOTPEnabled:   admin.TOTPEnabled,
+		CreatedAt:     admin.CreatedAt,
+		UpdatedAt:     admin.UpdatedAt,
 	}
 }
 
 func accountFromCustomer(customer *store.Customer) *store.Account {
 	return &store.Account{
-		ID:           customer.ID,
-		Username:     customer.Username,
-		PasswordHash: customer.PasswordHash,
-		Role:         store.RoleCustomer,
-		Disabled:     customer.Disabled,
-		UsedBytes:    customer.UsedBytes,
-		QuotaBytes:   customer.QuotaBytes,
-		RoleGroupID:  customer.RoleGroupID,
-		CreatedAt:    customer.CreatedAt,
-		UpdatedAt:    customer.UpdatedAt,
+		ID:            customer.ID,
+		Username:      customer.Username,
+		PasswordHash:  customer.PasswordHash,
+		Role:          store.RoleCustomer,
+		Disabled:      customer.Disabled,
+		UsedBytes:     customer.UsedBytes,
+		QuotaBytes:    customer.QuotaBytes,
+		RoleGroupID:   customer.RoleGroupID,
+		Email:         customer.Email,
+		EmailVerified: customer.EmailVerified,
+		TOTPSecret:    customer.TOTPSecret,
+		TOTPEnabled:   customer.TOTPEnabled,
+		CreatedAt:     customer.CreatedAt,
+		UpdatedAt:     customer.UpdatedAt,
 	}
 }
 
 func toUserDTO(account *store.Account) *UserDTO {
 	return &UserDTO{
-		ID:          account.ID,
-		Username:    account.Username,
-		Role:        string(account.Role),
-		Disabled:    account.Disabled,
-		UsedBytes:   account.UsedBytes,
-		QuotaBytes:  account.QuotaBytes,
-		RoleGroupID: storageIDValue(account.RoleGroupID),
-		CreatedAt:   account.CreatedAt,
+		ID:            account.ID,
+		Username:      account.Username,
+		Role:          string(account.Role),
+		Disabled:      account.Disabled,
+		UsedBytes:     account.UsedBytes,
+		QuotaBytes:    account.QuotaBytes,
+		RoleGroupID:   storageIDValue(account.RoleGroupID),
+		Email:         account.Email,
+		EmailVerified: account.EmailVerified,
+		TOTPEnabled:   account.TOTPEnabled,
+		CreatedAt:     account.CreatedAt,
 	}
 }
 

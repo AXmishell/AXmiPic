@@ -19,6 +19,12 @@ export interface User {
   used_bytes: number
   quota_bytes: number
   role_group_id?: string
+  /** 已绑定的邮箱。 */
+  email?: string
+  /** 邮箱是否已通过验证。 */
+  email_verified?: boolean
+  /** 是否已启用 TOTP 二次验证。 */
+  totp_enabled?: boolean
   created_at: string
   disabled?: boolean
 }
@@ -95,9 +101,13 @@ export interface AdminStats {
 }
 
 export interface LoginResult {
-  token: string
-  expires_at: string
+  token?: string
+  expires_at?: string
   user: User
+  /** 为真时表示需先完成 TOTP 二次验证。 */
+  totp_required?: boolean
+  /** 完成 TOTP 验证所需的短期令牌。 */
+  challenge_token?: string
 }
 
 export interface Credentials {

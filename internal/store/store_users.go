@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -28,9 +29,13 @@ type Account struct {
 	UsedBytes    int64
 	QuotaBytes   int64
 	// RoleGroupID 仅对客户有意义，指向其所属角色组。
-	RoleGroupID *string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	RoleGroupID   *string
+	Email         string
+	EmailVerified bool
+	TOTPSecret    string
+	TOTPEnabled   bool
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
 // table 返回支撑给定角色的 gorm 模型。
@@ -250,27 +255,66 @@ func (r *Repository) DeleteAccount(ctx context.Context, role AccountRole, id str
 
 func accountFromAdmin(admin *Admin) *Account {
 	return &Account{
-		ID:           admin.ID,
-		Username:     admin.Username,
-		PasswordHash: admin.PasswordHash,
-		Role:         RoleAdmin,
-		Disabled:     admin.Disabled,
-		CreatedAt:    admin.CreatedAt,
-		UpdatedAt:    admin.UpdatedAt,
+		ID:            admin.ID,
+		Username:      admin.Username,
+		PasswordHash:  admin.PasswordHash,
+		Role:          RoleAdmin,
+		Disabled:      admin.Disabled,
+		Email:         admin.Email,
+		EmailVerified: admin.EmailVerified,
+		TOTPSecret:    admin.TOTPSecret,
+		TOTPEnabled:   admin.TOTPEnabled,
+		CreatedAt:     admin.CreatedAt,
+		UpdatedAt:     admin.UpdatedAt,
 	}
 }
 
 func accountFromCustomer(customer *Customer) *Account {
 	return &Account{
-		ID:           customer.ID,
-		Username:     customer.Username,
-		PasswordHash: customer.PasswordHash,
-		Role:         RoleCustomer,
-		Disabled:     customer.Disabled,
-		UsedBytes:    customer.UsedBytes,
-		QuotaBytes:   customer.QuotaBytes,
-		RoleGroupID:  customer.RoleGroupID,
-		CreatedAt:    customer.CreatedAt,
-		UpdatedAt:    customer.UpdatedAt,
+		ID:            customer.ID,
+		Username:      customer.Username,
+		PasswordHash:  customer.PasswordHash,
+		Role:          RoleCustomer,
+		Disabled:      customer.Disabled,
+		UsedBytes:     customer.UsedBytes,
+		QuotaBytes:    customer.QuotaBytes,
+		RoleGroupID:   customer.RoleGroupID,
+		Email:         customer.Email,
+		EmailVerified: customer.EmailVerified,
+		TOTPSecret:    customer.TOTPSecret,
+		TOTPEnabled:   customer.TOTPEnabled,
+		CreatedAt:     customer.CreatedAt,
+		UpdatedAt:     customer.UpdatedAt,
 	}
+}
+
+// UpdateAccountSecurity 更新账户的安全相关字段并返回更新后的账户。
+func (r *Repository) UpdateAccountSecurity(ctx context.Context, role AccountRole, id string, fields map[string]any) (*Account, error) {
+	if len(fields) > 0 {
+		if err := r.db.WithContext(ctx).Model(tableFor(role)).Where("id = ?", id).Updates(fields).Error; err != nil {
+			return nil, fmt.Errorf("store: update account security %q: %w", id, err)
+		}
+	}
+	return r.GetAccountByID(ctx, role, id)
+}
+
+// EmailInUse 判断邮箱是否已被其他账户绑定（不区分账户表）。excludeID 用于在
+// 更新当前账户时排除自身。
+func (r *Repository) EmailInUse(ctx context.Context, email string, excludeID string) (bool, error) {
+	if strings.TrimSpace(email) == "" {
+		return false, nil
+	}
+	var count int64
+	query := r.db.WithContext(ctx).Model(&Customer{}).Where("email = ? AND id <> ?", email, excludeID)
+	if err := query.Count(&count).Error; err != nil {
+		return false, fmt.Errorf("store: check customer email: %w", err)
+	}
+	if count > 0 {
+		return true, nil
+	}
+	if err := r.db.WithContext(ctx).Model(&Admin{}).Where("email = ? AND id <> ?", email, excludeID).
+		Count(&count).Error; err != nil {
+		return false, fmt.Errorf("store: check admin email: %w", err)
+	}
+	return count > 0, nil
 }
