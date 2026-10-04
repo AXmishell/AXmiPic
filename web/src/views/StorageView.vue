@@ -330,6 +330,7 @@ onMounted(load)
       v-model="dialogOpen"
       :title="isEdit ? '编辑存储配置' : '新建存储配置'"
       width="min(560px, 94vw)"
+      append-to-body
       :close-on-click-modal="false"
       @closed="formRef?.clearValidate()"
     >

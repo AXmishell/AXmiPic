@@ -359,6 +359,7 @@ onMounted(load)
       v-model="createOpen"
       title="新建管理员"
       width="min(440px, 92vw)"
+      append-to-body
       :close-on-click-modal="false"
       @closed="createFormRef?.clearValidate()"
     >

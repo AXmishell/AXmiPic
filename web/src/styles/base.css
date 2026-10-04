@@ -93,19 +93,33 @@ button {
 /* ---- 共享原语（在 tokens.css 中说明；跨视图使用） ---- */
 
 /* 页面：进入过渡。仅使用 transform/opacity。 */
-@keyframes ax-fade-rise {
+/* 页面进入：只对 .ax-page 做透明度过渡，位移交给其子元素。若在 .ax-page 上
+   保留 transform（哪怕最终是单位矩阵），它会成为 position:fixed 元素的包含块，
+   导致对话框等浮层被困在页面容器内、显示不全。 */
+@keyframes ax-fade-in {
   from {
     opacity: 0;
-    transform: translateY(6px);
   }
   to {
     opacity: 1;
+  }
+}
+
+@keyframes ax-rise {
+  from {
+    transform: translateY(6px);
+  }
+  to {
     transform: none;
   }
 }
 
 .ax-page {
-  animation: ax-fade-rise var(--ax-duration-slow) var(--ax-ease) both;
+  animation: ax-fade-in var(--ax-duration-slow) var(--ax-ease) both;
+}
+
+.ax-page > * {
+  animation: ax-rise var(--ax-duration-slow) var(--ax-ease) both;
 }
 
 /* 卡片：由亮度阶梯 + 内嵌描边 + 细线构成的高层表面。 */

@@ -179,6 +179,7 @@ onMounted(load)
       v-model="createOpen"
       title="新建访问令牌"
       width="min(440px, 92vw)"
+      append-to-body
       :close-on-click-modal="false"
       @closed="createFormRef?.clearValidate()"
     >
@@ -210,6 +211,7 @@ onMounted(load)
       :model-value="plaintextOpen"
       title="令牌创建成功"
       width="min(520px, 92vw)"
+      append-to-body
       :close-on-click-modal="false"
       :close-on-press-escape="false"
       :show-close="false"
