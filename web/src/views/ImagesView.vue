@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { CopyDocument, Delete, Picture, Refresh } from '@element-plus/icons-vue'
+import type { UploadRawFile } from 'element-plus'
+import { CopyDocument, Delete, Picture, Refresh, Upload } from '@element-plus/icons-vue'
 
 import { toApiError } from '@/api/client'
-import { deleteImage, listImages } from '@/api/images'
+import { deleteImage, listImages, uploadImage } from '@/api/images'
 import type { ImageItem } from '@/api/types'
 import EmptyState from '@/components/EmptyState.vue'
 import ErrorState from '@/components/ErrorState.vue'
@@ -26,6 +27,13 @@ const loading = ref(false)
 const errorMessage = ref('')
 const deletingId = ref<string | null>(null)
 const failedIds = ref<Set<string>>(new Set())
+
+const uploading = ref(false)
+const uploadRef = ref<{ clearFiles: () => void } | null>(null)
+
+// 上传约束：与后端 upload.allowed_mime_types / max_size_mb 保持一致。
+const ACCEPT = 'image/jpeg,image/png,image/gif,image/webp'
+const MAX_SIZE_MB = 20
 
 let requestSeq = 0
 
@@ -63,6 +71,37 @@ function handleSizeChange(): void {
 
 function onPreviewError(id: string): void {
   failedIds.value.add(id)
+}
+
+/** 校验后在客户端拦截明显超限或类型不符的文件。 */
+function beforeUpload(file: UploadRawFile): boolean {
+  if (file.size > MAX_SIZE_MB * 1024 * 1024) {
+    ElMessage.error(`文件超过 ${MAX_SIZE_MB} MB 上限`)
+    return false
+  }
+  if (!ACCEPT.split(',').includes(file.type)) {
+    ElMessage.error('仅支持 JPEG / PNG / GIF / WebP 图片')
+    return false
+  }
+  return true
+}
+
+/** 通过后台界面上传一张图片。 */
+async function handleUpload(options: { file: File }): Promise<void> {
+  uploading.value = true
+  try {
+    const dto = await uploadImage(options.file)
+    ElMessage.success(
+      dto.original_name ? `已上传「${dto.original_name}」` : '图片已上传',
+    )
+    page.value = 1
+    await load()
+  } catch (error) {
+    ElMessage.error(toApiError(error).message)
+  } finally {
+    uploading.value = false
+    uploadRef.value?.clearFiles()
+  }
 }
 
 async function copyLink(item: ImageItem): Promise<void> {
@@ -112,6 +151,15 @@ onMounted(load)
   <div class="ax-page">
     <PageHeader title="图片管理" :description="description">
       <template #actions>
+        <el-upload
+          ref="uploadRef"
+          :show-file-list="false"
+          :accept="ACCEPT"
+          :before-upload="beforeUpload"
+          :http-request="handleUpload"
+        >
+          <el-button type="primary" :icon="Upload" :loading="uploading">上传图片</el-button>
+        </el-upload>
         <el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button>
       </template>
     </PageHeader>
@@ -137,7 +185,7 @@ onMounted(load)
     <EmptyState
       v-else-if="items.length === 0"
       title="还没有上传图片"
-      description="通过 API 使用访问令牌上传图片后，它们会显示在这里。"
+      description="点击右上角「上传图片」，或通过 API 使用访问令牌上传。"
     />
 
     <template v-else>
@@ -166,9 +214,19 @@ onMounted(load)
           </a>
 
           <div class="image-card__body">
-            <p class="image-card__key" :title="item.key">{{ item.key }}</p>
+            <p class="image-card__key" :title="item.original_name || item.key">
+              {{ item.original_name || item.filename || item.key }}
+            </p>
 
             <dl class="image-card__meta">
+              <div class="image-card__meta-row">
+                <dt>存储名</dt>
+                <dd :title="item.filename || item.key">{{ item.filename || item.key }}</dd>
+              </div>
+              <div class="image-card__meta-row">
+                <dt>哈希</dt>
+                <dd :title="item.hash">{{ item.hash ? item.hash.slice(0, 16) : '—' }}</dd>
+              </div>
               <div class="image-card__meta-row">
                 <dt>大小</dt>
                 <dd>{{ formatBytes(item.size) }}</dd>
@@ -225,6 +283,11 @@ onMounted(load)
 <style scoped>
 .image-grid {
   grid-template-columns: repeat(auto-fill, minmax(min(250px, 100%), 1fr));
+}
+
+/* 让上传按钮与旁边按钮在头部对齐（el-upload 默认是 inline-block）。 */
+:deep(.el-upload) {
+  display: inline-flex;
 }
 
 .image-card {

@@ -27,6 +27,7 @@ import {
   ElTabPane,
   ElTag,
   ElTooltip,
+  ElUpload,
 } from 'element-plus'
 
 import '@fontsource-variable/inter/wght.css'
@@ -78,6 +79,7 @@ const globalComponents: Component[] = [
   ElTabPane,
   ElTag,
   ElTooltip,
+  ElUpload,
 ]
 
 for (const component of globalComponents) {

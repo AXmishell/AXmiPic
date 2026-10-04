@@ -37,10 +37,14 @@ func (h *Handler) uploadImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	file, _, err := r.FormFile("file")
+	file, header, err := r.FormFile("file")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, http.StatusBadRequest, "missing multipart field \"file\"")
 		return
+	}
+	originalName := ""
+	if header != nil {
+		originalName = header.Filename
 	}
 	defer func() {
 		if closeErr := file.Close(); closeErr != nil {
@@ -69,7 +73,11 @@ func (h *Handler) uploadImage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	mimeType := http.DetectContentType(data)
-	dto, err := h.svc.Upload(r.Context(), principalOf(r), service.UploadInput{Data: data, MimeType: mimeType})
+	dto, err := h.svc.Upload(r.Context(), principalOf(r), service.UploadInput{
+		Data:         data,
+		MimeType:     mimeType,
+		OriginalName: originalName,
+	})
 	if err != nil {
 		h.fail(w, r, err)
 		return

@@ -9,13 +9,18 @@ type Image struct {
 	UserID *string `gorm:"index;size:36"`
 	// StorageID 指向对象所在的存储后端；为空时回退到当前默认后端。
 	StorageID *string `gorm:"index;size:36"`
-	URL       string  `gorm:"size:512;not null"`
-	Size      int64   `gorm:"not null"`
-	MimeType  string  `gorm:"size:100;not null"`
-	Width     int
-	Height    int
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	// OriginalName 是上传时的原始文件名；Filename 是重命名后的存储文件名
+	// （即 Key 的最后一段）；Hash 是内容的 sha256 十六进制摘要。
+	OriginalName string `gorm:"size:255;not null;default:''"`
+	Filename     string `gorm:"size:255;not null;default:''"`
+	Hash         string `gorm:"size:64;index;not null;default:''"`
+	URL          string `gorm:"size:512;not null"`
+	Size         int64  `gorm:"not null"`
+	MimeType     string `gorm:"size:100;not null"`
+	Width        int
+	Height       int
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
 // TableName 返回存储 Image 的表名。

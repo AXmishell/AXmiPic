@@ -3,11 +3,14 @@ package service_test
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"image"
 	"image/png"
 	"io"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,6 +18,23 @@ import (
 	"github.com/AXmishell/axmipic/internal/storage"
 	"github.com/AXmishell/axmipic/internal/store"
 )
+
+// contentHashForTest 复算 sha256，便于在测试中断言。
+func contentHashForTest(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
+// testPNGSize 生成指定边长的 PNG，用于构造彼此不同的内容。
+func testPNGSize(t *testing.T, size int) []byte {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, size, size))
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatalf("png.Encode: %v", err)
+	}
+	return buf.Bytes()
+}
 
 type storedObject struct {
 	data        []byte
@@ -140,6 +160,71 @@ func TestUploadDeduplicatesIdenticalContent(t *testing.T) {
 	}
 	if first.Width != 8 || first.Height != 8 {
 		t.Fatalf("dimensions = %dx%d, want 8x8", first.Width, first.Height)
+	}
+}
+
+func TestUploadRenamesAndRecordsOriginalNameAndHash(t *testing.T) {
+	repo := newRepo(t)
+	svc := service.NewUploadService(repo, managerWithFallback(t, newFakeStorage()), pngPolicy())
+	ctx := context.Background()
+	data := testPNG(t)
+
+	dto, err := svc.Upload(ctx, nil, service.UploadInput{
+		Data:         data,
+		MimeType:     "image/png",
+		OriginalName: "我的 照片.PNG",
+	})
+	if err != nil {
+		t.Fatalf("Upload: %v", err)
+	}
+
+	// 存储键与文件名应为哈希命名，而非原始名。
+	wantHash := contentHashForTest(data)
+	if dto.Hash != wantHash {
+		t.Fatalf("hash = %q, want %q", dto.Hash, wantHash)
+	}
+	if dto.Filename != wantHash+".png" {
+		t.Fatalf("filename = %q, want %q", dto.Filename, wantHash+".png")
+	}
+	if !strings.HasSuffix(dto.Key, "/"+wantHash+".png") {
+		t.Fatalf("key = %q, want to end with hash-based name", dto.Key)
+	}
+	if strings.Contains(dto.Key, "我的") {
+		t.Fatalf("key %q leaks the original name", dto.Key)
+	}
+	// 原文件名应被保留。
+	if dto.OriginalName != "我的 照片.PNG" {
+		t.Fatalf("original_name = %q", dto.OriginalName)
+	}
+}
+
+func TestSanitizeOriginalNameStripsPaths(t *testing.T) {
+	repo := newRepo(t)
+	svc := service.NewUploadService(repo, managerWithFallback(t, newFakeStorage()), pngPolicy())
+	ctx := context.Background()
+
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"../../etc/passwd", "passwd"},
+		{"C:\\Users\\a\\pic.png", "pic.png"},
+		{"  spaced.png  ", "spaced.png"},
+		{"", ""},
+	}
+	for i, tc := range cases {
+		// 每例使用不同尺寸的图片，避免内容去重命中同一条记录。
+		dto, err := svc.Upload(ctx, nil, service.UploadInput{
+			Data:         testPNGSize(t, 8+i),
+			MimeType:     "image/png",
+			OriginalName: tc.in,
+		})
+		if err != nil {
+			t.Fatalf("Upload(%q): %v", tc.in, err)
+		}
+		if dto.OriginalName != tc.want {
+			t.Fatalf("sanitize(%q) = %q, want %q", tc.in, dto.OriginalName, tc.want)
+		}
 	}
 }
 

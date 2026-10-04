@@ -20,6 +20,9 @@ export interface ImageItem {
   id: string
   key: string
   url: string
+  original_name: string
+  filename: string
+  hash: string
   size: number
   mime_type: string
   width: number

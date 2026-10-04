@@ -86,6 +86,8 @@ type UploadPolicy struct {
 type UploadInput struct {
 	Data     []byte
 	MimeType string
+	// OriginalName 是上传时的原始文件名，可为空。
+	OriginalName string
 }
 
 // PresignInput 请求为某份内容提供预签名直传。
@@ -107,15 +109,20 @@ type PresignResult struct {
 
 // ImageDTO 是已存储图片在 API 中的表示形式。
 type ImageDTO struct {
-	ID        string    `json:"id"`
-	Key       string    `json:"key"`
-	StorageID string    `json:"storage_id,omitempty"`
-	URL       string    `json:"url"`
-	Size      int64     `json:"size"`
-	MimeType  string    `json:"mime_type"`
-	Width     int       `json:"width"`
-	Height    int       `json:"height"`
-	CreatedAt time.Time `json:"created_at"`
+	ID        string `json:"id"`
+	Key       string `json:"key"`
+	StorageID string `json:"storage_id,omitempty"`
+	// OriginalName 为上传时的原始文件名；Filename 为重命名后的存储文件名；
+	// Hash 为内容 sha256 十六进制摘要。
+	OriginalName string    `json:"original_name"`
+	Filename     string    `json:"filename"`
+	Hash         string    `json:"hash"`
+	URL          string    `json:"url"`
+	Size         int64     `json:"size"`
+	MimeType     string    `json:"mime_type"`
+	Width        int       `json:"width"`
+	Height       int       `json:"height"`
+	CreatedAt    time.Time `json:"created_at"`
 }
 
 // ListResult 是图片的分页集合。
@@ -184,7 +191,11 @@ func (s *UploadService) Upload(ctx context.Context, principal *auth.Principal, i
 		return nil, fmt.Errorf("%w: %q", ErrUnsupportedType, in.MimeType)
 	}
 
-	key := contentKey(in.Data, in.MimeType)
+	// 计算内容哈希，并据此生成「重命名」后的存储文件名与键。
+	hash := contentHash(in.Data)
+	key := hashKey(hash, in.MimeType)
+	filename := path.Base(key)
+	originalName := sanitizeOriginalName(in.OriginalName)
 
 	existing, err := s.repo.GetByKey(ctx, key)
 	if err == nil {
@@ -228,15 +239,18 @@ func (s *UploadService) Upload(ctx context.Context, principal *auth.Principal, i
 
 	width, height := decodeDimensions(in.Data)
 	image := &store.Image{
-		ID:        uuid.NewString(),
-		Key:       key,
-		UserID:    ownerID,
-		StorageID: storageIDPtr(currentID),
-		URL:       s.urlFor(backend, key),
-		Size:      size,
-		MimeType:  in.MimeType,
-		Width:     width,
-		Height:    height,
+		ID:           uuid.NewString(),
+		Key:          key,
+		UserID:       ownerID,
+		StorageID:    storageIDPtr(currentID),
+		OriginalName: originalName,
+		Filename:     filename,
+		Hash:         hash,
+		URL:          s.urlFor(backend, key),
+		Size:         size,
+		MimeType:     in.MimeType,
+		Width:        width,
+		Height:       height,
 	}
 	if err := s.repo.Create(ctx, image); err != nil {
 		// 并发上传相同内容可能已先插入该行；复用那条记录并释放我们的预留。
@@ -562,15 +576,18 @@ func sameOwner(principal *auth.Principal, ownerID *string) bool {
 
 func toDTO(image *store.Image) *ImageDTO {
 	return &ImageDTO{
-		ID:        image.ID,
-		Key:       image.Key,
-		StorageID: storageIDValue(image.StorageID),
-		URL:       image.URL,
-		Size:      image.Size,
-		MimeType:  image.MimeType,
-		Width:     image.Width,
-		Height:    image.Height,
-		CreatedAt: image.CreatedAt,
+		ID:           image.ID,
+		Key:          image.Key,
+		StorageID:    storageIDValue(image.StorageID),
+		OriginalName: image.OriginalName,
+		Filename:     image.Filename,
+		Hash:         image.Hash,
+		URL:          image.URL,
+		Size:         image.Size,
+		MimeType:     image.MimeType,
+		Width:        image.Width,
+		Height:       image.Height,
+		CreatedAt:    image.CreatedAt,
 	}
 }
 
@@ -596,11 +613,38 @@ func directKey(mimeType string) string {
 	return path.Join(time.Now().UTC().Format("2006/01/02"), uuid.NewString()+extensionForMIME(mimeType))
 }
 
-// contentKey 构建一个内容寻址、以斜杠分隔的存储键。
-func contentKey(data []byte, mimeType string) string {
+// contentHash 返回数据的 sha256 十六进制摘要。
+func contentHash(data []byte) string {
 	sum := sha256.Sum256(data)
-	hash := hex.EncodeToString(sum[:])
+	return hex.EncodeToString(sum[:])
+}
+
+// hashKey 依据内容哈希构建「重命名」后的、以斜杠分隔的存储键：
+// 前两级为哈希前缀的目录，最后一段为 `<hash><扩展名>`。
+func hashKey(hash, mimeType string) string {
 	return path.Join(hash[0:2], hash[2:4], hash+extensionForMIME(mimeType))
+}
+
+// sanitizeOriginalName 规范化上传时的原始文件名：仅保留基础名、去除路径分隔与
+// 控制字符，并限制长度，避免回显危险内容。
+func sanitizeOriginalName(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return ""
+	}
+	// 去掉任何目录部分（同时兼容 Windows 反斜杠）。
+	name = strings.ReplaceAll(name, "\\", "/")
+	name = path.Base(name)
+	name = strings.Map(func(r rune) rune {
+		if r == '/' || r < 0x20 {
+			return -1
+		}
+		return r
+	}, name)
+	if len(name) > 255 {
+		name = name[:255]
+	}
+	return name
 }
 
 // decodeDimensions 返回一张已编码图片的像素尺寸，当格式无法解码时返回零值。
