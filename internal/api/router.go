@@ -111,6 +111,8 @@ func NewRouter(d Deps) http.Handler {
 				r.Get("/announcements", h.listAnnouncements)
 				r.Get("/pages/{slug}", h.getPage)
 				r.Get("/plans", h.listPlans)
+				r.Get("/payment-gateways", h.listPaymentGateways)
+				r.Post("/payments/{provider}/callback", h.paymentCallback)
 			})
 
 			r.Group(func(r chi.Router) {

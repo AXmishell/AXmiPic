@@ -10,6 +10,7 @@
 - **站内公告与独立页面**：管理员发布公告（支持置顶与级别）并在仪表盘展示；维护可通过 `/p/{slug}` 公开访问的独立页面
 - **举报管理**：用户举报图片，管理员在后台处理或驳回
 - **套餐与计费**：套餐（价格、有效期、配额、角色组）与优惠券（固定/百分比、门槛、限次、时效），下单、订单管理与可插拔支付渠道
+- **官方支付适配**：支付宝当面付（RSA2 签名/验签）与微信支付 v3（SHA256-RSA 签名、AES-GCM 回调解密），以及人工/模拟渠道
 - **工单系统**：用户提交工单并对接客服，管理员回复与关闭
 - **内容寻址与去重**：按内容 `sha256` 生成存储文件名并入库，相同内容自动去重
 - **保留原始文件名**：存储层使用重命名（哈希命名）后的文件，数据库中单独记录原文件名、存储文件名与哈希值
@@ -359,7 +360,18 @@ curl -X POST http://localhost:8080/api/v1/upload \
 
 ### 支付渠道
 
-支付通过 `internal/payment` 的可插拔 `Gateway` 接口实现。内置 `manual`（人工核销）与 `mock`（模拟收银台，仅开发用）渠道；配置中的 `payment.default_gateway` 选择默认渠道，`payment.alipay` / `payment.wechat` 预留了应用凭据字段，接入官方 SDK 时实现 `Gateway` 即可。未配置真实凭据时，订单创建后可通过 `POST /orders/{id}/pay` 或后台人工核销完成支付。
+支付通过 `internal/payment` 的可插拔 `Gateway` 接口实现，内置四种渠道：
+
+| 渠道 | 说明 |
+|------|------|
+| `manual` | 人工核销：下单后由管理员确认付款 |
+| `mock` | 模拟收银台：仅用于开发，立即完成支付 |
+| `alipay` | 支付宝当面付（扫码），RSA2 签名下单与回调验签 |
+| `wechat` | 微信支付 v3 Native 扫码，SHA256-RSA 签名下单、AES-256-GCM 解密回调 |
+
+`payment.default_gateway` 选择默认渠道。支付宝在 `payment.alipay` 配置 `app_id`、`private_key`（应用私钥）、`public_key`（支付宝公钥）；微信在 `payment.wechat` 配置 `app_id`、`mch_id`、`serial_no`（商户证书序列号）、`private_key`（商户 API 私钥）、`api_v3_key`（32 字节）。凭据齐备并置 `enabled: true` 后渠道会在启动时注册。
+
+下单请求体的 `provider` 字段选择渠道；支付结果回调地址为 `POST /api/v1/payments/{provider}/callback`（支付宝返回纯文本 `success`，微信返回 200）。`GET /api/v1/payment-gateways` 返回已注册渠道列表。
 
 ### 角色组与策略
 

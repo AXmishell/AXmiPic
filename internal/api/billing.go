@@ -2,6 +2,8 @@ package api
 
 import (
 	"encoding/json"
+	"io"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -208,6 +210,38 @@ func (h *Handler) payOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeOK(w, order)
+}
+
+// paymentCallback 接收支付渠道的异步通知。支付宝使用表单编码，微信使用 JSON；
+// 两种格式都按原始字节交给对应渠道校验。
+func (h *Handler) paymentCallback(w http.ResponseWriter, r *http.Request) {
+	provider := chi.URLParam(r, "provider")
+	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, http.StatusBadRequest, "cannot read body")
+		return
+	}
+	if _, err := h.billing.HandleCallback(r.Context(), provider, raw); err != nil {
+		h.logger.WarnContext(r.Context(), "payment callback rejected",
+			slog.String("provider", provider),
+			slog.Any("error", err),
+		)
+		writeError(w, http.StatusBadRequest, http.StatusBadRequest, "invalid callback")
+		return
+	}
+	// 支付宝期望纯文本 "success"，微信期望 200/204。
+	if provider == "alipay" {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("success"))
+		return
+	}
+	writeOK(w, map[string]string{"status": "ok"})
+}
+
+// listPaymentGateways 返回已启用的支付渠道，供前端选择。
+func (h *Handler) listPaymentGateways(w http.ResponseWriter, r *http.Request) {
+	writeOK(w, h.billing.Gateways())
 }
 
 // ---- 工单 ----

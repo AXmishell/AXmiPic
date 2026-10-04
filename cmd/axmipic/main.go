@@ -148,6 +148,34 @@ func run() error {
 	siteSvc := service.NewSiteService(repo)
 
 	gateways := []payment.Gateway{payment.ManualGateway{}, payment.NewMockGateway(cfg.Server.BaseURL, logger)}
+	if cfg.Payment.Alipay.Enabled {
+		alipay, err := payment.NewAlipayGateway(payment.AlipayOptions{
+			AppID:      cfg.Payment.Alipay.AppID,
+			PrivateKey: cfg.Payment.Alipay.PrivateKey,
+			PublicKey:  cfg.Payment.Alipay.PublicKey,
+			GatewayURL: cfg.Payment.Alipay.GatewayURL,
+		})
+		if err != nil {
+			return fmt.Errorf("main: alipay gateway: %w", err)
+		}
+		gateways = append(gateways, alipay)
+		logger.Info("alipay payment gateway enabled")
+	}
+	if cfg.Payment.Wechat.Enabled {
+		wechat, err := payment.NewWechatGateway(payment.WechatOptions{
+			AppID:      cfg.Payment.Wechat.AppID,
+			MchID:      cfg.Payment.Wechat.MchID,
+			SerialNo:   cfg.Payment.Wechat.SerialNo,
+			PrivateKey: cfg.Payment.Wechat.PrivateKey,
+			APIv3Key:   cfg.Payment.Wechat.APIv3Key,
+			GatewayURL: cfg.Payment.Wechat.GatewayURL,
+		})
+		if err != nil {
+			return fmt.Errorf("main: wechat gateway: %w", err)
+		}
+		gateways = append(gateways, wechat)
+		logger.Info("wechat payment gateway enabled")
+	}
 	billingSvc := service.NewBillingService(repo, cfg.Server.BaseURL, gateways, cfg.Payment.DefaultGateway)
 
 	router := api.NewRouter(api.Deps{

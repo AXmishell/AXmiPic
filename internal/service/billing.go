@@ -158,6 +158,32 @@ func (s *BillingService) Gateways() []string {
 	return names
 }
 
+// Gateway 返回指定名称的支付渠道。
+func (s *BillingService) Gateway(name string) (payment.Gateway, bool) {
+	g, ok := s.gateways[name]
+	return g, ok
+}
+
+// HandleCallback 校验某个渠道的支付回调，并在成功时确认订单。它返回处理是否
+// 成功，供回调处理器决定响应内容。
+func (s *BillingService) HandleCallback(ctx context.Context, provider string, raw []byte) (*OrderDTO, error) {
+	gateway, ok := s.gateways[provider]
+	if !ok {
+		return nil, fmt.Errorf("%w: unknown payment provider %q", ErrInvalidInput, provider)
+	}
+	callback, err := gateway.VerifyCallback(ctx, raw)
+	if err != nil {
+		return nil, fmt.Errorf("handle callback: %w", err)
+	}
+	if callback.OrderID == "" {
+		return nil, fmt.Errorf("%w: callback missing order id", ErrInvalidInput)
+	}
+	if !callback.Success {
+		return nil, fmt.Errorf("%w: callback indicates an unsuccessful payment", ErrInvalidInput)
+	}
+	return s.ConfirmOrder(ctx, callback.OrderID, provider, callback.TradeNo)
+}
+
 // ---- 套餐 ----
 
 // ListPlans 返回套餐；activeOnly 为真时仅返回启用的。

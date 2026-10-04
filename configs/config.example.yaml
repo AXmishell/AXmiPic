@@ -97,17 +97,27 @@ limits:
 payment:
   # Default payment gateway: manual | mock | alipay | wechat
   default_gateway: "manual"
-  # Alipay / WeChat credentials are reserved; the built-in gateways are
-  # "manual" (admin settles orders) and "mock" (development checkout).
+  # Alipay 当面付（扫码支付）。启用需填写 app_id、private_key、public_key。
   alipay:
     enabled: false
+    # Leave empty for the production gateway.
+    gateway_url: ""
     app_id: ""
+    # 应用私钥（PKCS1/PKCS8，PEM 或裸 base64）。
     private_key: ""
-    alipay_public_key: ""
+    # 支付宝公钥，用于校验异步通知签名。
+    public_key: ""
+  # 微信支付 v3（Native 扫码）。启用需填写 app_id、mch_id、serial_no、
+  # private_key、api_v3_key。
   wechat:
     enabled: false
+    gateway_url: ""
+    app_id: ""
     mch_id: ""
-    api_key: ""
+    serial_no: ""
+    private_key: ""
+    # APIv3 密钥（32 字节），用于解密回调。
+    api_v3_key: ""
 
 logging:
   level: "info"

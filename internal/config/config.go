@@ -69,12 +69,17 @@ var envPaths = map[string]string{
 	"limits_image_burst":          "limits.image_burst",
 	"payment_default_gateway":     "payment.default_gateway",
 	"payment_alipay_enabled":      "payment.alipay.enabled",
+	"payment_alipay_gateway_url":  "payment.alipay.gateway_url",
 	"payment_alipay_app_id":       "payment.alipay.app_id",
 	"payment_alipay_private_key":  "payment.alipay.private_key",
-	"payment_alipay_public_key":   "payment.alipay.alipay_public_key",
+	"payment_alipay_public_key":   "payment.alipay.public_key",
 	"payment_wechat_enabled":      "payment.wechat.enabled",
+	"payment_wechat_gateway_url":  "payment.wechat.gateway_url",
+	"payment_wechat_app_id":       "payment.wechat.app_id",
 	"payment_wechat_mch_id":       "payment.wechat.mch_id",
-	"payment_wechat_api_key":      "payment.wechat.api_key",
+	"payment_wechat_serial_no":    "payment.wechat.serial_no",
+	"payment_wechat_private_key":  "payment.wechat.private_key",
+	"payment_wechat_api_v3_key":   "payment.wechat.api_v3_key",
 	"logging_level":               "logging.level",
 }
 
@@ -193,22 +198,41 @@ type LoggingConfig struct {
 	Level string `koanf:"level"`
 }
 
-// PaymentConfig 配置支付渠道。默认渠道需在已注册的渠道（manual、mock，以及
-// 后续接入的 alipay、wechat）中选择。
+// PaymentConfig 配置支付渠道。默认渠道需在已注册的渠道（manual、mock、
+// alipay、wechat）中选择。
 type PaymentConfig struct {
-	DefaultGateway string `koanf:"default_gateway"`
-	Alipay         AppID  `koanf:"alipay"`
-	Wechat         AppID  `koanf:"wechat"`
+	DefaultGateway string       `koanf:"default_gateway"`
+	Alipay         AlipayConfig `koanf:"alipay"`
+	Wechat         WechatConfig `koanf:"wechat"`
 }
 
-// AppID 保存第三方支付渠道的应用凭据。凭据为空时对应渠道不会被注册。
-type AppID struct {
-	Enabled         bool   `koanf:"enabled"`
-	AppID           string `koanf:"app_id"`
-	PrivateKey      string `koanf:"private_key"`
-	AlipayPublicKey string `koanf:"alipay_public_key"`
-	MchID           string `koanf:"mch_id"`
-	APIKey          string `koanf:"api_key"`
+// AlipayConfig 配置支付宝当面付（扫码支付）。凭据齐备（AppID、应用私钥、
+// 支付宝公钥）时启用。
+type AlipayConfig struct {
+	Enabled bool `koanf:"enabled"`
+	// GatewayURL 为支付宝网关地址；留空使用生产地址。
+	GatewayURL string `koanf:"gateway_url"`
+	AppID      string `koanf:"app_id"`
+	// PrivateKey 为应用私钥（PKCS1/PKCS8，PEM 或裸 base64）。
+	PrivateKey string `koanf:"private_key"`
+	// PublicKey 为支付宝公钥，用于校验回调签名。
+	PublicKey string `koanf:"public_key"`
+}
+
+// WechatConfig 配置微信支付 v3。凭据齐备（商户号、证书序列号、商户私钥、
+// APIv3 密钥）时启用。
+type WechatConfig struct {
+	Enabled bool `koanf:"enabled"`
+	// GatewayURL 为微信支付 API 基础地址；留空使用生产地址。
+	GatewayURL string `koanf:"gateway_url"`
+	AppID      string `koanf:"app_id"`
+	MchID      string `koanf:"mch_id"`
+	// SerialNo 为商户 API 证书序列号。
+	SerialNo string `koanf:"serial_no"`
+	// PrivateKey 为商户 API 私钥（PEM 或裸 base64）。
+	PrivateKey string `koanf:"private_key"`
+	// APIv3Key 用于解密回调中的敏感信息与校验回调签名。
+	APIv3Key string `koanf:"api_v3_key"`
 }
 
 func defaultConfig() Config {

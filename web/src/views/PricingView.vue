@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 
-import { createOrder, listOrders, listPlans, payOrder, validateCoupon } from '@/api/billing'
+import { createOrder, listOrders, listPaymentGateways, listPlans, payOrder, validateCoupon } from '@/api/billing'
 import { toApiError } from '@/api/client'
 import type { Order, Plan } from '@/api/types'
 import EmptyState from '@/components/EmptyState.vue'
@@ -21,6 +21,15 @@ const couponPlanId = ref('')
 const couponDiscount = ref(0)
 const couponChecking = ref(false)
 const ordering = ref('')
+const gateways = ref<string[]>([])
+const provider = ref('manual')
+
+const providerLabels: Record<string, string> = {
+  manual: '人工核销',
+  mock: '模拟支付',
+  alipay: '支付宝',
+  wechat: '微信支付',
+}
 
 const priceLabel = (cents: number): string => (cents === 0 ? '免费' : `¥${(cents / 100).toFixed(2)}`)
 
@@ -35,9 +44,17 @@ async function load(): Promise<void> {
   loading.value = true
   errorMessage.value = ''
   try {
-    const [planList, orderList] = await Promise.all([listPlans(), listOrders()])
+    const [planList, orderList, gatewayList] = await Promise.all([
+      listPlans(),
+      listOrders(),
+      listPaymentGateways().catch(() => ['manual']),
+    ])
     plans.value = planList ?? []
     orders.value = orderList ?? []
+    gateways.value = gatewayList ?? []
+    if (gateways.value.length > 0 && !gateways.value.includes(provider.value)) {
+      provider.value = gateways.value[0]!
+    }
   } catch (error) {
     errorMessage.value = toApiError(error).message
   } finally {
@@ -69,7 +86,7 @@ async function buy(plan: Plan): Promise<void> {
   ordering.value = plan.id
   try {
     const coupon = couponPlanId.value === plan.id ? couponCode.value.trim() : ''
-    const order = await createOrder(plan.id, coupon, 'manual')
+    const order = await createOrder(plan.id, coupon, provider.value)
     if (order.status === 'pending' && order.pay_url) {
       // 模拟渠道：直接完成支付（真实环境应跳转到支付收银台）。
       await payOrder(order.id)
@@ -160,6 +177,14 @@ onMounted(load)
             >
               校验
             </el-button>
+            <el-select v-model="provider" class="coupon-select" aria-label="支付渠道">
+              <el-option
+                v-for="g in gateways"
+                :key="g"
+                :label="providerLabels[g] ?? g"
+                :value="g"
+              />
+            </el-select>
           </div>
           <p v-if="couponDiscount > 0" class="coupon-hint">
             已抵扣 {{ priceLabel(couponDiscount) }}，应付 {{ payableLabel }}

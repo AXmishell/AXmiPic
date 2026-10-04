@@ -15,6 +15,11 @@ export function listPlans(): Promise<Plan[]> {
   return request<Plan[]>({ method: 'GET', url: '/plans' })
 }
 
+/** 已注册的支付渠道。 */
+export function listPaymentGateways(): Promise<string[]> {
+  return request<string[]>({ method: 'GET', url: '/payment-gateways' })
+}
+
 /** 校验优惠券并返回折扣（分）。 */
 export function validateCoupon(code: string, amountCents: number): Promise<{ coupon: Coupon; discount_cents: number }> {
   return request({ method: 'POST', url: '/coupons/validate', data: { code, amount_cents: amountCents } })
