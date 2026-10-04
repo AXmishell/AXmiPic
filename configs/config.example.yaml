@@ -11,7 +11,11 @@ server:
   shutdown_timeout_sec: 10
 
 database:
+  # driver: sqlite | postgres
   driver: "sqlite"
+  # For sqlite: a file path. For postgres: a libpq DSN or URL, e.g.
+  #   host=127.0.0.1 port=5432 user=axmipic password=secret dbname=axmipic sslmode=disable
+  #   postgres://axmipic:secret@127.0.0.1:5432/axmipic?sslmode=disable
   dsn: "./data/axmipic.db"
 
 storage:
@@ -71,7 +75,8 @@ auth:
   require_auth: true
   # Per-user storage quota in MiB; 0 means unlimited.
   default_quota_mb: 1024
-  # Optional "username:password" seeded as an admin only when no users exist.
+  # Optional "username:password" seeded as an admin when the admins table is
+  # empty. Manage admins separately from ordinary users via /admin/.
   bootstrap_admin: ""
 
 limits:

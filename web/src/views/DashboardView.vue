@@ -79,7 +79,13 @@ onMounted(load)
     <template v-else-if="me">
       <section class="ax-grid dash-stats" aria-label="概览统计">
         <template v-if="isAdmin && stats">
-          <StatCard label="用户数" :value="formatNumber(stats.users)" :icon="User" hint="已注册账户" />
+          <StatCard label="管理员" :value="formatNumber(stats.admins)" :icon="User" hint="特权账号" />
+          <StatCard
+            label="普通用户"
+            :value="formatNumber(stats.customers)"
+            :icon="User"
+            hint="已注册账号"
+          />
           <StatCard
             label="图片数"
             :value="formatNumber(stats.images)"
@@ -145,8 +151,7 @@ onMounted(load)
                 <p class="account__name">{{ me.username }}</p>
                 <el-tag size="small" :type="isAdmin ? 'primary' : 'info'" effect="plain">
                   {{ isAdmin ? '管理员' : '用户' }}
-                </el-tag>
-              </div>
+                </el-tag>              </div>
             </div>
             <QuotaMeter :used="me.used_bytes" :quota="me.quota_bytes" />
             <dl class="info-list">

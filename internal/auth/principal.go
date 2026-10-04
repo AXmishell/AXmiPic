@@ -5,14 +5,16 @@ package auth
 import (
 	"context"
 	"errors"
+
+	"github.com/AXmishell/axmipic/internal/store"
 )
 
 // Role is an account's authorization level.
 type Role string
 
-// Account roles.
+// Account roles, matching the store's separate tables.
 const (
-	RoleUser  Role = "user"
+	RoleUser  Role = "customer"
 	RoleAdmin Role = "admin"
 )
 
@@ -37,6 +39,14 @@ type Principal struct {
 // IsAdmin reports whether the principal has the admin role.
 func (p *Principal) IsAdmin() bool {
 	return p != nil && p.Role == RoleAdmin
+}
+
+// StoreRole maps the principal's role to the store account role.
+func (p *Principal) StoreRole() store.AccountRole {
+	if p.IsAdmin() {
+		return store.RoleAdmin
+	}
+	return store.RoleCustomer
 }
 
 // IsGuest reports whether the principal is anonymous.

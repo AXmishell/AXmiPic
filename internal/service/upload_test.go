@@ -85,7 +85,7 @@ func (f *fakePresignStorage) PresignPut(_ context.Context, key string, opts stor
 
 func newRepo(t *testing.T) *store.Repository {
 	t.Helper()
-	repo, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	repo, err := store.Open("sqlite", filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatalf("store.Open: %v", err)
 	}

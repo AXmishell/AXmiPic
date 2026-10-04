@@ -95,8 +95,10 @@ type ServerConfig struct {
 
 // DatabaseConfig configures the metadata database.
 type DatabaseConfig struct {
+	// Driver selects the backend: "sqlite" (default) or "postgres".
 	Driver string `koanf:"driver"`
-	DSN    string `koanf:"dsn"`
+	// DSN is a file path for sqlite or a libpq connection string/URL for postgres.
+	DSN string `koanf:"dsn"`
 }
 
 // StorageConfig selects and configures the object storage backend.
@@ -263,8 +265,13 @@ func (c Config) validate() error {
 	if strings.TrimSpace(c.Server.BaseURL) == "" {
 		return fmt.Errorf("config: server.base_url must not be empty")
 	}
-	if c.Database.Driver != "sqlite" {
-		return fmt.Errorf("config: database.driver %q is not supported yet", c.Database.Driver)
+	switch strings.ToLower(strings.TrimSpace(c.Database.Driver)) {
+	case "", "sqlite", "postgres", "postgresql", "pgx":
+	default:
+		return fmt.Errorf("config: database.driver %q is not supported (want sqlite or postgres)", c.Database.Driver)
+	}
+	if strings.TrimSpace(c.Database.DSN) == "" {
+		return fmt.Errorf("config: database.dsn must not be empty")
 	}
 	switch c.Storage.Driver {
 	case "local":

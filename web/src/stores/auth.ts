@@ -1,7 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 
-import { fetchMe as fetchMeApi, login as loginApi, register as registerApi } from '@/api/auth'
+import { fetchMe as fetchMeApi, adminLogin as adminLoginApi, login as loginApi, register as registerApi } from '@/api/auth'
 import type { Credentials, User } from '@/api/types'
 
 const STORAGE_KEY = 'axmipic.session.v1'
@@ -89,6 +89,16 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function login(credentials: Credentials): Promise<User> {
     const result = await loginApi(credentials)
+    return applySession(result)
+  }
+
+  /** Signs in through the separate admin entrypoint. */
+  async function adminLogin(credentials: Credentials): Promise<User> {
+    const result = await adminLoginApi(credentials)
+    return applySession(result)
+  }
+
+  function applySession(result: { token: string; expires_at: string; user: User }): User {
     token.value = result.token
     expiresAt.value = result.expires_at
     user.value = result.user
@@ -123,6 +133,7 @@ export const useAuthStore = defineStore('auth', () => {
     username,
     hydrate,
     login,
+    adminLogin,
     register,
     refreshUser,
     logout,

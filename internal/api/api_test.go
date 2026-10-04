@@ -32,7 +32,7 @@ type testEnv struct {
 
 func newTestEnv(t *testing.T, requireAuth bool, quotaBytes int64) *testEnv {
 	t.Helper()
-	repo, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	repo, err := store.Open("sqlite", filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatalf("store.Open: %v", err)
 	}
@@ -77,9 +77,9 @@ func newTestEnv(t *testing.T, requireAuth bool, quotaBytes int64) *testEnv {
 
 func (e *testEnv) token(t *testing.T, username string) string {
 	t.Helper()
-	user, err := e.accounts.Register(context.Background(), username, "password123")
+	user, err := e.accounts.RegisterCustomer(context.Background(), username, "password123")
 	if err != nil {
-		t.Fatalf("Register: %v", err)
+		t.Fatalf("RegisterCustomer: %v", err)
 	}
 	token, err := e.accounts.CreateToken(context.Background(), user.ID, "test")
 	if err != nil {
@@ -90,13 +90,9 @@ func (e *testEnv) token(t *testing.T, username string) string {
 
 func (e *testEnv) adminToken(t *testing.T, username string) (string, string) {
 	t.Helper()
-	user, err := e.accounts.Register(context.Background(), username, "password123")
+	user, err := e.accounts.RegisterAdmin(context.Background(), username, "password123")
 	if err != nil {
-		t.Fatalf("Register: %v", err)
-	}
-	adminRole := "admin"
-	if _, err := e.repo.UpdateUser(context.Background(), user.ID, store.UserUpdate{Role: &adminRole}); err != nil {
-		t.Fatalf("promote to admin: %v", err)
+		t.Fatalf("RegisterAdmin: %v", err)
 	}
 	token, err := e.accounts.CreateToken(context.Background(), user.ID, "admin")
 	if err != nil {
@@ -323,9 +319,9 @@ func TestAdminRequiresAdminRole(t *testing.T) {
 func TestAdminStatsUsersAndDisable(t *testing.T) {
 	env := newTestEnv(t, true, 1<<20)
 	adminToken, _ := env.adminToken(t, "root")
-	victim, err := env.accounts.Register(context.Background(), "eve", "password123")
+	victim, err := env.accounts.RegisterCustomer(context.Background(), "eve", "password123")
 	if err != nil {
-		t.Fatalf("Register victim: %v", err)
+		t.Fatalf("RegisterCustomer victim: %v", err)
 	}
 	victimToken, err := env.accounts.CreateToken(context.Background(), victim.ID, "v")
 	if err != nil {
@@ -338,6 +334,8 @@ func TestAdminStatsUsersAndDisable(t *testing.T) {
 	}
 	var stats struct {
 		Data struct {
+			Admins        int64  `json:"admins"`
+			Customers     int64  `json:"customers"`
 			Users         int64  `json:"users"`
 			StorageDriver string `json:"storage_driver"`
 			Processor     string `json:"processor"`
@@ -346,16 +344,21 @@ func TestAdminStatsUsersAndDisable(t *testing.T) {
 	if err := json.Unmarshal(body, &stats); err != nil {
 		t.Fatalf("stats decode: %v", err)
 	}
-	if stats.Data.Users < 2 || stats.Data.StorageDriver != "local" || stats.Data.Processor == "" {
+	if stats.Data.Admins != 1 || stats.Data.Customers != 1 || stats.Data.Users != 2 ||
+		stats.Data.StorageDriver != "local" || stats.Data.Processor == "" {
 		t.Fatalf("unexpected stats: %s", body)
 	}
 
-	status, body = do(t, env.router, http.MethodGet, "/api/v1/admin/users", "", adminToken)
+	status, body = do(t, env.router, http.MethodGet, "/api/v1/admin/customers", "", adminToken)
 	if status != http.StatusOK {
-		t.Fatalf("users status = %d (%s)", status, body)
+		t.Fatalf("customers status = %d (%s)", status, body)
+	}
+	status, body = do(t, env.router, http.MethodGet, "/api/v1/admin/admins", "", adminToken)
+	if status != http.StatusOK {
+		t.Fatalf("admins status = %d (%s)", status, body)
 	}
 
-	status, body = do(t, env.router, http.MethodPatch, "/api/v1/admin/users/"+victim.ID, `{"disabled":true}`, adminToken)
+	status, body = do(t, env.router, http.MethodPatch, "/api/v1/admin/customers/"+victim.ID, `{"disabled":true}`, adminToken)
 	if status != http.StatusOK {
 		t.Fatalf("disable status = %d (%s)", status, body)
 	}
@@ -374,14 +377,10 @@ func TestAdminStatsUsersAndDisable(t *testing.T) {
 	}
 }
 
-func TestAdminRejectsInvalidRole(t *testing.T) {
+func TestAdminCannotDisableSelf(t *testing.T) {
 	env := newTestEnv(t, true, 1<<20)
-	adminToken, _ := env.adminToken(t, "root2")
-	victim, err := env.accounts.Register(context.Background(), "frank", "password123")
-	if err != nil {
-		t.Fatalf("Register: %v", err)
-	}
-	status, body := do(t, env.router, http.MethodPatch, "/api/v1/admin/users/"+victim.ID, `{"role":"superuser"}`, adminToken)
+	adminToken, adminID := env.adminToken(t, "root")
+	status, body := do(t, env.router, http.MethodPatch, "/api/v1/admin/admins/"+adminID, `{"disabled":true}`, adminToken)
 	if status != http.StatusBadRequest {
 		t.Fatalf("status = %d (%s), want 400", status, body)
 	}

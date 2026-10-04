@@ -38,12 +38,26 @@ func (PendingUpload) TableName() string {
 	return "pending_uploads"
 }
 
-// User is a registered account.
-type User struct {
+// Admin is a privileged account stored in its own table.
+type Admin struct {
 	ID           string `gorm:"primaryKey;size:36"`
 	Username     string `gorm:"uniqueIndex;size:64;not null"`
 	PasswordHash string `gorm:"size:100;not null"`
-	Role         string `gorm:"size:16;not null"`
+	Disabled     bool   `gorm:"not null;default:false"`
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
+// TableName returns the table backing Admin.
+func (Admin) TableName() string {
+	return "admins"
+}
+
+// Customer is an ordinary (non-privileged) account stored in its own table.
+type Customer struct {
+	ID           string `gorm:"primaryKey;size:36"`
+	Username     string `gorm:"uniqueIndex;size:64;not null"`
+	PasswordHash string `gorm:"size:100;not null"`
 	Disabled     bool   `gorm:"not null;default:false"`
 	UsedBytes    int64  `gorm:"not null;default:0"`
 	QuotaBytes   int64  `gorm:"not null;default:0"` // 0 means unlimited
@@ -51,14 +65,13 @@ type User struct {
 	UpdatedAt    time.Time
 }
 
-// TableName returns the table backing User.
-func (User) TableName() string {
-	return "users"
+// TableName returns the table backing Customer.
+func (Customer) TableName() string {
+	return "customers"
 }
 
 // UserUpdate carries optional account field changes. Nil fields are ignored.
 type UserUpdate struct {
-	Role     *string
 	Disabled *bool
 }
 

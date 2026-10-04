@@ -1,14 +1,36 @@
 import { request } from './client'
-import type { AdminStats, User, UserUpdate } from './types'
+import type { AdminStats, Credentials, User, UserUpdate } from './types'
 
 export function fetchStats(): Promise<AdminStats> {
   return request<AdminStats>({ method: 'GET', url: '/admin/stats' })
 }
 
-export function listUsers(): Promise<User[]> {
-  return request<User[]>({ method: 'GET', url: '/admin/users' })
+/** Ordinary accounts. */
+export function listCustomers(): Promise<User[]> {
+  return request<User[]>({ method: 'GET', url: '/admin/customers' })
 }
 
-export function updateUser(id: string, payload: UserUpdate): Promise<User> {
-  return request<User>({ method: 'PATCH', url: `/admin/users/${id}`, data: payload })
+/** Privileged accounts. */
+export function listAdmins(): Promise<User[]> {
+  return request<User[]>({ method: 'GET', url: '/admin/admins' })
+}
+
+export function createAdmin(payload: Credentials): Promise<User> {
+  return request<User>({ method: 'POST', url: '/admin/admins', data: payload })
+}
+
+export function updateCustomer(id: string, payload: UserUpdate): Promise<User> {
+  return request<User>({ method: 'PATCH', url: `/admin/customers/${id}`, data: payload })
+}
+
+export function updateAdmin(id: string, payload: UserUpdate): Promise<User> {
+  return request<User>({ method: 'PATCH', url: `/admin/admins/${id}`, data: payload })
+}
+
+export function deleteCustomer(id: string): Promise<void> {
+  return request<void>({ method: 'DELETE', url: `/admin/customers/${id}` })
+}
+
+export function deleteAdmin(id: string): Promise<void> {
+  return request<void>({ method: 'DELETE', url: `/admin/admins/${id}` })
 }

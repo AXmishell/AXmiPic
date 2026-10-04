@@ -20,6 +20,8 @@ import {
   ElSwitch,
   ElTable,
   ElTableColumn,
+  ElTabs,
+  ElTabPane,
   ElTag,
   ElTooltip,
 } from 'element-plus'
@@ -65,6 +67,8 @@ const globalComponents: Component[] = [
   ElSwitch,
   ElTable,
   ElTableColumn,
+  ElTabs,
+  ElTabPane,
   ElTag,
   ElTooltip,
 ]

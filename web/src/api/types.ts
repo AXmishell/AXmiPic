@@ -4,7 +4,7 @@ export interface ApiEnvelope<T> {
   data: T
 }
 
-export type UserRole = 'user' | 'admin'
+export type UserRole = 'customer' | 'admin'
 
 export interface User {
   id: string
@@ -48,6 +48,8 @@ export interface PageData<T> {
 }
 
 export interface AdminStats {
+  admins: number
+  customers: number
   users: number
   images: number
   total_bytes: number
@@ -68,6 +70,5 @@ export interface Credentials {
 }
 
 export interface UserUpdate {
-  role?: UserRole
   disabled?: boolean
 }

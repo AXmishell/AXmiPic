@@ -43,7 +43,7 @@ func run() error {
 	logger := newLogger(cfg.Logging.Level)
 	slog.SetDefault(logger)
 
-	repo, err := store.Open(cfg.Database.DSN)
+	repo, err := store.Open(cfg.Database.Driver, cfg.Database.DSN)
 	if err != nil {
 		return err
 	}

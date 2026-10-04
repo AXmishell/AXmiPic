@@ -5,6 +5,10 @@ export function login(payload: Credentials): Promise<LoginResult> {
   return request<LoginResult>({ method: 'POST', url: '/auth/login', data: payload })
 }
 
+export function adminLogin(payload: Credentials): Promise<LoginResult> {
+  return request<LoginResult>({ method: 'POST', url: '/admin/auth/login', data: payload })
+}
+
 export function register(payload: Credentials): Promise<User> {
   return request<User>({ method: 'POST', url: '/auth/register', data: payload })
 }

@@ -80,6 +80,7 @@ func NewRouter(d Deps) http.Handler {
 			r.Use(d.UploadLimiter.Middleware)
 			r.Post("/auth/register", h.register)
 			r.Post("/auth/login", h.login)
+			r.Post("/admin/auth/login", h.adminLogin)
 		})
 
 		r.Group(func(r chi.Router) {
@@ -109,8 +110,13 @@ func NewRouter(d Deps) http.Handler {
 			r.Group(func(r chi.Router) {
 				r.Use(auth.RequireAdmin)
 				r.Get("/admin/stats", h.adminStats)
-				r.Get("/admin/users", h.adminUsers)
-				r.Patch("/admin/users/{id}", h.adminUpdateUser)
+				r.Get("/admin/customers", h.adminCustomers)
+				r.Get("/admin/admins", h.adminAdmins)
+				r.Post("/admin/admins", h.adminCreateAdmin)
+				r.Patch("/admin/customers/{id}", h.adminUpdateCustomer)
+				r.Patch("/admin/admins/{id}", h.adminUpdateAdmin)
+				r.Delete("/admin/customers/{id}", h.adminDeleteCustomer)
+				r.Delete("/admin/admins/{id}", h.adminDeleteAdmin)
 			})
 		})
 	})

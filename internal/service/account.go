@@ -91,8 +91,8 @@ func NewAccountService(repo *store.Repository, issuer *auth.SessionIssuer, allow
 	}
 }
 
-// Register creates a new account.
-func (s *AccountService) Register(ctx context.Context, username, password string) (*UserDTO, error) {
+// RegisterCustomer creates a new ordinary (customer) account.
+func (s *AccountService) RegisterCustomer(ctx context.Context, username, password string) (*UserDTO, error) {
 	username = strings.ToLower(strings.TrimSpace(username))
 	if err := validateCredentials(username, password); err != nil {
 		return nil, err
@@ -100,7 +100,7 @@ func (s *AccountService) Register(ctx context.Context, username, password string
 	if !s.allowRegistration {
 		return nil, ErrRegistrationDisabled
 	}
-	if _, err := s.repo.GetUserByUsername(ctx, username); err == nil {
+	if _, err := s.repo.GetAccountByUsername(ctx, store.RoleCustomer, username); err == nil {
 		return nil, ErrUserExists
 	} else if !errors.Is(err, store.ErrNotFound) {
 		return nil, fmt.Errorf("register: lookup username: %w", err)
@@ -110,26 +110,65 @@ func (s *AccountService) Register(ctx context.Context, username, password string
 	if err != nil {
 		return nil, err
 	}
-	user := &store.User{
+	customer := &store.Customer{
 		ID:           uuid.NewString(),
 		Username:     username,
 		PasswordHash: hash,
-		Role:         string(auth.RoleUser),
 		QuotaBytes:   s.defaultQuotaBytes,
 	}
-	if err := s.repo.CreateUser(ctx, user); err != nil {
+	if err := s.repo.CreateCustomer(ctx, customer); err != nil {
 		// A concurrent registration may have inserted the same username first.
 		if strings.Contains(strings.ToLower(err.Error()), "unique") {
 			return nil, ErrUserExists
 		}
 		return nil, fmt.Errorf("register: create user: %w", err)
 	}
-	return toUserDTO(user), nil
+	return toUserDTO(accountFromCustomer(customer)), nil
 }
 
-// Login verifies credentials and issues a session token.
-func (s *AccountService) Login(ctx context.Context, username, password string) (*SessionDTO, error) {
-	user, err := s.repo.GetUserByUsername(ctx, strings.ToLower(strings.TrimSpace(username)))
+// RegisterAdmin creates an admin account in the admins table.
+func (s *AccountService) RegisterAdmin(ctx context.Context, username, password string) (*UserDTO, error) {
+	username = strings.ToLower(strings.TrimSpace(username))
+	if err := validateCredentials(username, password); err != nil {
+		return nil, err
+	}
+	if _, err := s.repo.GetAccountByUsername(ctx, store.RoleAdmin, username); err == nil {
+		return nil, ErrUserExists
+	} else if !errors.Is(err, store.ErrNotFound) {
+		return nil, fmt.Errorf("register admin: lookup username: %w", err)
+	}
+	hash, err := auth.HashPassword(password)
+	if err != nil {
+		return nil, err
+	}
+	admin := &store.Admin{
+		ID:           uuid.NewString(),
+		Username:     username,
+		PasswordHash: hash,
+	}
+	if err := s.repo.CreateAdmin(ctx, admin); err != nil {
+		if strings.Contains(strings.ToLower(err.Error()), "unique") {
+			return nil, ErrUserExists
+		}
+		return nil, fmt.Errorf("register admin: create admin: %w", err)
+	}
+	return toUserDTO(accountFromAdmin(admin)), nil
+}
+
+// LoginCustomer verifies credentials against the customers table and issues a
+// session token.
+func (s *AccountService) LoginCustomer(ctx context.Context, username, password string) (*SessionDTO, error) {
+	return s.login(ctx, store.RoleCustomer, username, password)
+}
+
+// LoginAdmin verifies credentials against the admins table and issues a session
+// token.
+func (s *AccountService) LoginAdmin(ctx context.Context, username, password string) (*SessionDTO, error) {
+	return s.login(ctx, store.RoleAdmin, username, password)
+}
+
+func (s *AccountService) login(ctx context.Context, role store.AccountRole, username, password string) (*SessionDTO, error) {
+	account, err := s.repo.GetAccountByUsername(ctx, role, strings.ToLower(strings.TrimSpace(username)))
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			// Perform a dummy comparison so a missing account and a wrong
@@ -137,28 +176,29 @@ func (s *AccountService) Login(ctx context.Context, username, password string) (
 			auth.VerifyPassword(dummyPasswordHash, password)
 			return nil, ErrInvalidCredentials
 		}
-		return nil, fmt.Errorf("login: lookup user: %w", err)
+		return nil, fmt.Errorf("login: lookup account: %w", err)
 	}
-	if !auth.VerifyPassword(user.PasswordHash, password) {
+	if !auth.VerifyPassword(account.PasswordHash, password) {
 		return nil, ErrInvalidCredentials
 	}
-	if user.Disabled {
+	if account.Disabled {
 		return nil, ErrInvalidCredentials
 	}
-	token, expiresAt, err := s.issuer.Issue(user.ID, user.Role)
+	token, expiresAt, err := s.issuer.Issue(account.ID, string(account.Role))
 	if err != nil {
 		return nil, err
 	}
-	return &SessionDTO{Token: token, ExpiresAt: expiresAt, User: *toUserDTO(user)}, nil
+	return &SessionDTO{Token: token, ExpiresAt: expiresAt, User: *toUserDTO(account)}, nil
 }
 
-// Me returns the account for a user id.
-func (s *AccountService) Me(ctx context.Context, userID string) (*UserDTO, error) {
-	user, err := s.repo.GetUserByID(ctx, userID)
+// Me returns the account for a principal, resolving the correct table from the
+// principal's role.
+func (s *AccountService) Me(ctx context.Context, principal *auth.Principal) (*UserDTO, error) {
+	account, err := s.repo.GetAccountByID(ctx, principal.StoreRole(), principal.UserID)
 	if err != nil {
 		return nil, fmt.Errorf("me: %w", err)
 	}
-	return toUserDTO(user), nil
+	return toUserDTO(account), nil
 }
 
 // CreateToken issues a new API token for a user, returning the plaintext once.
@@ -206,16 +246,16 @@ func (s *AccountService) RevokeToken(ctx context.Context, userID, tokenID string
 	return nil
 }
 
-// EnsureBootstrapAdmin creates an admin account from a "username:password"
-// spec when no accounts exist yet. It is a no-op when the spec is empty or any
-// account already exists.
+// EnsureBootstrapAdmin creates an admin account from a "username:password" spec
+// when no admin exists yet. It is a no-op when the spec is empty or an admin
+// already exists.
 func (s *AccountService) EnsureBootstrapAdmin(ctx context.Context, spec string) error {
 	if strings.TrimSpace(spec) == "" {
 		return nil
 	}
-	count, err := s.repo.CountUsers(ctx)
+	count, err := s.repo.CountAdmins(ctx)
 	if err != nil {
-		return fmt.Errorf("bootstrap admin: count users: %w", err)
+		return fmt.Errorf("bootstrap admin: count admins: %w", err)
 	}
 	if count > 0 {
 		return nil
@@ -229,15 +269,13 @@ func (s *AccountService) EnsureBootstrapAdmin(ctx context.Context, spec string) 
 	if err != nil {
 		return err
 	}
-	user := &store.User{
+	admin := &store.Admin{
 		ID:           uuid.NewString(),
 		Username:     username,
 		PasswordHash: hash,
-		Role:         string(auth.RoleAdmin),
-		QuotaBytes:   s.defaultQuotaBytes,
 	}
-	if err := s.repo.CreateUser(ctx, user); err != nil {
-		return fmt.Errorf("bootstrap admin: create user: %w", err)
+	if err := s.repo.CreateAdmin(ctx, admin); err != nil {
+		return fmt.Errorf("bootstrap admin: create admin: %w", err)
 	}
 	return nil
 }
@@ -271,15 +309,41 @@ func isUsernameRune(r rune) bool {
 	}
 }
 
-func toUserDTO(user *store.User) *UserDTO {
+func accountFromAdmin(admin *store.Admin) *store.Account {
+	return &store.Account{
+		ID:           admin.ID,
+		Username:     admin.Username,
+		PasswordHash: admin.PasswordHash,
+		Role:         store.RoleAdmin,
+		Disabled:     admin.Disabled,
+		CreatedAt:    admin.CreatedAt,
+		UpdatedAt:    admin.UpdatedAt,
+	}
+}
+
+func accountFromCustomer(customer *store.Customer) *store.Account {
+	return &store.Account{
+		ID:           customer.ID,
+		Username:     customer.Username,
+		PasswordHash: customer.PasswordHash,
+		Role:         store.RoleCustomer,
+		Disabled:     customer.Disabled,
+		UsedBytes:    customer.UsedBytes,
+		QuotaBytes:   customer.QuotaBytes,
+		CreatedAt:    customer.CreatedAt,
+		UpdatedAt:    customer.UpdatedAt,
+	}
+}
+
+func toUserDTO(account *store.Account) *UserDTO {
 	return &UserDTO{
-		ID:         user.ID,
-		Username:   user.Username,
-		Role:       user.Role,
-		Disabled:   user.Disabled,
-		UsedBytes:  user.UsedBytes,
-		QuotaBytes: user.QuotaBytes,
-		CreatedAt:  user.CreatedAt,
+		ID:         account.ID,
+		Username:   account.Username,
+		Role:       string(account.Role),
+		Disabled:   account.Disabled,
+		UsedBytes:  account.UsedBytes,
+		QuotaBytes: account.QuotaBytes,
+		CreatedAt:  account.CreatedAt,
 	}
 }
 

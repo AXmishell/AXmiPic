@@ -12,7 +12,7 @@ const auth = useAuthStore()
 const router = useRouter()
 const route = useRoute()
 
-const mode = ref<'login' | 'register'>('login')
+const mode = ref<'login' | 'register' | 'admin'>('login')
 const formRef = ref<FormInstance>()
 const loading = ref(false)
 const form = reactive({ username: '', password: '' })
@@ -28,14 +28,26 @@ const rules: FormRules = {
   ],
 }
 
-const heading = computed(() => (mode.value === 'login' ? '欢迎回来' : '创建新账号'))
-const subheading = computed(() =>
-  mode.value === 'login' ? '登录以管理图片、访问令牌与存储配额' : '注册成功后将自动登录并进入控制台',
-)
-const submitLabel = computed(() => (mode.value === 'login' ? '登录' : '注册并登录'))
+const heading = computed(() => {
+  if (mode.value === 'admin') return '管理员登录'
+  return mode.value === 'login' ? '欢迎回来' : '创建新账号'
+})
+const subheading = computed(() => {
+  if (mode.value === 'admin') return '使用管理员账号进入管理控制台'
+  return mode.value === 'login' ? '登录以管理图片、访问令牌与存储配额' : '注册成功后将自动登录并进入控制台'
+})
+const submitLabel = computed(() => {
+  if (mode.value === 'admin') return '管理员登录'
+  return mode.value === 'login' ? '登录' : '注册并登录'
+})
 
 function switchMode(): void {
-  mode.value = mode.value === 'login' ? 'register' : 'login'
+  mode.value = mode.value === 'register' ? 'login' : 'register'
+  formRef.value?.clearValidate()
+}
+
+function toggleAdmin(): void {
+  mode.value = mode.value === 'admin' ? 'login' : 'admin'
   formRef.value?.clearValidate()
 }
 
@@ -48,7 +60,10 @@ async function handleSubmit(): Promise<void> {
   loading.value = true
   try {
     const credentials = { username: form.username.trim(), password: form.password }
-    if (mode.value === 'login') {
+    if (mode.value === 'admin') {
+      await auth.adminLogin(credentials)
+      ElMessage.success('登录成功')
+    } else if (mode.value === 'login') {
       await auth.login(credentials)
       ElMessage.success('登录成功')
     } else {
@@ -172,10 +187,19 @@ async function handleSubmit(): Promise<void> {
         </el-form>
 
         <p class="auth__switch">
-          {{ mode === 'login' ? '还没有账号？' : '已有账号？' }}
-          <button type="button" class="auth__switch-btn" @click="switchMode">
-            {{ mode === 'login' ? '立即注册' : '去登录' }}
-          </button>
+          <template v-if="mode === 'register'">
+            已有账号？
+            <button type="button" class="auth__switch-btn" @click="switchMode">去登录</button>
+          </template>
+          <template v-else-if="mode === 'admin'">
+            <button type="button" class="auth__switch-btn" @click="toggleAdmin">返回普通登录</button>
+          </template>
+          <template v-else>
+            还没有账号？
+            <button type="button" class="auth__switch-btn" @click="switchMode">立即注册</button>
+            <span class="auth__switch-sep">·</span>
+            <button type="button" class="auth__switch-btn" @click="toggleAdmin">管理员登录</button>
+          </template>
         </p>
       </div>
     </section>
@@ -383,6 +407,11 @@ async function handleSubmit(): Promise<void> {
   outline: 2px solid var(--ax-focus);
   outline-offset: 2px;
   border-radius: 2px;
+}
+
+.auth__switch-sep {
+  margin: 0 var(--ax-space-2);
+  color: var(--ax-text-4);
 }
 
 @media (max-width: 960px) {

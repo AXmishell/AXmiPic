@@ -137,7 +137,7 @@ onMounted(load)
             </div>
             <div class="info-list__row">
               <dt>用户数</dt>
-              <dd>{{ formatNumber(stats.users) }}</dd>
+              <dd>{{ formatNumber(stats.users) }}（管理员 {{ formatNumber(stats.admins) }}）</dd>
             </div>
             <div class="info-list__row">
               <dt>图片数</dt>

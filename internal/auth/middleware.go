@@ -54,41 +54,66 @@ func (a *Authenticator) resolve(r *http.Request, credential string) (*Principal,
 		if token.ExpiresAt != nil && time.Now().After(*token.ExpiresAt) {
 			return nil, ErrUnauthenticated
 		}
-		user, err := a.repo.GetUserByID(ctx, token.UserID)
+		if user, err := a.repo.GetAccountByID(ctx, store.RoleCustomer, token.UserID); err == nil {
+			if user.Disabled {
+				return nil, ErrUnauthenticated
+			}
+			if token.LastUsedAt == nil || time.Since(*token.LastUsedAt) > tokenTouchInterval {
+				if err := a.repo.TouchToken(ctx, token.ID); err != nil {
+					// A failed last-used update must not block an otherwise valid request.
+					_ = err
+				}
+			}
+			return &Principal{
+				UserID:   user.ID,
+				Username: user.Username,
+				Role:     RoleUser,
+				TokenID:  token.ID,
+			}, nil
+		}
+		// Admins occupy a separate table.
+		admin, err := a.repo.GetAccountByID(ctx, store.RoleAdmin, token.UserID)
 		if err != nil {
 			return nil, ErrUnauthenticated
 		}
-		if user.Disabled {
+		if admin.Disabled {
 			return nil, ErrUnauthenticated
 		}
 		if token.LastUsedAt == nil || time.Since(*token.LastUsedAt) > tokenTouchInterval {
 			if err := a.repo.TouchToken(ctx, token.ID); err != nil {
-				// A failed last-used update must not block an otherwise valid request.
 				_ = err
 			}
 		}
 		return &Principal{
-			UserID:   user.ID,
-			Username: user.Username,
-			Role:     Role(user.Role),
+			UserID:   admin.ID,
+			Username: admin.Username,
+			Role:     RoleAdmin,
 			TokenID:  token.ID,
 		}, nil
 	}
 
-	userID, _, err := a.issuer.Parse(credential)
+	userID, role, err := a.issuer.Parse(credential)
 	if err != nil {
 		return nil, err
 	}
-	user, err := a.repo.GetUserByID(ctx, userID)
+	if role == string(RoleAdmin) {
+		admin, err := a.repo.GetAccountByID(ctx, store.RoleAdmin, userID)
+		if err != nil {
+			return nil, ErrUnauthenticated
+		}
+		if admin.Disabled {
+			return nil, ErrUnauthenticated
+		}
+		return &Principal{UserID: admin.ID, Username: admin.Username, Role: RoleAdmin}, nil
+	}
+	customer, err := a.repo.GetAccountByID(ctx, store.RoleCustomer, userID)
 	if err != nil {
 		return nil, ErrUnauthenticated
 	}
-	if user.Disabled {
+	if customer.Disabled {
 		return nil, ErrUnauthenticated
 	}
-	// Use the persisted role rather than the token's claim so role changes take
-	// effect immediately without waiting for the session to expire.
-	return &Principal{UserID: user.ID, Username: user.Username, Role: Role(user.Role)}, nil
+	return &Principal{UserID: customer.ID, Username: customer.Username, Role: RoleUser}, nil
 }
 
 // RequireAdmin rejects requests from callers that are not authenticated admins.

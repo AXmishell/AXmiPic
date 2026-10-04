@@ -18,7 +18,7 @@ func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	user, err := h.accounts.Register(r.Context(), body.Username, body.Password)
+	user, err := h.accounts.RegisterCustomer(r.Context(), body.Username, body.Password)
 	if err != nil {
 		h.fail(w, r, err)
 		return
@@ -32,7 +32,21 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	session, err := h.accounts.Login(r.Context(), body.Username, body.Password)
+	session, err := h.accounts.LoginCustomer(r.Context(), body.Username, body.Password)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeOK(w, session)
+}
+
+func (h *Handler) adminLogin(w http.ResponseWriter, r *http.Request) {
+	var body credentialsRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxJSONBody)).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	session, err := h.accounts.LoginAdmin(r.Context(), body.Username, body.Password)
 	if err != nil {
 		h.fail(w, r, err)
 		return
@@ -46,7 +60,7 @@ func (h *Handler) me(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, http.StatusUnauthorized, "authentication required")
 		return
 	}
-	user, err := h.accounts.Me(r.Context(), principal.UserID)
+	user, err := h.accounts.Me(r.Context(), principal)
 	if err != nil {
 		h.fail(w, r, err)
 		return
