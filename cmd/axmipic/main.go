@@ -17,6 +17,7 @@ import (
 	"github.com/AXmishell/axmipic/internal/auth"
 	"github.com/AXmishell/axmipic/internal/config"
 	"github.com/AXmishell/axmipic/internal/imaging"
+	"github.com/AXmishell/axmipic/internal/secret"
 	"github.com/AXmishell/axmipic/internal/server"
 	"github.com/AXmishell/axmipic/internal/service"
 	"github.com/AXmishell/axmipic/internal/storage"
@@ -53,12 +54,26 @@ func run() error {
 		}
 	}()
 
-	storeBackend, err := storage.NewFromConfig(cfg.Storage, cfg.Server.BaseURL)
+	jwtKey, err := jwtSecret(cfg.Auth.JWTSecret, logger)
 	if err != nil {
 		return err
 	}
 
-	uploadSvc := service.NewUploadService(repo, storeBackend, service.UploadPolicy{
+	manager := storage.NewManager()
+	cipher, err := secret.New(jwtKey)
+	if err != nil {
+		return err
+	}
+	storageSvc := service.NewStorageService(repo, manager, cipher, cfg.Server.BaseURL, cfg.Storage)
+
+	bootstrapCtx, cancelBootstrap := context.WithTimeout(context.Background(), 30*time.Second)
+	if err := storageSvc.Bootstrap(bootstrapCtx); err != nil {
+		cancelBootstrap()
+		return err
+	}
+	cancelBootstrap()
+
+	uploadSvc := service.NewUploadService(repo, manager, service.UploadPolicy{
 		MaxSizeBytes:     int64(cfg.Upload.MaxSizeMB) << 20,
 		AllowedMIMETypes: cfg.Upload.AllowedMIMETypes,
 		PresignExpiry:    storagePresignExpiry(cfg),
@@ -70,7 +85,7 @@ func run() error {
 		slog.String("processor", capabilities.Name),
 		slog.Any("formats", capabilities.OutputFormats),
 	)
-	imagingSvc := service.NewImagingService(storeBackend, processor, service.ProcessingPolicy{
+	imagingSvc := service.NewImagingService(manager, processor, service.ProcessingPolicy{
 		Enabled:        cfg.Processing.Enabled,
 		MaxWidth:       cfg.Processing.MaxWidth,
 		MaxHeight:      cfg.Processing.MaxHeight,
@@ -78,15 +93,11 @@ func run() error {
 		AllowedFormats: processingFormats(cfg.Processing.AllowedFormats),
 	})
 
-	secret, err := jwtSecret(cfg.Auth.JWTSecret, logger)
-	if err != nil {
-		return err
-	}
-	issuer := auth.NewSessionIssuer(secret, time.Duration(cfg.Auth.SessionTTLHours)*time.Hour)
+	issuer := auth.NewSessionIssuer(jwtKey, time.Duration(cfg.Auth.SessionTTLHours)*time.Hour)
 	accounts := service.NewAccountService(repo, issuer, cfg.Auth.AllowRegistration, int64(cfg.Auth.DefaultQuotaMB)<<20)
 	adminSvc := service.NewAdminService(repo, cfg.Storage.Driver, processor)
 
-	bootstrapCtx, cancelBootstrap := context.WithTimeout(context.Background(), 30*time.Second)
+	bootstrapCtx, cancelBootstrap = context.WithTimeout(context.Background(), 30*time.Second)
 	err = accounts.EnsureBootstrapAdmin(bootstrapCtx, cfg.Auth.BootstrapAdmin)
 	cancelBootstrap()
 	if err != nil {
@@ -98,7 +109,7 @@ func run() error {
 		Imaging:       imagingSvc,
 		Accounts:      accounts,
 		Admin:         adminSvc,
-		Storage:       storeBackend,
+		Storage:       storageSvc,
 		Authenticator: auth.NewAuthenticator(repo, issuer),
 		UploadLimiter: &auth.UploadLimiter{
 			User:  auth.NewRateLimiter(cfg.Limits.UploadPerMinute, cfg.Limits.UploadBurst),

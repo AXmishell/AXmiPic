@@ -50,19 +50,19 @@ type ProcessingPolicy struct {
 
 // ImagingService 对已存储的图片应用即时变换。
 type ImagingService struct {
-	storage   storage.Storage
+	manager   *storage.Manager
 	processor imaging.Processor
 	policy    ProcessingPolicy
 	allowed   map[imaging.Format]struct{}
 }
 
 // NewImagingService 构造一个 ImagingService。
-func NewImagingService(backend storage.Storage, processor imaging.Processor, policy ProcessingPolicy) *ImagingService {
+func NewImagingService(manager *storage.Manager, processor imaging.Processor, policy ProcessingPolicy) *ImagingService {
 	allowed := make(map[imaging.Format]struct{}, len(policy.AllowedFormats))
 	for _, f := range policy.AllowedFormats {
 		allowed[f] = struct{}{}
 	}
-	return &ImagingService{storage: backend, processor: processor, policy: policy, allowed: allowed}
+	return &ImagingService{manager: manager, processor: processor, policy: policy, allowed: allowed}
 }
 
 // Enabled 报告变换功能是否可用。
@@ -142,12 +142,13 @@ func (s *ImagingService) canEncode(f imaging.Format) bool {
 	return false
 }
 
-// Render 获取原始对象并应用 opts。
-func (s *ImagingService) Render(ctx context.Context, key string, opts imaging.Options) (*imaging.Result, error) {
+// Render 获取原始对象并应用 opts。backend 指定对象所在的存储后端，由调用方
+// 按图片记录解析后传入。
+func (s *ImagingService) Render(ctx context.Context, backend storage.Storage, key string, opts imaging.Options) (*imaging.Result, error) {
 	if !s.Enabled() {
 		return nil, ErrProcessingUnsupported
 	}
-	object, err := s.storage.Get(ctx, key)
+	object, err := backend.Get(ctx, key)
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
 			return nil, fmt.Errorf("render: %w", ErrNotFound)

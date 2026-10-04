@@ -36,7 +36,7 @@ func Open(driver, dsn string) (*Repository, error) {
 	if err != nil {
 		return nil, fmt.Errorf("store: open (%s): %w", driver, err)
 	}
-	if err := db.AutoMigrate(&Image{}, &PendingUpload{}, &Admin{}, &Customer{}, &APIToken{}); err != nil {
+	if err := db.AutoMigrate(&Image{}, &PendingUpload{}, &Admin{}, &Customer{}, &APIToken{}, &StorageBackend{}); err != nil {
 		return nil, fmt.Errorf("store: migrate: %w", err)
 	}
 	return &Repository{db: db}, nil

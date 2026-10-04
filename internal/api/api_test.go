@@ -18,7 +18,9 @@ import (
 
 	"github.com/AXmishell/axmipic/internal/api"
 	"github.com/AXmishell/axmipic/internal/auth"
+	"github.com/AXmishell/axmipic/internal/config"
 	"github.com/AXmishell/axmipic/internal/imaging"
+	"github.com/AXmishell/axmipic/internal/secret"
 	"github.com/AXmishell/axmipic/internal/service"
 	"github.com/AXmishell/axmipic/internal/storage"
 	"github.com/AXmishell/axmipic/internal/store"
@@ -43,12 +45,22 @@ func newTestEnv(t *testing.T, requireAuth bool, quotaBytes int64) *testEnv {
 	if err != nil {
 		t.Fatalf("storage.NewLocal: %v", err)
 	}
-	uploadSvc := service.NewUploadService(repo, local, service.UploadPolicy{
+	manager := storage.NewManager()
+	manager.SetFallback(local)
+	cipher, err := secret.New([]byte("test-encryption-key"))
+	if err != nil {
+		t.Fatalf("secret.New: %v", err)
+	}
+	storageSvc := service.NewStorageService(repo, manager, cipher, "http://localhost:8080", config.StorageConfig{
+		Driver: "local",
+		Local:  config.LocalStorageConfig{Root: t.TempDir()},
+	})
+	uploadSvc := service.NewUploadService(repo, manager, service.UploadPolicy{
 		MaxSizeBytes:     1 << 20,
 		AllowedMIMETypes: []string{"image/png"},
 		PresignExpiry:    10,
 	})
-	imagingSvc := service.NewImagingService(local, imaging.Default(), service.ProcessingPolicy{
+	imagingSvc := service.NewImagingService(manager, imaging.Default(), service.ProcessingPolicy{
 		Enabled:        true,
 		MaxWidth:       64,
 		MaxHeight:      64,
@@ -62,7 +74,7 @@ func newTestEnv(t *testing.T, requireAuth bool, quotaBytes int64) *testEnv {
 		Imaging:       imagingSvc,
 		Accounts:      accounts,
 		Admin:         service.NewAdminService(repo, "local", imaging.Default()),
-		Storage:       local,
+		Storage:       storageSvc,
 		Authenticator: auth.NewAuthenticator(repo, issuer),
 		UploadLimiter: &auth.UploadLimiter{
 			User:  auth.NewRateLimiter(10000, 1000),

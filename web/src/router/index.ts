@@ -47,6 +47,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '用户管理', requiresAdmin: true },
       },
       {
+        path: 'storage',
+        name: 'storage',
+        component: () => import('@/views/StorageView.vue'),
+        meta: { title: '存储配置', requiresAdmin: true },
+      },
+      {
         path: 'settings',
         name: 'settings',
         component: () => import('@/views/SettingsView.vue'),

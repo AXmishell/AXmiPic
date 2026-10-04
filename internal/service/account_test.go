@@ -162,7 +162,7 @@ func TestEnsureBootstrapAdmin(t *testing.T) {
 func TestUploadReservesAndDeleteReleasesQuota(t *testing.T) {
 	repo := newRepo(t)
 	fs := newFakeStorage()
-	svc := service.NewUploadService(repo, fs, pngPolicy())
+	svc := service.NewUploadService(repo, managerWithFallback(t, fs), pngPolicy())
 	ctx := context.Background()
 
 	customer := &store.Customer{ID: "u1", Username: "u1", PasswordHash: "x", QuotaBytes: 1 << 20}

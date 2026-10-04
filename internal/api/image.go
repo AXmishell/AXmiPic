@@ -70,6 +70,12 @@ func (h *Handler) serveImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	backend, err := h.svc.BackendForKey(r.Context(), key)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+
 	opts, err := h.imaging.Options(req)
 	if err != nil {
 		h.fail(w, r, err)
@@ -82,7 +88,7 @@ func (h *Handler) serveImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := h.imaging.Render(r.Context(), key, opts)
+	result, err := h.imaging.Render(r.Context(), backend, key, opts)
 	if err != nil {
 		h.fail(w, r, err)
 		return
@@ -102,7 +108,12 @@ func (h *Handler) serveImage(w http.ResponseWriter, r *http.Request) {
 
 // serveOriginal 原样流式传输已存储的对象。
 func (h *Handler) serveOriginal(w http.ResponseWriter, r *http.Request, dto *service.ImageDTO) {
-	object, err := h.storage.Get(r.Context(), dto.Key)
+	backend, err := h.svc.BackendForKey(r.Context(), dto.Key)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	object, err := backend.Get(r.Context(), dto.Key)
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
 			h.fail(w, r, service.ErrNotFound)

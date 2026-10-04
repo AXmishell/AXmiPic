@@ -3,6 +3,7 @@ import { createPinia } from 'pinia'
 import {
   ElAlert,
   ElButton,
+  ElCheckbox,
   ElConfigProvider,
   ElDialog,
   ElDropdown,
@@ -53,6 +54,7 @@ useThemeStore(pinia).init()
 const globalComponents: Component[] = [
   ElAlert,
   ElButton,
+  ElCheckbox,
   ElConfigProvider,
   ElDialog,
   ElDropdown,

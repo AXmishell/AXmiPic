@@ -12,7 +12,6 @@ import (
 
 	"github.com/AXmishell/axmipic/internal/auth"
 	"github.com/AXmishell/axmipic/internal/service"
-	"github.com/AXmishell/axmipic/internal/storage"
 )
 
 // Deps 是构建 API 路由所需的依赖项。
@@ -21,7 +20,7 @@ type Deps struct {
 	Imaging       *service.ImagingService
 	Accounts      *service.AccountService
 	Admin         *service.AdminService
-	Storage       storage.Storage
+	Storage       *service.StorageService
 	Authenticator *auth.Authenticator
 	UploadLimiter *auth.UploadLimiter
 	// ImageLimiter 按 IP 对公开图片服务和转换进行限流。
@@ -41,7 +40,7 @@ type Handler struct {
 	imaging        *service.ImagingService
 	accounts       *service.AccountService
 	admin          *service.AdminService
-	storage        storage.Storage
+	storageSvc     *service.StorageService
 	maxUploadBytes int64
 	logger         *slog.Logger
 }
@@ -53,7 +52,7 @@ func NewRouter(d Deps) http.Handler {
 		imaging:        d.Imaging,
 		accounts:       d.Accounts,
 		admin:          d.Admin,
-		storage:        d.Storage,
+		storageSvc:     d.Storage,
 		maxUploadBytes: int64(d.MaxUploadMB) << 20,
 		logger:         d.Logger,
 	}
@@ -116,6 +115,12 @@ func NewRouter(d Deps) http.Handler {
 				r.Patch("/admin/admins/{id}", h.adminUpdateAdmin)
 				r.Delete("/admin/customers/{id}", h.adminDeleteCustomer)
 				r.Delete("/admin/admins/{id}", h.adminDeleteAdmin)
+				r.Get("/admin/storage", h.storageList)
+				r.Post("/admin/storage", h.storageCreate)
+				r.Get("/admin/storage/{id}", h.storageGet)
+				r.Put("/admin/storage/{id}", h.storageUpdate)
+				r.Delete("/admin/storage/{id}", h.storageDelete)
+				r.Post("/admin/storage/{id}/activate", h.storageActivate)
 			})
 		})
 	})

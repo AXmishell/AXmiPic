@@ -113,9 +113,17 @@ func pngPolicy() service.UploadPolicy {
 	}
 }
 
+// managerWithFallback 用一个兜底后端构建 Manager，模拟配置文件的存储。
+func managerWithFallback(t *testing.T, store storage.Storage) *storage.Manager {
+	t.Helper()
+	m := storage.NewManager()
+	m.SetFallback(store)
+	return m
+}
+
 func TestUploadDeduplicatesIdenticalContent(t *testing.T) {
 	repo := newRepo(t)
-	svc := service.NewUploadService(repo, newFakeStorage(), pngPolicy())
+	svc := service.NewUploadService(repo, managerWithFallback(t, newFakeStorage()), pngPolicy())
 	ctx := context.Background()
 	data := testPNG(t)
 
@@ -137,7 +145,7 @@ func TestUploadDeduplicatesIdenticalContent(t *testing.T) {
 
 func TestPresignUnsupportedByNonPresigningStorage(t *testing.T) {
 	repo := newRepo(t)
-	svc := service.NewUploadService(repo, newFakeStorage(), pngPolicy())
+	svc := service.NewUploadService(repo, managerWithFallback(t, newFakeStorage()), pngPolicy())
 	_, err := svc.Presign(context.Background(), nil, service.PresignInput{MimeType: "image/png", Size: 10})
 	if !errors.Is(err, service.ErrPresignUnsupported) {
 		t.Fatalf("error = %v, want ErrPresignUnsupported", err)
@@ -146,7 +154,7 @@ func TestPresignUnsupportedByNonPresigningStorage(t *testing.T) {
 
 func TestPresignRecordsPendingUpload(t *testing.T) {
 	repo := newRepo(t)
-	svc := service.NewUploadService(repo, &fakePresignStorage{newFakeStorage()}, pngPolicy())
+	svc := service.NewUploadService(repo, managerWithFallback(t, &fakePresignStorage{newFakeStorage()}), pngPolicy())
 	ctx := context.Background()
 
 	result, err := svc.Presign(ctx, nil, service.PresignInput{MimeType: "image/png", Size: 128})
@@ -175,7 +183,7 @@ func TestConfirmRecordsMetadataAndClearsPending(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("CreatePendingUpload: %v", err)
 	}
-	svc := service.NewUploadService(repo, fs, pngPolicy())
+	svc := service.NewUploadService(repo, managerWithFallback(t, fs), pngPolicy())
 
 	dto, err := svc.Confirm(ctx, nil, key)
 	if err != nil {
@@ -202,7 +210,7 @@ func TestConfirmRecordsMetadataAndClearsPending(t *testing.T) {
 
 func TestConfirmRejectsUnissuedKey(t *testing.T) {
 	repo := newRepo(t)
-	svc := service.NewUploadService(repo, newFakeStorage(), pngPolicy())
+	svc := service.NewUploadService(repo, managerWithFallback(t, newFakeStorage()), pngPolicy())
 	_, err := svc.Confirm(context.Background(), nil, "2026/01/01/never-issued.png")
 	if !errors.Is(err, service.ErrNotFound) {
 		t.Fatalf("error = %v, want ErrNotFound", err)
@@ -223,7 +231,7 @@ func TestConfirmRejectsDisallowedContentType(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("CreatePendingUpload: %v", err)
 	}
-	svc := service.NewUploadService(repo, fs, pngPolicy())
+	svc := service.NewUploadService(repo, managerWithFallback(t, fs), pngPolicy())
 
 	_, err := svc.Confirm(ctx, nil, key)
 	if !errors.Is(err, service.ErrUnsupportedType) {
@@ -249,7 +257,7 @@ func TestConfirmRejectsSpoofedContent(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("CreatePendingUpload: %v", err)
 	}
-	svc := service.NewUploadService(repo, fs, pngPolicy())
+	svc := service.NewUploadService(repo, managerWithFallback(t, fs), pngPolicy())
 
 	_, err := svc.Confirm(ctx, nil, key)
 	if !errors.Is(err, service.ErrUnsupportedType) {

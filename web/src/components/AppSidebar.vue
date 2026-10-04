@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, type Component } from 'vue'
 import { useRoute } from 'vue-router'
-import { ArrowRight, Close, Key, Odometer, Picture, Setting, User } from '@element-plus/icons-vue'
+import { ArrowRight, Close, Coin, Key, Odometer, Picture, Setting, User } from '@element-plus/icons-vue'
 
 import QuotaMeter from '@/components/QuotaMeter.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -39,7 +39,13 @@ const groups = computed<NavGroup[]>(() => {
     },
   ]
   if (auth.isAdmin) {
-    list.push({ label: '管理', items: [{ label: '用户管理', to: '/users', icon: User }] })
+    list.push({
+      label: '管理',
+      items: [
+        { label: '用户管理', to: '/users', icon: User },
+        { label: '存储配置', to: '/storage', icon: Coin },
+      ],
+    })
   }
   return list
 })

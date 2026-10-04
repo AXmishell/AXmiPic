@@ -109,6 +109,7 @@ type PresignResult struct {
 type ImageDTO struct {
 	ID        string    `json:"id"`
 	Key       string    `json:"key"`
+	StorageID string    `json:"storage_id,omitempty"`
 	URL       string    `json:"url"`
 	Size      int64     `json:"size"`
 	MimeType  string    `json:"mime_type"`
@@ -128,18 +129,48 @@ type ListResult struct {
 // UploadService 协调校验、去重、存储和元数据。
 type UploadService struct {
 	repo    *store.Repository
-	storage storage.Storage
+	manager *storage.Manager
 	policy  UploadPolicy
 	allowed map[string]struct{}
 }
 
 // NewUploadService 构造一个 UploadService。
-func NewUploadService(repo *store.Repository, backend storage.Storage, policy UploadPolicy) *UploadService {
+func NewUploadService(repo *store.Repository, manager *storage.Manager, policy UploadPolicy) *UploadService {
 	allowed := make(map[string]struct{}, len(policy.AllowedMIMETypes))
 	for _, mimeType := range policy.AllowedMIMETypes {
 		allowed[mimeType] = struct{}{}
 	}
-	return &UploadService{repo: repo, storage: backend, policy: policy, allowed: allowed}
+	return &UploadService{repo: repo, manager: manager, policy: policy, allowed: allowed}
+}
+
+// backendFor 返回某张图片所在的存储后端：优先按记录的 storage_id 解析，
+// 为空或已删除时回退到当前默认后端。
+func (s *UploadService) backendFor(image *store.Image) storage.Storage {
+	if image.StorageID != nil {
+		return s.manager.Resolve(*image.StorageID)
+	}
+	return s.manager.Current()
+}
+
+// urlFor 返回对象在指定后端上的公开 URL。
+func (s *UploadService) urlFor(backend storage.Storage, key string) string {
+	if backend == nil {
+		return ""
+	}
+	return backend.URL(key)
+}
+
+// BackendForKey 返回存储指定键图片的后端，供 API 层流式读取对象时路由。
+// 若数据库中没有该键的记录，则回退到当前默认后端。
+func (s *UploadService) BackendForKey(ctx context.Context, key string) (storage.Storage, error) {
+	image, err := s.repo.GetByKey(ctx, key)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return s.manager.Current(), nil
+		}
+		return nil, err
+	}
+	return s.backendFor(image), nil
 }
 
 // Upload 校验、存储并记录一张归 principal 所有的图片。相同内容会按其
@@ -164,7 +195,7 @@ func (s *UploadService) Upload(ctx context.Context, principal *auth.Principal, i
 	}
 
 	ownerID := ownerIDOf(principal)
-	release, ok, err := s.reserveQuota(ctx, ownerID, size)
+	release, ok, err := s.reserveQuota(ctx, principal, ownerID, size)
 	if err != nil {
 		return nil, err
 	}
@@ -180,26 +211,32 @@ func (s *UploadService) Upload(ctx context.Context, principal *auth.Principal, i
 
 	// 如果上一次写入被中断，某个内容寻址对象可能已存在却没有元数据行；
 	// 此时复用它，而不是再次写入。
-	exists, err := s.storage.Exists(ctx, key)
+	backend := s.manager.Current()
+	if backend == nil {
+		return nil, fmt.Errorf("%w: no storage backend configured", ErrStorageConfig)
+	}
+	currentID := s.manager.CurrentID()
+	exists, err := backend.Exists(ctx, key)
 	if err != nil {
 		return nil, fmt.Errorf("upload: check object existence: %w", err)
 	}
 	if !exists {
-		if err := s.storage.Put(ctx, key, bytes.NewReader(in.Data), size, in.MimeType); err != nil {
+		if err := backend.Put(ctx, key, bytes.NewReader(in.Data), size, in.MimeType); err != nil {
 			return nil, fmt.Errorf("upload: store object: %w", err)
 		}
 	}
 
 	width, height := decodeDimensions(in.Data)
 	image := &store.Image{
-		ID:       uuid.NewString(),
-		Key:      key,
-		UserID:   ownerID,
-		URL:      s.storage.URL(key),
-		Size:     size,
-		MimeType: in.MimeType,
-		Width:    width,
-		Height:   height,
+		ID:        uuid.NewString(),
+		Key:       key,
+		UserID:    ownerID,
+		StorageID: storageIDPtr(currentID),
+		URL:       s.urlFor(backend, key),
+		Size:      size,
+		MimeType:  in.MimeType,
+		Width:     width,
+		Height:    height,
 	}
 	if err := s.repo.Create(ctx, image); err != nil {
 		// 并发上传相同内容可能已先插入该行；复用那条记录并释放我们的预留。
@@ -215,8 +252,8 @@ func (s *UploadService) Upload(ctx context.Context, principal *auth.Principal, i
 // Presign 校验直传请求，从存储后端签发一个预签名请求，并记录一条待确认的
 // 上传供后续确认。
 func (s *UploadService) Presign(ctx context.Context, principal *auth.Principal, in PresignInput) (*PresignResult, error) {
-	presigner, ok := s.storage.(storage.Presigner)
-	if !ok {
+	presigner := s.manager.PresignerFor("")
+	if presigner == nil {
 		return nil, ErrPresignUnsupported
 	}
 	if _, ok := s.allowed[in.MimeType]; !ok {
@@ -229,6 +266,7 @@ func (s *UploadService) Presign(ctx context.Context, principal *auth.Principal, 
 		return nil, fmt.Errorf("%w: %d bytes exceeds %d bytes", ErrFileTooLarge, in.Size, s.policy.MaxSizeBytes)
 	}
 
+	backend := s.manager.Current()
 	key := directKey(in.MimeType)
 	req, err := presigner.PresignPut(ctx, key, storage.PresignOptions{
 		ContentType:         in.MimeType,
@@ -243,6 +281,7 @@ func (s *UploadService) Presign(ctx context.Context, principal *auth.Principal, 
 	pending := &store.PendingUpload{
 		Key:       key,
 		UserID:    ownerIDOf(principal),
+		StorageID: storageIDPtr(s.manager.CurrentID()),
 		MimeType:  in.MimeType,
 		MaxSize:   s.policy.MaxSizeBytes,
 		ExpiresAt: req.ExpiresAt,
@@ -253,7 +292,7 @@ func (s *UploadService) Presign(ctx context.Context, principal *auth.Principal, 
 
 	return &PresignResult{
 		Key:       key,
-		URL:       s.storage.URL(key),
+		URL:       s.urlFor(backend, key),
 		UploadURL: req.URL,
 		Method:    req.Method,
 		Fields:    req.Fields,
@@ -289,7 +328,8 @@ func (s *UploadService) Confirm(ctx context.Context, principal *auth.Principal, 
 		return nil, ErrForbidden
 	}
 
-	info, err := s.storage.Stat(ctx, key)
+	backend := s.manager.Resolve(storageIDValue(pending.StorageID))
+	info, err := backend.Stat(ctx, key)
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
 			return nil, fmt.Errorf("confirm: object was not uploaded: %w", ErrNotFound)
@@ -297,31 +337,31 @@ func (s *UploadService) Confirm(ctx context.Context, principal *auth.Principal, 
 		return nil, fmt.Errorf("confirm: stat object: %w", err)
 	}
 	if info.Size > s.policy.MaxSizeBytes {
-		_ = s.storage.Delete(ctx, key)
+		_ = backend.Delete(ctx, key)
 		_ = s.repo.DeletePendingUpload(ctx, key)
 		return nil, fmt.Errorf("%w: object is %d bytes", ErrFileTooLarge, info.Size)
 	}
 	if _, ok := s.allowed[info.ContentType]; !ok {
-		_ = s.storage.Delete(ctx, key)
+		_ = backend.Delete(ctx, key)
 		_ = s.repo.DeletePendingUpload(ctx, key)
 		return nil, fmt.Errorf("%w: %q", ErrUnsupportedType, info.ContentType)
 	}
 	// 验证对象实际上看起来像一张被允许的图片，而不是仅凭客户端声明的
 	// 内容类型来信任。
-	detected, width, height := s.probeObject(ctx, key)
+	detected, width, height := s.probeObject(ctx, backend, key)
 	if _, ok := s.allowed[detected]; !ok {
-		_ = s.storage.Delete(ctx, key)
+		_ = backend.Delete(ctx, key)
 		_ = s.repo.DeletePendingUpload(ctx, key)
 		return nil, fmt.Errorf("%w: object content is %q", ErrUnsupportedType, detected)
 	}
 
 	ownerID := pending.UserID
-	release, ok, err := s.reserveQuota(ctx, ownerID, info.Size)
+	release, ok, err := s.reserveQuota(ctx, principal, ownerID, info.Size)
 	if err != nil {
 		return nil, err
 	}
 	if !ok {
-		_ = s.storage.Delete(ctx, key)
+		_ = backend.Delete(ctx, key)
 		_ = s.repo.DeletePendingUpload(ctx, key)
 		return nil, ErrQuotaExceeded
 	}
@@ -333,14 +373,15 @@ func (s *UploadService) Confirm(ctx context.Context, principal *auth.Principal, 
 	}()
 
 	image := &store.Image{
-		ID:       uuid.NewString(),
-		Key:      key,
-		UserID:   ownerID,
-		URL:      s.storage.URL(key),
-		Size:     info.Size,
-		MimeType: detected,
-		Width:    width,
-		Height:   height,
+		ID:        uuid.NewString(),
+		Key:       key,
+		UserID:    ownerID,
+		StorageID: pending.StorageID,
+		URL:       s.urlFor(backend, key),
+		Size:      info.Size,
+		MimeType:  detected,
+		Width:     width,
+		Height:    height,
 	}
 	if err := s.repo.Create(ctx, image); err != nil {
 		if concurrent, getErr := s.repo.GetByKey(ctx, key); getErr == nil {
@@ -373,7 +414,8 @@ func (s *UploadService) CleanupExpired(ctx context.Context, now time.Time) (int,
 		} else if !errors.Is(err, store.ErrNotFound) {
 			continue
 		}
-		if err := s.storage.Delete(ctx, key); err != nil {
+		backend := s.manager.Resolve(storageIDValue(pending[i].StorageID))
+		if err := backend.Delete(ctx, key); err != nil {
 			continue
 		}
 		if err := s.repo.DeletePendingUpload(ctx, key); err != nil {
@@ -449,7 +491,8 @@ func (s *UploadService) Delete(ctx context.Context, principal *auth.Principal, i
 	if !canAccess(principal, image.UserID) {
 		return ErrForbidden
 	}
-	if err := s.storage.Delete(ctx, image.Key); err != nil {
+	backend := s.backendFor(image)
+	if err := backend.Delete(ctx, image.Key); err != nil {
 		return fmt.Errorf("delete image object: %w", err)
 	}
 	if err := s.repo.Delete(ctx, id); err != nil {
@@ -463,10 +506,10 @@ func (s *UploadService) Delete(ctx context.Context, principal *auth.Principal, i
 	return nil
 }
 
-// reserveQuota 为 ownerID 预留 amount 字节。它返回一个释放函数（对访客
-// 为空操作）以及预留是否成功。
-func (s *UploadService) reserveQuota(ctx context.Context, ownerID *string, amount int64) (func(), bool, error) {
-	if ownerID == nil {
+// reserveQuota 为 ownerID 预留 amount 字节。它返回一个释放函数（对访客与
+// 管理员为空操作）以及预留是否成功。管理员不受配额限制。
+func (s *UploadService) reserveQuota(ctx context.Context, principal *auth.Principal, ownerID *string, amount int64) (func(), bool, error) {
+	if ownerID == nil || principal.IsAdmin() {
 		return func() {}, true, nil
 	}
 	ok, err := s.repo.ReserveQuota(ctx, *ownerID, amount)
@@ -521,6 +564,7 @@ func toDTO(image *store.Image) *ImageDTO {
 	return &ImageDTO{
 		ID:        image.ID,
 		Key:       image.Key,
+		StorageID: storageIDValue(image.StorageID),
 		URL:       image.URL,
 		Size:      image.Size,
 		MimeType:  image.MimeType,
@@ -528,6 +572,22 @@ func toDTO(image *store.Image) *ImageDTO {
 		Height:    image.Height,
 		CreatedAt: image.CreatedAt,
 	}
+}
+
+// storageIDPtr 将非空字符串转换为指针；空字符串返回 nil。
+func storageIDPtr(id string) *string {
+	if id == "" {
+		return nil
+	}
+	return &id
+}
+
+// storageIDValue 安全地取出存储 id 指针的值；nil 返回空字符串。
+func storageIDValue(id *string) string {
+	if id == nil {
+		return ""
+	}
+	return *id
 }
 
 // directKey 为直传到存储的上传构建一个按日期分区、唯一的键，此类上传
@@ -554,8 +614,8 @@ func decodeDimensions(data []byte) (int, int) {
 
 // probeObject 读取某个已存储对象的一段有界前缀，并报告其检测到的媒体类型
 // 和像素尺寸。当对象无法读取时，它返回空媒体类型和零尺寸。
-func (s *UploadService) probeObject(ctx context.Context, key string) (string, int, int) {
-	object, err := s.storage.Get(ctx, key)
+func (s *UploadService) probeObject(ctx context.Context, backend storage.Storage, key string) (string, int, int) {
+	object, err := backend.Get(ctx, key)
 	if err != nil {
 		return "", 0, 0
 	}

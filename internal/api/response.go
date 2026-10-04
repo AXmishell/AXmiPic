@@ -72,6 +72,12 @@ func (h *Handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, http.StatusNotFound, http.StatusNotFound, err.Error())
 	case errors.Is(err, service.ErrQuotaExceeded):
 		writeError(w, http.StatusInsufficientStorage, http.StatusInsufficientStorage, err.Error())
+	case errors.Is(err, service.ErrStorageNotFound):
+		writeError(w, http.StatusNotFound, http.StatusNotFound, "storage backend not found")
+	case errors.Is(err, service.ErrStorageInUse):
+		writeError(w, http.StatusConflict, http.StatusConflict, err.Error())
+	case errors.Is(err, service.ErrStorageConfig):
+		writeError(w, http.StatusBadRequest, http.StatusBadRequest, err.Error())
 	case errors.Is(err, service.ErrNotFound):
 		writeError(w, http.StatusNotFound, http.StatusNotFound, "image not found")
 	case errors.Is(err, storage.ErrInvalidKey):

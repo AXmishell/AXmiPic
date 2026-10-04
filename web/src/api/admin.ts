@@ -1,5 +1,5 @@
 import { request } from './client'
-import type { AdminStats, Credentials, User, UserUpdate } from './types'
+import type { AdminStats, Credentials, StorageBackend, StorageBackendInput, User, UserUpdate } from './types'
 
 export function fetchStats(): Promise<AdminStats> {
   return request<AdminStats>({ method: 'GET', url: '/admin/stats' })
@@ -33,4 +33,25 @@ export function deleteCustomer(id: string): Promise<void> {
 
 export function deleteAdmin(id: string): Promise<void> {
   return request<void>({ method: 'DELETE', url: `/admin/admins/${id}` })
+}
+
+/** 存储后端配置。 */
+export function listStorage(): Promise<StorageBackend[]> {
+  return request<StorageBackend[]>({ method: 'GET', url: '/admin/storage' })
+}
+
+export function createStorage(payload: StorageBackendInput): Promise<StorageBackend> {
+  return request<StorageBackend>({ method: 'POST', url: '/admin/storage', data: payload })
+}
+
+export function updateStorage(id: string, payload: StorageBackendInput): Promise<StorageBackend> {
+  return request<StorageBackend>({ method: 'PUT', url: `/admin/storage/${id}`, data: payload })
+}
+
+export function deleteStorage(id: string): Promise<void> {
+  return request<void>({ method: 'DELETE', url: `/admin/storage/${id}` })
+}
+
+export function activateStorage(id: string): Promise<void> {
+  return request<void>({ method: 'POST', url: `/admin/storage/${id}/activate` })
 }

@@ -72,3 +72,25 @@ export interface Credentials {
 export interface UserUpdate {
   disabled?: boolean
 }
+
+export type StorageDriver = 'local' | 's3' | 'qiniu'
+
+export interface StorageBackend {
+  id: string
+  name: string
+  driver: StorageDriver
+  is_current: boolean
+  settings: Record<string, unknown>
+  secrets_set: Record<string, boolean>
+  image_count: number
+  created_at: string
+}
+
+export interface StorageBackendInput {
+  name: string
+  driver: StorageDriver
+  settings: Record<string, unknown>
+  /** 敏感字段。更新时为空的字段表示保持原值。 */
+  secrets: Record<string, string>
+  activate?: boolean
+}
