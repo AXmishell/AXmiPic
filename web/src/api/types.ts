@@ -195,3 +195,35 @@ export interface StorageBackendInput {
   secrets: Record<string, string>
   activate?: boolean
 }
+
+/** 分享目标类型。 */
+export type ShareTargetType = 'image' | 'album'
+
+export interface Share {
+  id: string
+  token: string
+  url: string
+  target_type: ShareTargetType
+  target_id: string
+  has_password: boolean
+  disabled: boolean
+  expires_at?: string
+  max_views: number
+  view_count: number
+  created_at: string
+}
+
+export interface ShareInput {
+  target_type: ShareTargetType
+  target_id: string
+  password?: string
+  expires_in_hours?: number
+  max_views?: number
+}
+
+export interface SharePayload {
+  share: Share
+  image?: ImageItem
+  album?: Album
+  images?: ImageItem[]
+}

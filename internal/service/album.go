@@ -167,6 +167,7 @@ func (s *AlbumService) Delete(ctx context.Context, principal *auth.Principal, id
 		}
 		return fmt.Errorf("delete album: %w", err)
 	}
+	_ = s.repo.DeleteSharesForTarget(ctx, store.ShareTargetAlbum, id)
 	return nil
 }
 

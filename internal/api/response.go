@@ -84,6 +84,14 @@ func (h *Handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, http.StatusNotFound, http.StatusNotFound, "role group not found")
 	case errors.Is(err, service.ErrUserNotFound):
 		writeError(w, http.StatusNotFound, http.StatusNotFound, "user not found")
+	case errors.Is(err, service.ErrShareNotFound):
+		writeError(w, http.StatusNotFound, http.StatusNotFound, "share not found")
+	case errors.Is(err, service.ErrShareUnavailable):
+		writeError(w, http.StatusGone, http.StatusGone, err.Error())
+	case errors.Is(err, service.ErrSharePasswordRequired):
+		writeError(w, http.StatusUnauthorized, http.StatusUnauthorized, err.Error())
+	case errors.Is(err, service.ErrShareInvalidPassword):
+		writeError(w, http.StatusUnauthorized, http.StatusUnauthorized, err.Error())
 	case errors.Is(err, service.ErrPolicyNotFound):
 		writeError(w, http.StatusNotFound, http.StatusNotFound, "policy not found")
 	case errors.Is(err, service.ErrRoleGroupInUse):

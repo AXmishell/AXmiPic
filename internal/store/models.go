@@ -217,3 +217,36 @@ type RoleGroupPolicy struct {
 func (RoleGroupPolicy) TableName() string {
 	return "role_group_policies"
 }
+
+// 分享目标类型。
+const (
+	// ShareTargetImage 表示分享单张图片。
+	ShareTargetImage = "image"
+	// ShareTargetAlbum 表示分享整个相册。
+	ShareTargetAlbum = "album"
+)
+
+// Share 是一个可对外访问的分享链接，可指向一张图片或一个相册，并可选地
+// 要求密码、限制有效期或访问次数。
+type Share struct {
+	ID string `gorm:"primaryKey;size:36"`
+	// Token 是出现在公开链接中的不可猜测标识。
+	Token      string `gorm:"uniqueIndex;size:64;not null"`
+	UserID     string `gorm:"index;size:36;not null"`
+	TargetType string `gorm:"size:16;not null"` // image | album
+	TargetID   string `gorm:"index;size:36;not null"`
+	// PasswordHash 为空表示无需密码。
+	PasswordHash string     `gorm:"size:100;not null;default:''"`
+	ExpiresAt    *time.Time `gorm:"index"`
+	// MaxViews 为 0 表示不限次数。
+	MaxViews  int64 `gorm:"not null;default:0"`
+	ViewCount int64 `gorm:"not null;default:0"`
+	Disabled  bool  `gorm:"not null;default:false"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// TableName 返回存储 Share 的表名。
+func (Share) TableName() string {
+	return "shares"
+}

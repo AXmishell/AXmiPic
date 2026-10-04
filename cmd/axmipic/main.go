@@ -143,6 +143,7 @@ func run() error {
 	uploadSvc.SetPolicyResolver(policies)
 	accounts.SetPolicyService(policies)
 	adminSvc.SetPolicyService(policies)
+	shareSvc := service.NewShareService(repo, cfg.Server.BaseURL)
 
 	router := api.NewRouter(api.Deps{
 		Upload:        uploadSvc,
@@ -152,6 +153,7 @@ func run() error {
 		Albums:        albumSvc,
 		Storage:       storageSvc,
 		Policies:      policies,
+		Shares:        shareSvc,
 		Authenticator: auth.NewAuthenticator(repo, issuer),
 		UploadLimiter: &auth.UploadLimiter{
 			User:  auth.NewRateLimiter(cfg.Limits.UploadPerMinute, cfg.Limits.UploadBurst),

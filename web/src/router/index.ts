@@ -13,6 +13,12 @@ declare module 'vue-router' {
 
 const routes: RouteRecordRaw[] = [
   {
+    path: '/s/:token',
+    name: 'share',
+    component: () => import('@/views/ShareView.vue'),
+    meta: { title: '分享', public: true },
+  },
+  {
     path: '/login',
     name: 'login',
     component: () => import('@/views/LoginView.vue'),
@@ -51,6 +57,12 @@ const routes: RouteRecordRaw[] = [
         name: 'tokens',
         component: () => import('@/views/TokensView.vue'),
         meta: { title: '访问令牌' },
+      },
+      {
+        path: 'shares',
+        name: 'shares',
+        component: () => import('@/views/SharesView.vue'),
+        meta: { title: '我的分享' },
       },
       {
         path: 'users',

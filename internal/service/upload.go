@@ -750,6 +750,7 @@ func (s *UploadService) Delete(ctx context.Context, principal *auth.Principal, i
 	if err := s.repo.Delete(ctx, id); err != nil {
 		return fmt.Errorf("delete image record: %w", err)
 	}
+	_ = s.repo.DeleteSharesForTarget(context.WithoutCancel(ctx), store.ShareTargetImage, id)
 	if image.UserID != nil {
 		if err := s.repo.ReleaseQuota(ctx, *image.UserID, image.Size); err != nil {
 			return fmt.Errorf("delete image: release quota: %w", err)

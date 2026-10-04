@@ -6,6 +6,7 @@
 
 - **多种上传方式**：后台界面上传、批量上传、粘贴上传、拖拽上传、`multipart` 接口上传、对象存储预签名直传
 - **一键嵌入代码**：复制图片的 URL、HTML、BBCode 或 Markdown（受角色功能开关控制）
+- **图片与相册分享**：生成分享链接，可选访问密码、有效期与最大访问次数；公开分享页为 `/s/{token}`
 - **内容寻址与去重**：按内容 `sha256` 生成存储文件名并入库，相同内容自动去重
 - **保留原始文件名**：存储层使用重命名（哈希命名）后的文件，数据库中单独记录原文件名、存储文件名与哈希值
 - **即时图片处理**：通过 URL 查询参数实时缩放、裁剪、旋转、转码，带 ETag 缓存
@@ -290,6 +291,32 @@ curl -X POST http://localhost:8080/api/v1/upload \
 | GET | `/users/{id}` | 用户公开资料：用户名、公开图片数与公开相册 |
 
 图片的 `permission` 取值为 `private`（默认，仅本人可见）或 `public`（可出现在图片广场，并在公开列表中附带 `owner_username`）。相册的 `permission` 同样为 `private`（默认）或 `public`：公开相册的详情与图片对未登录访客开放，并出现在 `/plaza/albums`。广场、公开相册与用户资料均为只读接口，无需登录即可访问。
+
+### 分享
+
+分享链接可指向单张图片或整个相册，支持可选的访问密码、有效期（小时）与最大访问次数。
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/shares` | 创建分享（体见下） |
+| GET | `/shares` | 当前账号创建的分享 |
+| DELETE | `/shares/{id}` | 撤销分享 |
+| GET | `/shares/{token}` | 分享公开信息（无需登录，用于判断是否需要密码） |
+| POST | `/shares/{token}/access` | 校验密码并返回内容（无需登录） |
+
+创建请求体示例：
+
+```json
+{
+  "target_type": "image",
+  "target_id": "<image_id 或 album_id>",
+  "password": "可选",
+  "expires_in_hours": 24,
+  "max_views": 100
+}
+```
+
+`target_type` 取值为 `image` 或 `album`。`password` 为空表示无需密码；`expires_in_hours` 与 `max_views` 为 0 或省略表示不限制。访问受密码保护的分享时，`POST /shares/{token}/access` 需在请求体携带 `{"password":"…"}`。加密分享通过角色组的 `share` 与 `share_password` 功能开关控制。分享的公开页面为 `/s/{token}`。
 
 ### 角色组与策略
 

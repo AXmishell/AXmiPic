@@ -23,6 +23,7 @@ type Deps struct {
 	Albums        *service.AlbumService
 	Storage       *service.StorageService
 	Policies      *service.PolicyService
+	Shares        *service.ShareService
 	Authenticator *auth.Authenticator
 	UploadLimiter *auth.UploadLimiter
 	// ImageLimiter 按 IP 对公开图片服务和转换进行限流。
@@ -45,6 +46,7 @@ type Handler struct {
 	albums         *service.AlbumService
 	storageSvc     *service.StorageService
 	policies       *service.PolicyService
+	shares         *service.ShareService
 	maxUploadBytes int64
 	logger         *slog.Logger
 }
@@ -59,6 +61,7 @@ func NewRouter(d Deps) http.Handler {
 		albums:         d.Albums,
 		storageSvc:     d.Storage,
 		policies:       d.Policies,
+		shares:         d.Shares,
 		maxUploadBytes: int64(d.MaxUploadMB) << 20,
 		logger:         d.Logger,
 	}
@@ -90,13 +93,15 @@ func NewRouter(d Deps) http.Handler {
 		r.Group(func(r chi.Router) {
 			r.Use(d.Authenticator.Authenticate)
 
-			// 公开只读接口：图片广场、公开相册与用户资料无需登录即可访问。
+			// 公开只读接口：图片广场、公开相册、用户资料与分享访问无需登录。
 			r.Group(func(r chi.Router) {
 				r.Get("/plaza", h.listPlaza)
 				r.Get("/plaza/albums", h.listPublicAlbums)
 				r.Get("/albums/{id}", h.getAlbum)
 				r.Get("/albums/{id}/images", h.listAlbumImages)
 				r.Get("/users/{id}", h.publicProfile)
+				r.Get("/shares/{token}", h.shareInfo)
+				r.Post("/shares/{token}/access", h.shareAccess)
 			})
 
 			r.Group(func(r chi.Router) {
@@ -125,6 +130,9 @@ func NewRouter(d Deps) http.Handler {
 				r.Post("/albums", h.createAlbum)
 				r.Patch("/albums/{id}", h.updateAlbum)
 				r.Delete("/albums/{id}", h.deleteAlbum)
+				r.Get("/shares", h.listShares)
+				r.Post("/shares", h.createShare)
+				r.Delete("/shares/{id}", h.revokeShare)
 			})
 
 			r.Group(func(r chi.Router) {

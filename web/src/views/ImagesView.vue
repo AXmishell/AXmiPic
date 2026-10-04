@@ -15,6 +15,7 @@ import {
   Refresh,
   Search,
   Select,
+  Share,
   Unlock,
   Upload,
 } from '@element-plus/icons-vue'
@@ -33,6 +34,7 @@ import type { Album, ImageItem, ImagePermission } from '@/api/types'
 import EmptyState from '@/components/EmptyState.vue'
 import ErrorState from '@/components/ErrorState.vue'
 import PageHeader from '@/components/PageHeader.vue'
+import ShareDialog from '@/components/ShareDialog.vue'
 import { useAuthStore } from '@/stores/auth'
 import { copyText } from '@/utils/clipboard'
 import {
@@ -108,6 +110,10 @@ const renaming = ref(false)
 // 详情抽屉
 const detailOpen = ref(false)
 const detailTarget = ref<ImageItem | null>(null)
+
+// 分享
+const shareOpen = ref(false)
+const shareTarget = ref<ImageItem | null>(null)
 
 // 右键菜单
 const menuOpen = ref(false)
@@ -505,6 +511,16 @@ function openDetail(item: ImageItem): void {
   detailOpen.value = true
 }
 
+// ---- 分享 ----
+function openShare(item: ImageItem): void {
+  if (!auth.hasFeature('share')) {
+    ElMessage.warning('当前角色未开启分享功能')
+    return
+  }
+  shareTarget.value = item
+  shareOpen.value = true
+}
+
 // ---- 删除 ----
 async function deleteOne(item: ImageItem): Promise<void> {
   try {
@@ -861,6 +877,9 @@ onBeforeUnmount(() => {
             </dl>
 
             <div class="image-card__actions">
+              <el-button v-if="auth.hasFeature('share')" size="small" :icon="Share" @click="openShare(item)">
+                分享
+              </el-button>
               <el-button size="small" :icon="CopyDocument" @click="copyLink(item)">
                 复制链接
               </el-button>
@@ -956,6 +975,9 @@ onBeforeUnmount(() => {
           <el-icon><Lock /></el-icon>设为私有
         </li>
         <li @click="menuAssign"><el-icon><Folder /></el-icon>归入相册</li>
+        <li v-if="auth.hasFeature('share')" @click="runMenu(() => menuTarget && openShare(menuTarget))">
+          <el-icon><Share /></el-icon>分享
+        </li>
         <li class="images-context-menu__divider" />
         <li @click="menuRename"><el-icon><EditPen /></el-icon>重命名</li>
         <li @click="menuDetail"><el-icon><InfoFilled /></el-icon>详细信息</li>
@@ -999,6 +1021,14 @@ onBeforeUnmount(() => {
         <el-button type="primary" :loading="assigning" @click="submitAssign">确认</el-button>
       </template>
     </el-dialog>
+
+    <!-- 分享 -->
+    <ShareDialog
+      v-model="shareOpen"
+      target-type="image"
+      :target-id="shareTarget?.id ?? ''"
+      :target-label="shareTarget?.original_name || shareTarget?.filename || ''"
+    />
 
     <!-- 详情 -->
     <el-drawer v-model="detailOpen" title="图片详情" size="360px" append-to-body>

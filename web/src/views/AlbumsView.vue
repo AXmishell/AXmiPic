@@ -3,7 +3,7 @@ import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
-import { Folder, Picture, Plus, Refresh, EditPen, Delete } from '@element-plus/icons-vue'
+import { Folder, Picture, Plus, Refresh, EditPen, Delete, Share } from '@element-plus/icons-vue'
 
 import { createAlbum, deleteAlbum, listAlbums, updateAlbum } from '@/api/albums'
 import { toApiError } from '@/api/client'
@@ -11,9 +11,12 @@ import type { Album } from '@/api/types'
 import EmptyState from '@/components/EmptyState.vue'
 import ErrorState from '@/components/ErrorState.vue'
 import PageHeader from '@/components/PageHeader.vue'
+import ShareDialog from '@/components/ShareDialog.vue'
+import { useAuthStore } from '@/stores/auth'
 import { formatDateTime, formatNumber } from '@/utils/format'
 
 const router = useRouter()
+const auth = useAuthStore()
 
 const albums = ref<Album[]>([])
 const loading = ref(false)
@@ -126,6 +129,19 @@ function viewImages(album: Album): void {
   void router.push({ name: 'images', query: { album_id: album.id } })
 }
 
+// 分享
+const shareOpen = ref(false)
+const shareTarget = ref<Album | null>(null)
+
+function openShare(album: Album): void {
+  if (!auth.hasFeature('share')) {
+    ElMessage.warning('当前角色未开启分享功能')
+    return
+  }
+  shareTarget.value = album
+  shareOpen.value = true
+}
+
 onMounted(load)
 </script>
 
@@ -185,6 +201,14 @@ onMounted(load)
           <el-table-column label="操作" width="230" align="right">
             <template #default="{ row }">
               <el-button link :icon="Picture" @click="viewImages(row)">查看图片</el-button>
+              <el-button
+                v-if="auth.hasFeature('share')"
+                link
+                :icon="Share"
+                @click="openShare(row)"
+              >
+                分享
+              </el-button>
               <el-button link :icon="EditPen" @click="openEdit(row)">编辑</el-button>
               <el-button
                 link
@@ -247,6 +271,13 @@ onMounted(load)
         <el-button type="primary" :loading="saving" @click="submit">保存</el-button>
       </template>
     </el-dialog>
+
+    <ShareDialog
+      v-model="shareOpen"
+      target-type="album"
+      :target-id="shareTarget?.id ?? ''"
+      :target-label="shareTarget?.name ?? ''"
+    />
   </div>
 </template>
 
