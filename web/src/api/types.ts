@@ -227,3 +227,65 @@ export interface SharePayload {
   album?: Album
   images?: ImageItem[]
 }
+
+/** 公告。 */
+export type AnnouncementLevel = 'info' | 'success' | 'warning' | 'danger'
+
+export interface Announcement {
+  id: string
+  title: string
+  content: string
+  level: AnnouncementLevel
+  pinned: boolean
+  published: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface AnnouncementInput {
+  title: string
+  content: string
+  level: AnnouncementLevel
+  pinned: boolean
+  published: boolean
+}
+
+/** 举报。 */
+export type ReportStatus = 'pending' | 'resolved' | 'rejected'
+
+export interface Report {
+  id: string
+  image_id?: string
+  reporter_id?: string
+  reporter_name?: string
+  reason: string
+  detail: string
+  status: ReportStatus
+  handler_note: string
+  created_at: string
+  updated_at: string
+}
+
+export interface ReportInput {
+  image_id?: string
+  reason: string
+  detail?: string
+}
+
+/** 独立页面。 */
+export interface Page {
+  id: string
+  slug: string
+  title: string
+  content: string
+  published: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface PageInput {
+  slug: string
+  title: string
+  content: string
+  published: boolean
+}

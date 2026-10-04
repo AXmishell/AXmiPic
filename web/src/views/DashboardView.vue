@@ -5,7 +5,8 @@ import { Coin, DataLine, Picture, Refresh, Timer, User } from '@element-plus/ico
 
 import { fetchStats } from '@/api/admin'
 import { ApiError } from '@/api/client'
-import type { AdminStats } from '@/api/types'
+import { listAnnouncements } from '@/api/site'
+import type { AdminStats, Announcement } from '@/api/types'
 import ErrorState from '@/components/ErrorState.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import QuotaMeter from '@/components/QuotaMeter.vue'
@@ -20,6 +21,7 @@ const router = useRouter()
 const loading = ref(true)
 const errorMessage = ref('')
 const stats = ref<AdminStats | null>(null)
+const announcements = ref<Announcement[]>([])
 
 const me = computed(() => auth.user)
 const isAdmin = computed(() => auth.isAdmin)
@@ -39,6 +41,11 @@ async function load(): Promise<void> {
     }
     if (auth.isAdmin) {
       stats.value = await fetchStats()
+    }
+    try {
+      announcements.value = await listAnnouncements()
+    } catch {
+      // 公告加载失败不影响仪表盘其余内容。
     }
   } catch (error) {
     errorMessage.value = error instanceof ApiError ? error.message : '加载失败，请稍后重试'
@@ -77,6 +84,23 @@ onMounted(load)
     </div>
 
     <template v-else-if="me">
+      <section v-if="announcements.length > 0" class="dash-announcements" aria-label="站内公告">
+        <el-alert
+          v-for="item in announcements"
+          :key="item.id"
+          :type="item.level === 'info' ? 'info' : item.level"
+          :closable="false"
+          show-icon
+          class="dash-announcement"
+        >
+          <template #title>
+            <strong>{{ item.title }}</strong>
+            <el-tag v-if="item.pinned" size="small" type="danger" effect="plain" class="dash-announcement__pin">置顶</el-tag>
+          </template>
+          <p v-if="item.content" class="dash-announcement__content">{{ item.content }}</p>
+        </el-alert>
+      </section>
+
       <section class="ax-grid dash-stats" aria-label="概览统计">
         <template v-if="isAdmin && stats">
           <StatCard label="管理员" :value="formatNumber(stats.admins)" :icon="User" hint="特权账号" />
@@ -205,6 +229,22 @@ onMounted(load)
   display: flex;
   flex-direction: column;
   gap: var(--ax-space-4);
+}
+
+.dash-announcements {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ax-space-2);
+  margin-bottom: var(--ax-space-4);
+}
+
+.dash-announcement__pin {
+  margin-left: var(--ax-space-2);
+}
+
+.dash-announcement__content {
+  margin: var(--ax-space-1) 0 0;
+  white-space: pre-wrap;
 }
 
 .dash-stats {

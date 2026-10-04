@@ -92,6 +92,12 @@ func (h *Handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, http.StatusUnauthorized, http.StatusUnauthorized, err.Error())
 	case errors.Is(err, service.ErrShareInvalidPassword):
 		writeError(w, http.StatusUnauthorized, http.StatusUnauthorized, err.Error())
+	case errors.Is(err, service.ErrAnnouncementNotFound):
+		writeError(w, http.StatusNotFound, http.StatusNotFound, "announcement not found")
+	case errors.Is(err, service.ErrReportNotFound):
+		writeError(w, http.StatusNotFound, http.StatusNotFound, "report not found")
+	case errors.Is(err, service.ErrPageNotFound):
+		writeError(w, http.StatusNotFound, http.StatusNotFound, "page not found")
 	case errors.Is(err, service.ErrPolicyNotFound):
 		writeError(w, http.StatusNotFound, http.StatusNotFound, "policy not found")
 	case errors.Is(err, service.ErrRoleGroupInUse):

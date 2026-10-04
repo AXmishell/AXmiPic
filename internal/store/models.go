@@ -250,3 +250,65 @@ type Share struct {
 func (Share) TableName() string {
 	return "shares"
 }
+
+// Announcement 是站点公告。
+type Announcement struct {
+	ID        string `gorm:"primaryKey;size:36"`
+	Title     string `gorm:"size:200;not null"`
+	Content   string `gorm:"type:text;not null;default:''"`
+	Level     string `gorm:"size:16;not null;default:'info'"` // info | success | warning | danger
+	Pinned    bool   `gorm:"not null;default:false"`
+	Published bool   `gorm:"not null;default:true"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// TableName 返回存储 Announcement 的表名。
+func (Announcement) TableName() string {
+	return "announcements"
+}
+
+// 举报状态。
+const (
+	// ReportPending 表示举报待处理。
+	ReportPending = "pending"
+	// ReportResolved 表示举报已处理。
+	ReportResolved = "resolved"
+	// ReportRejected 表示举报被驳回。
+	ReportRejected = "rejected"
+)
+
+// Report 是用户对某张图片提交的举报。
+type Report struct {
+	ID       string  `gorm:"primaryKey;size:36"`
+	ImageID  *string `gorm:"index;size:36"`
+	Reporter *string `gorm:"index;size:36"`
+	Reason   string  `gorm:"size:100;not null"`
+	Detail   string  `gorm:"size:1000;not null;default:''"`
+	Status   string  `gorm:"size:16;not null;default:'pending'"`
+	// HandlerNote 为处理备注。
+	HandlerNote string `gorm:"size:1000;not null;default:''"`
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+// TableName 返回存储 Report 的表名。
+func (Report) TableName() string {
+	return "reports"
+}
+
+// Page 是管理员维护的独立页面，可通过 slug 公开访问。
+type Page struct {
+	ID        string `gorm:"primaryKey;size:36"`
+	Slug      string `gorm:"uniqueIndex;size:100;not null"`
+	Title     string `gorm:"size:200;not null"`
+	Content   string `gorm:"type:text;not null;default:''"`
+	Published bool   `gorm:"not null;default:true"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// TableName 返回存储 Page 的表名。
+func (Page) TableName() string {
+	return "pages"
+}

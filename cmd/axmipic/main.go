@@ -144,6 +144,7 @@ func run() error {
 	accounts.SetPolicyService(policies)
 	adminSvc.SetPolicyService(policies)
 	shareSvc := service.NewShareService(repo, cfg.Server.BaseURL)
+	siteSvc := service.NewSiteService(repo)
 
 	router := api.NewRouter(api.Deps{
 		Upload:        uploadSvc,
@@ -154,6 +155,7 @@ func run() error {
 		Storage:       storageSvc,
 		Policies:      policies,
 		Shares:        shareSvc,
+		Site:          siteSvc,
 		Authenticator: auth.NewAuthenticator(repo, issuer),
 		UploadLimiter: &auth.UploadLimiter{
 			User:  auth.NewRateLimiter(cfg.Limits.UploadPerMinute, cfg.Limits.UploadBurst),

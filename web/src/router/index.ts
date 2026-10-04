@@ -19,6 +19,12 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '分享', public: true },
   },
   {
+    path: '/p/:slug',
+    name: 'page',
+    component: () => import('@/views/PublicPageView.vue'),
+    meta: { title: '页面', public: true },
+  },
+  {
     path: '/login',
     name: 'login',
     component: () => import('@/views/LoginView.vue'),
@@ -81,6 +87,12 @@ const routes: RouteRecordRaw[] = [
         name: 'policies',
         component: () => import('@/views/PoliciesView.vue'),
         meta: { title: '角色策略', requiresAdmin: true },
+      },
+      {
+        path: 'site',
+        name: 'site',
+        component: () => import('@/views/SiteView.vue'),
+        meta: { title: '站点内容', requiresAdmin: true },
       },
       {
         path: 'settings',

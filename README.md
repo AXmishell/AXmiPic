@@ -7,6 +7,8 @@
 - **多种上传方式**：后台界面上传、批量上传、粘贴上传、拖拽上传、`multipart` 接口上传、对象存储预签名直传
 - **一键嵌入代码**：复制图片的 URL、HTML、BBCode 或 Markdown（受角色功能开关控制）
 - **图片与相册分享**：生成分享链接，可选访问密码、有效期与最大访问次数；公开分享页为 `/s/{token}`
+- **站内公告与独立页面**：管理员发布公告（支持置顶与级别）并在仪表盘展示；维护可通过 `/p/{slug}` 公开访问的独立页面
+- **举报管理**：用户举报图片，管理员在后台处理或驳回
 - **内容寻址与去重**：按内容 `sha256` 生成存储文件名并入库，相同内容自动去重
 - **保留原始文件名**：存储层使用重命名（哈希命名）后的文件，数据库中单独记录原文件名、存储文件名与哈希值
 - **即时图片处理**：通过 URL 查询参数实时缩放、裁剪、旋转、转码，带 ETag 缓存
@@ -317,6 +319,22 @@ curl -X POST http://localhost:8080/api/v1/upload \
 ```
 
 `target_type` 取值为 `image` 或 `album`。`password` 为空表示无需密码；`expires_in_hours` 与 `max_views` 为 0 或省略表示不限制。访问受密码保护的分享时，`POST /shares/{token}/access` 需在请求体携带 `{"password":"…"}`。加密分享通过角色组的 `share` 与 `share_password` 功能开关控制。分享的公开页面为 `/s/{token}`。
+
+### 站点内容（公告 / 举报 / 独立页面）
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/announcements` | 已发布公告（无需登录） |
+| GET | `/pages/{slug}` | 已发布独立页面（无需登录） |
+| POST | `/reports` | 提交举报（`{"image_id":"…","reason":"…","detail":"…"}`，`image_id` 可选） |
+| GET/POST | `/admin/announcements` | 公告列表 / 新建 |
+| PUT/DELETE | `/admin/announcements/{id}` | 修改 / 删除公告 |
+| GET | `/admin/reports` | 举报列表（可带 `?status=pending\|resolved\|rejected`） |
+| PATCH | `/admin/reports/{id}` | 处理举报（`{"status":"resolved","note":"…"}`） |
+| GET/POST | `/admin/pages` | 独立页面列表 / 新建 |
+| PUT/DELETE | `/admin/pages/{id}` | 修改 / 删除页面 |
+
+公告的 `level` 取值为 `info`/`success`/`warning`/`danger`，可置顶（`pinned`）与设为草稿（`published=false`）。独立页面的 `slug` 仅允许小写字母、数字与连字符，公开地址为 `/p/{slug}`，前端以轻量 Markdown 渲染内容。
 
 ### 角色组与策略
 

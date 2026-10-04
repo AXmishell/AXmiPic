@@ -24,6 +24,7 @@ type Deps struct {
 	Storage       *service.StorageService
 	Policies      *service.PolicyService
 	Shares        *service.ShareService
+	Site          *service.SiteService
 	Authenticator *auth.Authenticator
 	UploadLimiter *auth.UploadLimiter
 	// ImageLimiter 按 IP 对公开图片服务和转换进行限流。
@@ -47,6 +48,7 @@ type Handler struct {
 	storageSvc     *service.StorageService
 	policies       *service.PolicyService
 	shares         *service.ShareService
+	site           *service.SiteService
 	maxUploadBytes int64
 	logger         *slog.Logger
 }
@@ -62,6 +64,7 @@ func NewRouter(d Deps) http.Handler {
 		storageSvc:     d.Storage,
 		policies:       d.Policies,
 		shares:         d.Shares,
+		site:           d.Site,
 		maxUploadBytes: int64(d.MaxUploadMB) << 20,
 		logger:         d.Logger,
 	}
@@ -102,6 +105,8 @@ func NewRouter(d Deps) http.Handler {
 				r.Get("/users/{id}", h.publicProfile)
 				r.Get("/shares/{token}", h.shareInfo)
 				r.Post("/shares/{token}/access", h.shareAccess)
+				r.Get("/announcements", h.listAnnouncements)
+				r.Get("/pages/{slug}", h.getPage)
 			})
 
 			r.Group(func(r chi.Router) {
@@ -133,6 +138,7 @@ func NewRouter(d Deps) http.Handler {
 				r.Get("/shares", h.listShares)
 				r.Post("/shares", h.createShare)
 				r.Delete("/shares/{id}", h.revokeShare)
+				r.Post("/reports", h.createReport)
 			})
 
 			r.Group(func(r chi.Router) {
@@ -165,6 +171,19 @@ func NewRouter(d Deps) http.Handler {
 				r.Get("/admin/policies/{id}", h.adminGetPolicy)
 				r.Put("/admin/policies/{id}", h.adminUpdatePolicy)
 				r.Delete("/admin/policies/{id}", h.adminDeletePolicy)
+
+				r.Get("/admin/announcements", h.adminListAnnouncements)
+				r.Post("/admin/announcements", h.adminCreateAnnouncement)
+				r.Put("/admin/announcements/{id}", h.adminUpdateAnnouncement)
+				r.Delete("/admin/announcements/{id}", h.adminDeleteAnnouncement)
+
+				r.Get("/admin/reports", h.adminListReports)
+				r.Patch("/admin/reports/{id}", h.adminUpdateReport)
+
+				r.Get("/admin/pages", h.adminListPages)
+				r.Post("/admin/pages", h.adminCreatePage)
+				r.Put("/admin/pages/{id}", h.adminUpdatePage)
+				r.Delete("/admin/pages/{id}", h.adminDeletePage)
 			})
 		})
 	})
