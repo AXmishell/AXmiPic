@@ -34,6 +34,16 @@ const (
 	maxPasswordLength = 72
 )
 
+// dummyPasswordHash is compared against when a username does not exist so that
+// login latency does not reveal whether an account is registered.
+var dummyPasswordHash = func() string {
+	hash, err := auth.HashPassword("axmipic-nonexistent-account")
+	if err != nil {
+		return ""
+	}
+	return hash
+}()
+
 // UserDTO is the API representation of an account.
 type UserDTO struct {
 	ID         string    `json:"id"`
@@ -122,6 +132,9 @@ func (s *AccountService) Login(ctx context.Context, username, password string) (
 	user, err := s.repo.GetUserByUsername(ctx, strings.ToLower(strings.TrimSpace(username)))
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
+			// Perform a dummy comparison so a missing account and a wrong
+			// password take comparable time, preventing username enumeration.
+			auth.VerifyPassword(dummyPasswordHash, password)
 			return nil, ErrInvalidCredentials
 		}
 		return nil, fmt.Errorf("login: lookup user: %w", err)

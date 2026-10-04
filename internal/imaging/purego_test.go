@@ -22,15 +22,6 @@ func testPNG(t *testing.T, w, h int) []byte {
 	return buf.Bytes()
 }
 
-func decode(t *testing.T, data []byte) image.Image {
-	t.Helper()
-	img, _, err := image.Decode(bytes.NewReader(data))
-	if err != nil {
-		t.Fatalf("image.Decode: %v", err)
-	}
-	return img
-}
-
 func TestInfo(t *testing.T) {
 	processor := imaging.Default()
 	info, err := processor.Info(testPNG(t, 12, 7))

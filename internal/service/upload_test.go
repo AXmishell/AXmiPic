@@ -233,3 +233,29 @@ func TestConfirmRejectsDisallowedContentType(t *testing.T) {
 		t.Fatal("rejected object was not removed from storage")
 	}
 }
+
+func TestConfirmRejectsSpoofedContent(t *testing.T) {
+	repo := newRepo(t)
+	fs := newFakeStorage()
+	const key = "2026/01/01/spoof.png"
+	// The declared content type is allowed but the bytes are not an image.
+	fs.objects[key] = storedObject{data: []byte("this is not an image"), contentType: "image/png"}
+	ctx := context.Background()
+	if err := repo.CreatePendingUpload(ctx, &store.PendingUpload{
+		Key:       key,
+		MimeType:  "image/png",
+		MaxSize:   1 << 20,
+		ExpiresAt: time.Now().Add(time.Hour),
+	}); err != nil {
+		t.Fatalf("CreatePendingUpload: %v", err)
+	}
+	svc := service.NewUploadService(repo, fs, pngPolicy())
+
+	_, err := svc.Confirm(ctx, nil, key)
+	if !errors.Is(err, service.ErrUnsupportedType) {
+		t.Fatalf("error = %v, want ErrUnsupportedType", err)
+	}
+	if _, ok := fs.objects[key]; ok {
+		t.Fatal("spoofed object was not removed from storage")
+	}
+}

@@ -29,7 +29,7 @@ func Open(dsn string) (*Repository, error) {
 	if err := ensureSQLiteDir(dsn); err != nil {
 		return nil, err
 	}
-	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
+	db, err := gorm.Open(sqlite.Open(withSQLitePragmas(dsn)), &gorm.Config{
 		Logger: gormlogger.Default.LogMode(gormlogger.Warn),
 	})
 	if err != nil {
@@ -326,6 +326,20 @@ func (r *Repository) ImageStats(ctx context.Context) (ImageStats, error) {
 		return ImageStats{}, fmt.Errorf("store: sum image size: %w", err)
 	}
 	return stats, nil
+}
+
+// withSQLitePragmas appends connection pragmas to a file-backed DSN so that
+// concurrent writers wait for the lock instead of failing, and readers are not
+// blocked by an in-progress write (WAL).
+func withSQLitePragmas(dsn string) string {
+	if dsn == "" || dsn == ":memory:" {
+		return dsn
+	}
+	separator := "?"
+	if strings.Contains(dsn, "?") {
+		separator = "&"
+	}
+	return dsn + separator + "_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)"
 }
 
 // ensureSQLiteDir creates the parent directory for a file-backed SQLite DSN.

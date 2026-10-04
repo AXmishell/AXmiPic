@@ -386,3 +386,35 @@ func TestAdminRejectsInvalidRole(t *testing.T) {
 		t.Fatalf("status = %d (%s), want 400", status, body)
 	}
 }
+
+func TestServeSupportsHead(t *testing.T) {
+	env := newTestEnv(t, false, 1<<20)
+	status, key := uploadPNG(t, env.router, testPNG(t, 8), "")
+	if status != http.StatusOK {
+		t.Fatalf("upload status = %d", status)
+	}
+	rec := httptest.NewRecorder()
+	env.router.ServeHTTP(rec, httptest.NewRequest(http.MethodHead, "/i/"+key, nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("HEAD status = %d, want 200", rec.Code)
+	}
+	if rec.Body.Len() != 0 {
+		t.Fatalf("HEAD body length = %d, want 0", rec.Body.Len())
+	}
+	if rec.Header().Get("Content-Length") == "" {
+		t.Fatal("missing Content-Length on HEAD")
+	}
+}
+
+func TestServeRejectsCoverWithoutDimensions(t *testing.T) {
+	env := newTestEnv(t, false, 1<<20)
+	status, key := uploadPNG(t, env.router, testPNG(t, 8), "")
+	if status != http.StatusOK {
+		t.Fatalf("upload status = %d", status)
+	}
+	rec := httptest.NewRecorder()
+	env.router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/i/"+key+"?fit=cover&w=4", nil))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d (%s), want 400", rec.Code, rec.Body.String())
+	}
+}

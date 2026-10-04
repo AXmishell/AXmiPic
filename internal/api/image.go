@@ -92,6 +92,9 @@ func (h *Handler) serveImage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	w.Header().Set("ETag", etag)
 	w.WriteHeader(http.StatusOK)
+	if r.Method == http.MethodHead {
+		return
+	}
 	if _, err := w.Write(result.Data); err != nil {
 		h.logger.WarnContext(r.Context(), "write processed image", slog.Any("error", err))
 	}
@@ -118,6 +121,9 @@ func (h *Handler) serveOriginal(w http.ResponseWriter, r *http.Request, dto *ser
 	w.Header().Set("Content-Length", strconv.FormatInt(dto.Size, 10))
 	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	w.WriteHeader(http.StatusOK)
+	if r.Method == http.MethodHead {
+		return
+	}
 	if _, err := io.Copy(w, object); err != nil {
 		// The status line and headers are already sent, so only logging is
 		// possible here.

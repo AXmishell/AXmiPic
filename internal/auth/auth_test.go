@@ -79,8 +79,11 @@ func TestSessionIssuerRejectsInvalid(t *testing.T) {
 
 func TestRateLimiterBurst(t *testing.T) {
 	limiter := auth.NewRateLimiter(60, 2)
-	if !limiter.Allow("k") || !limiter.Allow("k") {
-		t.Fatal("burst of 2 should be allowed")
+	if !limiter.Allow("k") {
+		t.Fatal("first request should be allowed")
+	}
+	if !limiter.Allow("k") {
+		t.Fatal("second request should be allowed")
 	}
 	if limiter.Allow("k") {
 		t.Fatal("third request should be limited")

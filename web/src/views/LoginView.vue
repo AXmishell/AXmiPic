@@ -20,11 +20,11 @@ const form = reactive({ username: '', password: '' })
 const rules: FormRules = {
   username: [
     { required: true, message: '请输入用户名', trigger: 'blur' },
-    { min: 3, max: 32, message: '用户名长度为 3 到 32 个字符', trigger: 'blur' },
+    { min: 3, max: 64, message: '用户名长度为 3 到 64 个字符', trigger: 'blur' },
   ],
   password: [
     { required: true, message: '请输入密码', trigger: 'blur' },
-    { min: 6, max: 72, message: '密码长度为 6 到 72 个字符', trigger: 'blur' },
+    { min: 8, max: 72, message: '密码长度为 8 到 72 个字符', trigger: 'blur' },
   ],
 }
 

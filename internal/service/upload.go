@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"image"
 	"io"
+	"mime"
+	"net/http"
 	"path"
 	"strings"
 	"time"
@@ -59,6 +61,19 @@ var mimeExtensions = map[string]string{
 	"image/png":  ".png",
 	"image/gif":  ".gif",
 	"image/webp": ".webp",
+}
+
+// extensionForMIME returns the storage-key extension for a media type,
+// preferring the built-in table and falling back to the system MIME database so
+// an allowed type missing from the table still gets a usable extension.
+func extensionForMIME(mimeType string) string {
+	if ext, ok := mimeExtensions[mimeType]; ok {
+		return ext
+	}
+	if exts, err := mime.ExtensionsByType(mimeType); err == nil && len(exts) > 0 {
+		return exts[0]
+	}
+	return ""
 }
 
 // UploadPolicy constrains what UploadService accepts.
@@ -293,6 +308,14 @@ func (s *UploadService) Confirm(ctx context.Context, principal *auth.Principal, 
 		_ = s.repo.DeletePendingUpload(ctx, key)
 		return nil, fmt.Errorf("%w: %q", ErrUnsupportedType, info.ContentType)
 	}
+	// Verify the object actually looks like an allowed image instead of
+	// trusting the client-declared content type alone.
+	detected, width, height := s.probeObject(ctx, key)
+	if _, ok := s.allowed[detected]; !ok {
+		_ = s.storage.Delete(ctx, key)
+		_ = s.repo.DeletePendingUpload(ctx, key)
+		return nil, fmt.Errorf("%w: object content is %q", ErrUnsupportedType, detected)
+	}
 
 	ownerID := pending.UserID
 	release, ok, err := s.reserveQuota(ctx, ownerID, info.Size)
@@ -311,14 +334,13 @@ func (s *UploadService) Confirm(ctx context.Context, principal *auth.Principal, 
 		}
 	}()
 
-	width, height := s.probeDimensions(ctx, key)
 	image := &store.Image{
 		ID:       uuid.NewString(),
 		Key:      key,
 		UserID:   ownerID,
 		URL:      s.storage.URL(key),
 		Size:     info.Size,
-		MimeType: info.ContentType,
+		MimeType: detected,
 		Width:    width,
 		Height:   height,
 	}
@@ -376,6 +398,9 @@ func (s *UploadService) List(ctx context.Context, principal *auth.Principal, pag
 	}
 	if pageSize > 100 {
 		pageSize = 100
+	}
+	if page > 1_000_000 {
+		page = 1_000_000
 	}
 
 	filter := ""
@@ -514,14 +539,14 @@ func toDTO(image *store.Image) *ImageDTO {
 // directKey builds a date-partitioned, unique key for a direct-to-storage
 // upload, where the server never sees the bytes and cannot content-address.
 func directKey(mimeType string) string {
-	return path.Join(time.Now().UTC().Format("2006/01/02"), uuid.NewString()+mimeExtensions[mimeType])
+	return path.Join(time.Now().UTC().Format("2006/01/02"), uuid.NewString()+extensionForMIME(mimeType))
 }
 
 // contentKey builds a content-addressed, slash-separated storage key.
 func contentKey(data []byte, mimeType string) string {
 	sum := sha256.Sum256(data)
 	hash := hex.EncodeToString(sum[:])
-	return path.Join(hash[0:2], hash[2:4], hash+mimeExtensions[mimeType])
+	return path.Join(hash[0:2], hash[2:4], hash+extensionForMIME(mimeType))
 }
 
 // decodeDimensions returns the pixel dimensions of an encoded image, or zeros
@@ -534,19 +559,21 @@ func decodeDimensions(data []byte) (int, int) {
 	return cfg.Width, cfg.Height
 }
 
-// probeDimensions reads a bounded prefix of a stored object to decode its
-// dimensions, returning zeros on any failure.
-func (s *UploadService) probeDimensions(ctx context.Context, key string) (int, int) {
+// probeObject reads a bounded prefix of a stored object and reports its
+// detected media type and pixel dimensions. It returns an empty media type and
+// zero dimensions when the object cannot be read.
+func (s *UploadService) probeObject(ctx context.Context, key string) (string, int, int) {
 	object, err := s.storage.Get(ctx, key)
 	if err != nil {
-		return 0, 0
+		return "", 0, 0
 	}
 	defer func() {
 		_ = object.Close()
 	}()
 	data, err := io.ReadAll(io.LimitReader(object, dimensionProbeLimit))
-	if err != nil {
-		return 0, 0
+	if err != nil || len(data) == 0 {
+		return "", 0, 0
 	}
-	return decodeDimensions(data)
+	width, height := decodeDimensions(data)
+	return http.DetectContentType(data), width, height
 }

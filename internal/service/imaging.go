@@ -93,6 +93,9 @@ func (s *ImagingService) Options(req TransformRequest) (imaging.Options, error) 
 	if !ok {
 		return imaging.Options{}, fmt.Errorf("%w: unknown fit %q", ErrInvalidInput, req.Fit)
 	}
+	if fit == imaging.FitCover && (req.Width <= 0 || req.Height <= 0) {
+		return imaging.Options{}, fmt.Errorf("%w: cover requires both width and height", ErrInvalidInput)
+	}
 	quality := req.Quality
 	if quality == 0 {
 		quality = s.policy.DefaultQuality

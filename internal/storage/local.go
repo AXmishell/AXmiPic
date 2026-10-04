@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/fs"
 	"mime"
+	"net/http"
 	"os"
 	"path"
 	"path/filepath"
@@ -148,8 +149,30 @@ func (l *Local) Stat(_ context.Context, key string) (*ObjectInfo, error) {
 	return &ObjectInfo{
 		Key:         key,
 		Size:        info.Size(),
-		ContentType: mime.TypeByExtension(path.Ext(key)),
+		ContentType: contentTypeFor(full, path.Ext(key)),
 	}, nil
+}
+
+// contentTypeFor returns the media type for a stored object. It prefers the
+// key extension and falls back to sniffing the file header, so extensionless
+// keys still report a correct type.
+func contentTypeFor(full, ext string) string {
+	if contentType := mime.TypeByExtension(ext); contentType != "" {
+		return contentType
+	}
+	file, err := os.Open(full)
+	if err != nil {
+		return ""
+	}
+	defer func() {
+		_ = file.Close()
+	}()
+	head := make([]byte, 512)
+	n, _ := file.Read(head)
+	if n == 0 {
+		return ""
+	}
+	return http.DetectContentType(head[:n])
 }
 
 // URL returns the public URL for an object key.

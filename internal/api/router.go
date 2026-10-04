@@ -4,6 +4,7 @@ package api
 import (
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -63,7 +64,7 @@ func NewRouter(d Deps) http.Handler {
 		// Only honour forwarding headers when explicitly configured to sit
 		// behind a trusted proxy; otherwise clients could spoof their IP to
 		// evade rate limiting.
-		r.Use(middleware.RealIP)
+		r.Use(trustProxyIP)
 	}
 	r.Use(securityHeaders)
 	r.Use(middleware.Recoverer)
@@ -72,6 +73,7 @@ func NewRouter(d Deps) http.Handler {
 
 	r.Get("/healthz", h.health)
 	r.With(d.ImageLimiter.Middleware).Get("/i/*", h.serveImage)
+	r.With(d.ImageLimiter.Middleware).Head("/i/*", h.serveImage)
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Group(func(r chi.Router) {
@@ -128,6 +130,33 @@ func securityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		next.ServeHTTP(w, r)
 	})
+}
+
+// trustProxyIP rewrites RemoteAddr from forwarding headers. It is only installed
+// when server.trust_proxy is enabled, because clients can otherwise forge those
+// headers to spoof their IP. It replaces the deprecated chi middleware.RealIP,
+// which trusts those headers unconditionally.
+func trustProxyIP(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if ip := forwardedClientIP(r); ip != "" {
+			r.RemoteAddr = ip
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// forwardedClientIP returns the client IP advertised by a trusted proxy,
+// preferring X-Real-IP (typically the proxy's peer address) and falling back to
+// the first X-Forwarded-For entry.
+func forwardedClientIP(r *http.Request) string {
+	if ip := strings.TrimSpace(r.Header.Get("X-Real-IP")); ip != "" {
+		return ip
+	}
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		first, _, _ := strings.Cut(xff, ",")
+		return strings.TrimSpace(first)
+	}
+	return ""
 }
 
 // requestLogger logs each request with method, path, status, and duration.
