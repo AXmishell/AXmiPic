@@ -20,6 +20,10 @@ var ErrProcessingUnsupported = errors.New("service: image processing is disabled
 // transformation.
 const maxRenderSourceBytes = 64 << 20
 
+// maxDecodePixels caps the decoded pixel count accepted for transformation to
+// guard against decompression bombs.
+const maxDecodePixels = 40_000_000
+
 // TransformRequest is a raw, unvalidated transformation request.
 type TransformRequest struct {
 	Width   int
@@ -156,6 +160,11 @@ func (s *ImagingService) Render(ctx context.Context, key string, opts imaging.Op
 	src, err := io.ReadAll(io.LimitReader(object, maxRenderSourceBytes))
 	if err != nil {
 		return nil, fmt.Errorf("render: read object: %w", err)
+	}
+	if info, infoErr := s.processor.Info(src); infoErr == nil {
+		if info.Width > 0 && info.Height > 0 && int64(info.Width)*int64(info.Height) > maxDecodePixels {
+			return nil, fmt.Errorf("%w: source image is too large to process", ErrInvalidInput)
+		}
 	}
 
 	result, err := s.processor.Process(src, opts)

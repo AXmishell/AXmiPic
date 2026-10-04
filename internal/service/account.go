@@ -29,6 +29,9 @@ const (
 	minUsernameLength = 3
 	maxUsernameLength = 64
 	minPasswordLength = 8
+	// maxPasswordLength matches bcrypt's 72-byte input limit; longer inputs are
+	// rejected rather than surfacing as an internal error.
+	maxPasswordLength = 72
 )
 
 // UserDTO is the API representation of an account.
@@ -80,7 +83,7 @@ func NewAccountService(repo *store.Repository, issuer *auth.SessionIssuer, allow
 
 // Register creates a new account.
 func (s *AccountService) Register(ctx context.Context, username, password string) (*UserDTO, error) {
-	username = strings.TrimSpace(username)
+	username = strings.ToLower(strings.TrimSpace(username))
 	if err := validateCredentials(username, password); err != nil {
 		return nil, err
 	}
@@ -116,7 +119,7 @@ func (s *AccountService) Register(ctx context.Context, username, password string
 
 // Login verifies credentials and issues a session token.
 func (s *AccountService) Login(ctx context.Context, username, password string) (*SessionDTO, error) {
-	user, err := s.repo.GetUserByUsername(ctx, strings.TrimSpace(username))
+	user, err := s.repo.GetUserByUsername(ctx, strings.ToLower(strings.TrimSpace(username)))
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			return nil, ErrInvalidCredentials
@@ -208,13 +211,14 @@ func (s *AccountService) EnsureBootstrapAdmin(ctx context.Context, spec string) 
 	if !ok || strings.TrimSpace(username) == "" || password == "" {
 		return fmt.Errorf("%w: auth.bootstrap_admin must be \"username:password\"", ErrInvalidInput)
 	}
+	username = strings.ToLower(strings.TrimSpace(username))
 	hash, err := auth.HashPassword(password)
 	if err != nil {
 		return err
 	}
 	user := &store.User{
 		ID:           uuid.NewString(),
-		Username:     strings.TrimSpace(username),
+		Username:     username,
 		PasswordHash: hash,
 		Role:         string(auth.RoleAdmin),
 		QuotaBytes:   s.defaultQuotaBytes,
@@ -236,6 +240,9 @@ func validateCredentials(username, password string) error {
 	}
 	if len(password) < minPasswordLength {
 		return fmt.Errorf("%w: password must be at least %d characters", ErrInvalidInput, minPasswordLength)
+	}
+	if len(password) > maxPasswordLength {
+		return fmt.Errorf("%w: password must be at most %d bytes", ErrInvalidInput, maxPasswordLength)
 	}
 	return nil
 }

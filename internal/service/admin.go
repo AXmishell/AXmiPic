@@ -84,8 +84,9 @@ func (s *AdminService) ListUsers(ctx context.Context) ([]UserDTO, error) {
 	return dtos, nil
 }
 
-// UpdateUser applies optional role and disabled changes.
-func (s *AdminService) UpdateUser(ctx context.Context, id string, in UpdateUserInput) (*UserDTO, error) {
+// UpdateUser applies optional role and disabled changes. actorID is the admin
+// performing the change and is used to prevent self-lockout.
+func (s *AdminService) UpdateUser(ctx context.Context, actorID, id string, in UpdateUserInput) (*UserDTO, error) {
 	if in.Role != nil {
 		switch auth.Role(*in.Role) {
 		case auth.RoleUser, auth.RoleAdmin:
@@ -93,6 +94,27 @@ func (s *AdminService) UpdateUser(ctx context.Context, id string, in UpdateUserI
 			return nil, fmt.Errorf("%w: %q", ErrInvalidRole, *in.Role)
 		}
 	}
+
+	target, err := s.repo.GetUserByID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("update user: %w", err)
+	}
+	demoting := in.Role != nil && auth.Role(*in.Role) != auth.RoleAdmin && target.Role == string(auth.RoleAdmin)
+	disabling := in.Disabled != nil && *in.Disabled && !target.Disabled
+
+	if id == actorID && (demoting || disabling) {
+		return nil, fmt.Errorf("%w: cannot disable or demote your own account", ErrInvalidInput)
+	}
+	if target.Role == string(auth.RoleAdmin) && !target.Disabled && (demoting || disabling) {
+		count, err := s.repo.CountEnabledAdmins(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("update user: count admins: %w", err)
+		}
+		if count <= 1 {
+			return nil, fmt.Errorf("%w: cannot remove the last enabled admin", ErrInvalidInput)
+		}
+	}
+
 	user, err := s.repo.UpdateUser(ctx, id, store.UserUpdate{Role: in.Role, Disabled: in.Disabled})
 	if err != nil {
 		return nil, fmt.Errorf("update user: %w", err)

@@ -9,6 +9,6 @@ export function listImages(page: number, pageSize: number): Promise<PageData<Ima
   })
 }
 
-export function deleteImage(id: number): Promise<void> {
+export function deleteImage(id: string): Promise<void> {
   return request<void>({ method: 'DELETE', url: `/images/${id}` })
 }

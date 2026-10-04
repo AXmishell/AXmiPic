@@ -70,6 +70,22 @@ func (r *RateLimiter) evictLocked() {
 	}
 }
 
+// Middleware rate-limits requests by client IP. A nil limiter allows all.
+func (r *RateLimiter) Middleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if r == nil {
+			next.ServeHTTP(w, req)
+			return
+		}
+		if !r.Allow("ip:" + clientIP(req)) {
+			w.Header().Set("Retry-After", "60")
+			writeAuthError(w, http.StatusTooManyRequests, "rate limit exceeded")
+			return
+		}
+		next.ServeHTTP(w, req)
+	})
+}
+
 // UploadLimiter applies distinct limits to authenticated users and guests.
 type UploadLimiter struct {
 	User  *RateLimiter

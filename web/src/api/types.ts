@@ -7,7 +7,7 @@ export interface ApiEnvelope<T> {
 export type UserRole = 'user' | 'admin'
 
 export interface User {
-  id: number
+  id: string
   username: string
   role: UserRole
   used_bytes: number
@@ -17,7 +17,7 @@ export interface User {
 }
 
 export interface ImageItem {
-  id: number
+  id: string
   key: string
   url: string
   size: number
@@ -28,7 +28,7 @@ export interface ImageItem {
 }
 
 export interface Token {
-  id: number
+  id: string
   name: string
   prefix: string
   token?: string

@@ -155,11 +155,33 @@ func (r *Repository) DeletePendingUpload(ctx context.Context, key string) error 
 	return nil
 }
 
+// ExpiredPendingUploads returns pending uploads whose expiry is before cutoff.
+func (r *Repository) ExpiredPendingUploads(ctx context.Context, cutoff time.Time) ([]PendingUpload, error) {
+	var pending []PendingUpload
+	if err := r.db.WithContext(ctx).
+		Where("expires_at < ?", cutoff).
+		Find(&pending).Error; err != nil {
+		return nil, fmt.Errorf("store: list expired pending uploads: %w", err)
+	}
+	return pending, nil
+}
+
 // CountUsers returns the number of registered accounts.
 func (r *Repository) CountUsers(ctx context.Context) (int64, error) {
 	var count int64
 	if err := r.db.WithContext(ctx).Model(&User{}).Count(&count).Error; err != nil {
 		return 0, fmt.Errorf("store: count users: %w", err)
+	}
+	return count, nil
+}
+
+// CountEnabledAdmins returns the number of enabled admin accounts.
+func (r *Repository) CountEnabledAdmins(ctx context.Context) (int64, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).Model(&User{}).
+		Where("role = ? AND disabled = ?", "admin", false).
+		Count(&count).Error; err != nil {
+		return 0, fmt.Errorf("store: count enabled admins: %w", err)
 	}
 	return count, nil
 }

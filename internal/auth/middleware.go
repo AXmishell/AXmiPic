@@ -9,6 +9,10 @@ import (
 	"github.com/AXmishell/axmipic/internal/store"
 )
 
+// tokenTouchInterval throttles last-used updates so a burst of API requests
+// does not cause one database write per request.
+const tokenTouchInterval = time.Minute
+
 // Authenticator resolves Bearer credentials (API tokens or session JWTs) into a
 // Principal. It does not reject anonymous requests; use RequireAuth to enforce.
 type Authenticator struct {
@@ -57,9 +61,11 @@ func (a *Authenticator) resolve(r *http.Request, credential string) (*Principal,
 		if user.Disabled {
 			return nil, ErrUnauthenticated
 		}
-		if err := a.repo.TouchToken(ctx, token.ID); err != nil {
-			// A failed last-used update must not block an otherwise valid request.
-			_ = err
+		if token.LastUsedAt == nil || time.Since(*token.LastUsedAt) > tokenTouchInterval {
+			if err := a.repo.TouchToken(ctx, token.ID); err != nil {
+				// A failed last-used update must not block an otherwise valid request.
+				_ = err
+			}
 		}
 		return &Principal{
 			UserID:   user.ID,
@@ -69,7 +75,7 @@ func (a *Authenticator) resolve(r *http.Request, credential string) (*Principal,
 		}, nil
 	}
 
-	userID, role, err := a.issuer.Parse(credential)
+	userID, _, err := a.issuer.Parse(credential)
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +86,9 @@ func (a *Authenticator) resolve(r *http.Request, credential string) (*Principal,
 	if user.Disabled {
 		return nil, ErrUnauthenticated
 	}
-	return &Principal{UserID: user.ID, Username: user.Username, Role: Role(role)}, nil
+	// Use the persisted role rather than the token's claim so role changes take
+	// effect immediately without waiting for the session to expire.
+	return &Principal{UserID: user.ID, Username: user.Username, Role: Role(user.Role)}, nil
 }
 
 // RequireAdmin rejects requests from callers that are not authenticated admins.

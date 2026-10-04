@@ -9,6 +9,6 @@ export function listUsers(): Promise<User[]> {
   return request<User[]>({ method: 'GET', url: '/admin/users' })
 }
 
-export function updateUser(id: number, payload: UserUpdate): Promise<User> {
+export function updateUser(id: string, payload: UserUpdate): Promise<User> {
   return request<User>({ method: 'PATCH', url: `/admin/users/${id}`, data: payload })
 }

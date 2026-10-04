@@ -24,6 +24,7 @@ var envPaths = map[string]string{
 	"server_host":                 "server.host",
 	"server_port":                 "server.port",
 	"server_base_url":             "server.base_url",
+	"server_trust_proxy":          "server.trust_proxy",
 	"server_read_timeout_sec":     "server.read_timeout_sec",
 	"server_write_timeout_sec":    "server.write_timeout_sec",
 	"server_shutdown_timeout_sec": "server.shutdown_timeout_sec",
@@ -64,6 +65,8 @@ var envPaths = map[string]string{
 	"limits_upload_burst":         "limits.upload_burst",
 	"limits_guest_per_minute":     "limits.guest_per_minute",
 	"limits_guest_burst":          "limits.guest_burst",
+	"limits_image_per_minute":     "limits.image_per_minute",
+	"limits_image_burst":          "limits.image_burst",
 	"logging_level":               "logging.level",
 }
 
@@ -84,6 +87,7 @@ type ServerConfig struct {
 	Host               string `koanf:"host"`
 	Port               int    `koanf:"port"`
 	BaseURL            string `koanf:"base_url"`
+	TrustProxy         bool   `koanf:"trust_proxy"`
 	ReadTimeoutSec     int    `koanf:"read_timeout_sec"`
 	WriteTimeoutSec    int    `koanf:"write_timeout_sec"`
 	ShutdownTimeoutSec int    `koanf:"shutdown_timeout_sec"`
@@ -165,6 +169,8 @@ type LimitsConfig struct {
 	UploadBurst     int `koanf:"upload_burst"`
 	GuestPerMinute  int `koanf:"guest_per_minute"`
 	GuestBurst      int `koanf:"guest_burst"`
+	ImagePerMinute  int `koanf:"image_per_minute"`
+	ImageBurst      int `koanf:"image_burst"`
 }
 
 // LoggingConfig configures logging.
@@ -178,6 +184,7 @@ func defaultConfig() Config {
 			Host:               "0.0.0.0",
 			Port:               8080,
 			BaseURL:            "http://localhost:8080",
+			TrustProxy:         false,
 			ReadTimeoutSec:     30,
 			WriteTimeoutSec:    30,
 			ShutdownTimeoutSec: 10,
@@ -211,6 +218,8 @@ func defaultConfig() Config {
 			UploadBurst:     5,
 			GuestPerMinute:  6,
 			GuestBurst:      2,
+			ImagePerMinute:  600,
+			ImageBurst:      120,
 		},
 		Logging: LoggingConfig{Level: "info"},
 	}
@@ -317,7 +326,8 @@ func (c Config) validate() error {
 		return fmt.Errorf("config: auth.default_quota_mb must not be negative")
 	}
 	if c.Limits.UploadPerMinute < 0 || c.Limits.UploadBurst < 0 ||
-		c.Limits.GuestPerMinute < 0 || c.Limits.GuestBurst < 0 {
+		c.Limits.GuestPerMinute < 0 || c.Limits.GuestBurst < 0 ||
+		c.Limits.ImagePerMinute < 0 || c.Limits.ImageBurst < 0 {
 		return fmt.Errorf("config: limits values must not be negative")
 	}
 	return nil

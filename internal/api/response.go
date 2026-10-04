@@ -8,6 +8,7 @@ import (
 
 	"github.com/AXmishell/axmipic/internal/auth"
 	"github.com/AXmishell/axmipic/internal/service"
+	"github.com/AXmishell/axmipic/internal/storage"
 )
 
 // principalOf returns the authenticated principal attached to the request, or
@@ -75,6 +76,8 @@ func (h *Handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, http.StatusInsufficientStorage, http.StatusInsufficientStorage, err.Error())
 	case errors.Is(err, service.ErrNotFound):
 		writeError(w, http.StatusNotFound, http.StatusNotFound, "image not found")
+	case errors.Is(err, storage.ErrInvalidKey):
+		writeError(w, http.StatusBadRequest, http.StatusBadRequest, "invalid image key")
 	default:
 		h.logger.ErrorContext(r.Context(), "request failed", slog.Any("error", err))
 		writeError(w, http.StatusInternalServerError, http.StatusInternalServerError, "internal server error")

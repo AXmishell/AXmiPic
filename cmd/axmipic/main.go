@@ -104,15 +104,19 @@ func run() error {
 			User:  auth.NewRateLimiter(cfg.Limits.UploadPerMinute, cfg.Limits.UploadBurst),
 			Guest: auth.NewRateLimiter(cfg.Limits.GuestPerMinute, cfg.Limits.GuestBurst),
 		},
-		RequireAuth: cfg.Auth.RequireAuth,
-		MaxUploadMB: cfg.Upload.MaxSizeMB,
-		Static:      webui.Handler(),
-		Logger:      logger,
+		ImageLimiter: auth.NewRateLimiter(cfg.Limits.ImagePerMinute, cfg.Limits.ImageBurst),
+		RequireAuth:  cfg.Auth.RequireAuth,
+		TrustProxy:   cfg.Server.TrustProxy,
+		MaxUploadMB:  cfg.Upload.MaxSizeMB,
+		Static:       webui.Handler(),
+		Logger:       logger,
 	})
 	srv := server.New(cfg, logger, router)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	go runPendingUploadJanitor(ctx, uploadSvc, logger)
 
 	return srv.Run(ctx)
 }
@@ -142,6 +146,36 @@ func processingFormats(names []string) []imaging.Format {
 		}
 	}
 	return formats
+}
+
+// runPendingUploadJanitor periodically removes expired pending uploads and the
+// orphaned objects they left behind. It runs until ctx is cancelled.
+func runPendingUploadJanitor(ctx context.Context, svc *service.UploadService, logger *slog.Logger) {
+	const interval = time.Hour
+	cleanup := func() {
+		cleanupCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		removed, err := svc.CleanupExpired(cleanupCtx, time.Now())
+		if err != nil {
+			logger.Warn("pending upload cleanup failed", slog.Any("error", err))
+			return
+		}
+		if removed > 0 {
+			logger.Info("cleaned up expired pending uploads", slog.Int("count", removed))
+		}
+	}
+
+	cleanup()
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			cleanup()
+		}
+	}
 }
 
 // storagePresignExpiry returns the presigned-upload lifetime for the active

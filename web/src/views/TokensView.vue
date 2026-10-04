@@ -16,7 +16,7 @@ import { formatDateTime } from '@/utils/format'
 const tokens = ref<Token[]>([])
 const loading = ref(false)
 const errorMessage = ref('')
-const revokingId = ref<number | null>(null)
+const revokingId = ref<string | null>(null)
 
 const createOpen = ref(false)
 const creating = ref(false)

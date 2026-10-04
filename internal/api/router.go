@@ -23,9 +23,13 @@ type Deps struct {
 	Storage       storage.Storage
 	Authenticator *auth.Authenticator
 	UploadLimiter *auth.UploadLimiter
+	// ImageLimiter rate-limits public image serving and transformation by IP.
+	ImageLimiter *auth.RateLimiter
 	// Static, when non-nil, serves the single-page app for unmatched routes.
 	Static      http.Handler
 	RequireAuth bool
+	// TrustProxy enables parsing the client IP from X-Forwarded-For / X-Real-IP.
+	TrustProxy  bool
 	MaxUploadMB int
 	Logger      *slog.Logger
 }
@@ -55,13 +59,19 @@ func NewRouter(d Deps) http.Handler {
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
+	if d.TrustProxy {
+		// Only honour forwarding headers when explicitly configured to sit
+		// behind a trusted proxy; otherwise clients could spoof their IP to
+		// evade rate limiting.
+		r.Use(middleware.RealIP)
+	}
+	r.Use(securityHeaders)
 	r.Use(middleware.Recoverer)
 	r.Use(requestLogger(d.Logger))
 	r.Use(middleware.Timeout(60 * time.Second))
 
 	r.Get("/healthz", h.health)
-	r.Get("/i/*", h.serveImage)
+	r.With(d.ImageLimiter.Middleware).Get("/i/*", h.serveImage)
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Group(func(r chi.Router) {
@@ -108,6 +118,16 @@ func NewRouter(d Deps) http.Handler {
 	}
 
 	return r
+}
+
+// securityHeaders applies defense-in-depth response headers to every reply.
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		next.ServeHTTP(w, r)
+	})
 }
 
 // requestLogger logs each request with method, path, status, and duration.

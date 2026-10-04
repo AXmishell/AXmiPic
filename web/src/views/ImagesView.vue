@@ -24,8 +24,8 @@ const page = ref(1)
 const pageSize = ref(24)
 const loading = ref(false)
 const errorMessage = ref('')
-const deletingId = ref<number | null>(null)
-const failedIds = ref<Set<number>>(new Set())
+const deletingId = ref<string | null>(null)
+const failedIds = ref<Set<string>>(new Set())
 
 let requestSeq = 0
 
@@ -61,7 +61,7 @@ function handleSizeChange(): void {
   void load()
 }
 
-function onPreviewError(id: number): void {
+function onPreviewError(id: string): void {
   failedIds.value.add(id)
 }
 

@@ -2,6 +2,10 @@ server:
   host: "0.0.0.0"
   port: 8080
   base_url: "http://localhost:8080"
+  # Only enable when running behind a trusted reverse proxy: when true, the
+  # client IP is taken from X-Forwarded-For / X-Real-IP. Leaving it false
+  # prevents clients from spoofing those headers to bypass IP rate limits.
+  trust_proxy: false
   read_timeout_sec: 30
   write_timeout_sec: 30
   shutdown_timeout_sec: 10
@@ -75,6 +79,9 @@ limits:
   upload_burst: 5
   guest_per_minute: 6
   guest_burst: 2
+  # Per-IP limit for public image serving and on-the-fly transformation.
+  image_per_minute: 600
+  image_burst: 120
 
 logging:
   level: "info"

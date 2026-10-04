@@ -58,8 +58,15 @@ func (h *Handler) serveImage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, http.StatusBadRequest, err.Error())
 		return
 	}
+	// Require registered metadata so on-the-fly transformation cannot serve
+	// arbitrary objects straight from the storage backend.
+	dto, err := h.svc.GetByKey(r.Context(), key)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
 	if h.imaging == nil || !h.imaging.Enabled() || req.Empty() {
-		h.serveOriginal(w, r, key)
+		h.serveOriginal(w, r, dto)
 		return
 	}
 
@@ -91,13 +98,8 @@ func (h *Handler) serveImage(w http.ResponseWriter, r *http.Request) {
 }
 
 // serveOriginal streams the stored object unchanged.
-func (h *Handler) serveOriginal(w http.ResponseWriter, r *http.Request, key string) {
-	dto, err := h.svc.GetByKey(r.Context(), key)
-	if err != nil {
-		h.fail(w, r, err)
-		return
-	}
-	object, err := h.storage.Get(r.Context(), key)
+func (h *Handler) serveOriginal(w http.ResponseWriter, r *http.Request, dto *service.ImageDTO) {
+	object, err := h.storage.Get(r.Context(), dto.Key)
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
 			h.fail(w, r, service.ErrNotFound)

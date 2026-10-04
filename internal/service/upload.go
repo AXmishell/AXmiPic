@@ -334,6 +334,37 @@ func (s *UploadService) Confirm(ctx context.Context, principal *auth.Principal, 
 	return toDTO(image), nil
 }
 
+// CleanupExpired removes pending uploads that have expired as of now and
+// deletes their unconfirmed storage objects. It returns the number of storage
+// objects removed.
+func (s *UploadService) CleanupExpired(ctx context.Context, now time.Time) (int, error) {
+	pending, err := s.repo.ExpiredPendingUploads(ctx, now)
+	if err != nil {
+		return 0, fmt.Errorf("cleanup: list expired pending uploads: %w", err)
+	}
+	removed := 0
+	for i := range pending {
+		key := pending[i].Key
+		if _, err := s.repo.GetByKey(ctx, key); err == nil {
+			// The upload was confirmed after all; only drop the stale row.
+			if delErr := s.repo.DeletePendingUpload(ctx, key); delErr != nil {
+				continue
+			}
+			continue
+		} else if !errors.Is(err, store.ErrNotFound) {
+			continue
+		}
+		if err := s.storage.Delete(ctx, key); err != nil {
+			continue
+		}
+		if err := s.repo.DeletePendingUpload(ctx, key); err != nil {
+			continue
+		}
+		removed++
+	}
+	return removed, nil
+}
+
 // List returns a page of images visible to principal: all images for admins,
 // only owned images otherwise.
 func (s *UploadService) List(ctx context.Context, principal *auth.Principal, page, pageSize int) (*ListResult, error) {

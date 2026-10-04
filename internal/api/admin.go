@@ -38,7 +38,7 @@ func (h *Handler) adminUpdateUser(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	user, err := h.admin.UpdateUser(r.Context(), chi.URLParam(r, "id"), service.UpdateUserInput{
+	user, err := h.admin.UpdateUser(r.Context(), principalOf(r).UserID, chi.URLParam(r, "id"), service.UpdateUserInput{
 		Role:     body.Role,
 		Disabled: body.Disabled,
 	})

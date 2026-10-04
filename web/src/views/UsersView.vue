@@ -19,7 +19,7 @@ const users = ref<UserModel[]>([])
 const loading = ref(false)
 const errorMessage = ref('')
 const search = ref('')
-const pendingIds = ref<Set<number>>(new Set())
+const pendingIds = ref<Set<string>>(new Set())
 
 const filteredUsers = computed(() => {
   const keyword = search.value.trim().toLowerCase()
