@@ -82,6 +82,8 @@ func (h *Handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, http.StatusNotFound, http.StatusNotFound, "album not found")
 	case errors.Is(err, service.ErrRoleGroupNotFound):
 		writeError(w, http.StatusNotFound, http.StatusNotFound, "role group not found")
+	case errors.Is(err, service.ErrUserNotFound):
+		writeError(w, http.StatusNotFound, http.StatusNotFound, "user not found")
 	case errors.Is(err, service.ErrPolicyNotFound):
 		writeError(w, http.StatusNotFound, http.StatusNotFound, "policy not found")
 	case errors.Is(err, service.ErrRoleGroupInUse):

@@ -65,21 +65,23 @@ func (r *Repository) ListImages(ctx context.Context, opts ImageListOptions) ([]I
 	listQuery := r.db.WithContext(ctx).Model(&Image{})
 	if opts.UserID != "" {
 		countQuery = countQuery.Where("user_id = ?", opts.UserID)
-		listQuery = listQuery.Where("user_id = ?", opts.UserID)
+		listQuery = listQuery.Where("images.user_id = ?", opts.UserID)
 	}
 	if opts.Permission != "" {
 		countQuery = countQuery.Where("permission = ?", opts.Permission)
-		listQuery = listQuery.Where("permission = ?", opts.Permission)
+		listQuery = listQuery.Where("images.permission = ?", opts.Permission)
 	}
 	if opts.AlbumID != nil {
 		countQuery = countQuery.Where("album_id = ?", *opts.AlbumID)
-		listQuery = listQuery.Where("album_id = ?", *opts.AlbumID)
+		listQuery = listQuery.Where("images.album_id = ?", *opts.AlbumID)
 	}
 	if opts.Keyword != "" {
 		like := "%" + opts.Keyword + "%"
-		cond := "original_name LIKE ? OR filename LIKE ? OR key LIKE ?"
-		countQuery = countQuery.Where(cond, like, like, like)
-		listQuery = listQuery.Where(cond, like, like, like)
+		countQuery = countQuery.Where("original_name LIKE ? OR filename LIKE ? OR key LIKE ?", like, like, like)
+		listQuery = listQuery.Where(
+			"images.original_name LIKE ? OR images.filename LIKE ? OR images.key LIKE ?",
+			like, like, like,
+		)
 	}
 
 	var total int64
@@ -101,13 +103,13 @@ func (r *Repository) ListImages(ctx context.Context, opts ImageListOptions) ([]I
 func orderClause(order string) string {
 	switch order {
 	case "earliest":
-		return "created_at ASC"
+		return "images.created_at ASC"
 	case "largest":
-		return "size DESC"
+		return "images.size DESC"
 	case "smallest":
-		return "size ASC"
+		return "images.size ASC"
 	default:
-		return "created_at DESC"
+		return "images.created_at DESC"
 	}
 }
 

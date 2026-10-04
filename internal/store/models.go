@@ -42,12 +42,14 @@ const (
 
 // Album 是用户创建的相册，用于归类图片。
 type Album struct {
-	ID        string  `gorm:"primaryKey;size:36"`
-	UserID    *string `gorm:"index;size:36"`
-	Name      string  `gorm:"size:100;not null"`
-	Intro     string  `gorm:"size:255;not null;default:''"`
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID     string  `gorm:"primaryKey;size:36"`
+	UserID *string `gorm:"index;size:36"`
+	Name   string  `gorm:"size:100;not null"`
+	Intro  string  `gorm:"size:255;not null;default:''"`
+	// Permission 为相册可见性：public（无需登录即可浏览）或 private（默认）。
+	Permission string `gorm:"size:16;not null;default:'private'"`
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 }
 
 // TableName 返回存储 Album 的表名。

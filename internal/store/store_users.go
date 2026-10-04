@@ -129,6 +129,30 @@ func (r *Repository) ListAdmins(ctx context.Context) ([]Account, error) {
 	return accounts, nil
 }
 
+// UsernamesByIDs 返回账户 id 到用户名的映射，用于批量填充图片所有者。不存在
+// 的 id 不会出现在结果中。
+func (r *Repository) UsernamesByIDs(ctx context.Context, ids []string) (map[string]string, error) {
+	result := make(map[string]string, len(ids))
+	if len(ids) == 0 {
+		return result, nil
+	}
+	type row struct {
+		ID       string
+		Username string
+	}
+	var rows []row
+	if err := r.db.WithContext(ctx).Model(&Customer{}).
+		Select("id, username").
+		Where("id IN ?", ids).
+		Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("store: usernames by ids: %w", err)
+	}
+	for _, row := range rows {
+		result[row.ID] = row.Username
+	}
+	return result, nil
+}
+
 // CountAdmins 返回管理员账户的数量。
 func (r *Repository) CountAdmins(ctx context.Context) (int64, error) {
 	var count int64

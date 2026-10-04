@@ -11,6 +11,8 @@ export interface ListImagesParams {
   keyword?: string
   albumId?: string
   permission?: ImagePermission
+  /** 图片广场按作者过滤。 */
+  userId?: string
 }
 
 /** 将查询参数转换为后端使用的下划线命名。 */
@@ -22,6 +24,7 @@ function listParams(params: ListImagesParams): Record<string, unknown> {
     keyword: params.keyword || undefined,
     album_id: params.albumId || undefined,
     permission: params.permission || undefined,
+    user_id: params.userId || undefined,
   }
 }
 

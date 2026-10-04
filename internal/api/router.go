@@ -90,6 +90,15 @@ func NewRouter(d Deps) http.Handler {
 		r.Group(func(r chi.Router) {
 			r.Use(d.Authenticator.Authenticate)
 
+			// 公开只读接口：图片广场、公开相册与用户资料无需登录即可访问。
+			r.Group(func(r chi.Router) {
+				r.Get("/plaza", h.listPlaza)
+				r.Get("/plaza/albums", h.listPublicAlbums)
+				r.Get("/albums/{id}", h.getAlbum)
+				r.Get("/albums/{id}/images", h.listAlbumImages)
+				r.Get("/users/{id}", h.publicProfile)
+			})
+
 			r.Group(func(r chi.Router) {
 				if d.RequireAuth {
 					r.Use(auth.RequireAuth)
@@ -103,6 +112,7 @@ func NewRouter(d Deps) http.Handler {
 			r.Group(func(r chi.Router) {
 				r.Use(auth.RequireAuth)
 				r.Get("/auth/me", h.me)
+				r.Get("/auth/policies", h.authPolicies)
 				r.Post("/tokens", h.createToken)
 				r.Get("/tokens", h.listTokens)
 				r.Delete("/tokens/{id}", h.deleteToken)
@@ -113,11 +123,8 @@ func NewRouter(d Deps) http.Handler {
 				r.Post("/images/batch", h.batchImages)
 				r.Get("/albums", h.listAlbums)
 				r.Post("/albums", h.createAlbum)
-				r.Get("/albums/{id}", h.getAlbum)
 				r.Patch("/albums/{id}", h.updateAlbum)
 				r.Delete("/albums/{id}", h.deleteAlbum)
-				r.Get("/plaza", h.listPlaza)
-				r.Get("/auth/policies", h.authPolicies)
 			})
 
 			r.Group(func(r chi.Router) {

@@ -37,6 +37,8 @@ export interface ImageItem {
   created_at: string
   album_id?: string
   permission: ImagePermission
+  /** 图片所有者的用户名，仅在图片广场/公开相册等公开列表中返回。 */
+  owner_username?: string
 }
 
 /** 相册。 */
@@ -44,9 +46,21 @@ export interface Album {
   id: string
   name: string
   intro: string
+  permission: ImagePermission
+  owner_id?: string
+  owner_username?: string
   image_count: number
   created_at: string
   updated_at: string
+}
+
+/** 用户的公开资料。 */
+export interface PublicProfile {
+  id: string
+  username: string
+  joined_at: string
+  public_image_count: number
+  public_albums: Album[]
 }
 
 export interface Token {

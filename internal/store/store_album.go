@@ -26,16 +26,30 @@ func (r *Repository) GetAlbumByID(ctx context.Context, id string) (*Album, error
 }
 
 // ListAlbums 返回相册列表。userID 非空时仅返回该用户的相册，并附带每个相册
-// 的图片数量。计数通过单次聚合查询完成，避免逐个相册查询的 N+1 问题。
+// 的图片数量与所属用户名。计数通过单次聚合查询完成，避免逐个相册查询的 N+1 问题。
 func (r *Repository) ListAlbums(ctx context.Context, userID string) ([]AlbumWithCount, error) {
-	const columns = "albums.id, albums.user_id, albums.name, albums.intro, albums.created_at, albums.updated_at"
+	return r.listAlbums(ctx, userID, "")
+}
+
+// ListPublicAlbums 返回可见性为 public 的相册；userID 非空时仅返回该用户的。
+func (r *Repository) ListPublicAlbums(ctx context.Context, userID string) ([]AlbumWithCount, error) {
+	return r.listAlbums(ctx, userID, PermissionPublic)
+}
+
+// listAlbums 按可选的所有者与可见性过滤相册，并聚合图片数量与所有者用户名。
+func (r *Repository) listAlbums(ctx context.Context, userID, permission string) ([]AlbumWithCount, error) {
+	const columns = "albums.id, albums.user_id, albums.name, albums.intro, albums.permission, albums.created_at, albums.updated_at"
 	query := r.db.WithContext(ctx).Table("albums").
-		Select(columns + ", COUNT(images.id) AS image_count").
+		Select(columns + ", COALESCE(customers.username, '') AS owner_username, COUNT(images.id) AS image_count").
 		Joins("LEFT JOIN images ON images.album_id = albums.id").
-		Group(columns).
+		Joins("LEFT JOIN customers ON customers.id = albums.user_id").
+		Group(columns + ", COALESCE(customers.username, '')").
 		Order("albums.created_at ASC")
 	if userID != "" {
 		query = query.Where("albums.user_id = ?", userID)
+	}
+	if permission != "" {
+		query = query.Where("albums.permission = ?", permission)
 	}
 	var rows []albumCountRow
 	if err := query.Scan(&rows).Error; err != nil {
@@ -48,42 +62,47 @@ func (r *Repository) ListAlbums(ctx context.Context, userID string) ([]AlbumWith
 	return result, nil
 }
 
-// albumCountRow 是「相册 + 图片计数」聚合查询的扫描结果。
+// albumCountRow 是「相册 + 图片计数 + 所有者」聚合查询的扫描结果。
 type albumCountRow struct {
-	ID         string
-	UserID     *string
-	Name       string
-	Intro      string
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
-	ImageCount int64 `gorm:"column:image_count"`
+	ID            string
+	UserID        *string
+	Name          string
+	Intro         string
+	Permission    string
+	OwnerUsername string `gorm:"column:owner_username"`
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+	ImageCount    int64 `gorm:"column:image_count"`
 }
 
 // albumWithCount 将聚合行转换为领域模型。
 func (row albumCountRow) albumWithCount() AlbumWithCount {
 	return AlbumWithCount{
 		Album: Album{
-			ID:        row.ID,
-			UserID:    row.UserID,
-			Name:      row.Name,
-			Intro:     row.Intro,
-			CreatedAt: row.CreatedAt,
-			UpdatedAt: row.UpdatedAt,
+			ID:         row.ID,
+			UserID:     row.UserID,
+			Name:       row.Name,
+			Intro:      row.Intro,
+			Permission: row.Permission,
+			CreatedAt:  row.CreatedAt,
+			UpdatedAt:  row.UpdatedAt,
 		},
-		ImageCount: row.ImageCount,
+		OwnerUsername: row.OwnerUsername,
+		ImageCount:    row.ImageCount,
 	}
 }
 
-// AlbumWithCount 是相册及其图片数量。
+// AlbumWithCount 是相册及其图片数量与所有者用户名。
 type AlbumWithCount struct {
-	Album      Album
-	ImageCount int64
+	Album         Album
+	OwnerUsername string
+	ImageCount    int64
 }
 
-// UpdateAlbum 更新相册的名称与简介。
-func (r *Repository) UpdateAlbum(ctx context.Context, id, name, intro string) (*Album, error) {
+// UpdateAlbum 更新相册的名称、简介与可见性。
+func (r *Repository) UpdateAlbum(ctx context.Context, id, name, intro, permission string) (*Album, error) {
 	result := r.db.WithContext(ctx).Model(&Album{}).Where("id = ?", id).
-		Updates(map[string]any{"name": name, "intro": intro})
+		Updates(map[string]any{"name": name, "intro": intro, "permission": permission})
 	if result.Error != nil {
 		return nil, fmt.Errorf("store: update album %q: %w", id, result.Error)
 	}
@@ -91,6 +110,17 @@ func (r *Repository) UpdateAlbum(ctx context.Context, id, name, intro string) (*
 		return nil, fmt.Errorf("store: album %q: %w", id, ErrNotFound)
 	}
 	return r.GetAlbumByID(ctx, id)
+}
+
+// CountPublicImagesByUser 统计某个用户可见性为 public 的图片数量。
+func (r *Repository) CountPublicImagesByUser(ctx context.Context, userID string) (int64, error) {
+	var count int64
+	if err := r.db.WithContext(ctx).Model(&Image{}).
+		Where("user_id = ? AND permission = ?", userID, PermissionPublic).
+		Count(&count).Error; err != nil {
+		return 0, fmt.Errorf("store: count public images for %q: %w", userID, err)
+	}
+	return count, nil
 }
 
 // DeleteAlbum 删除相册，并把其中的图片移出相册（album_id 置空）。

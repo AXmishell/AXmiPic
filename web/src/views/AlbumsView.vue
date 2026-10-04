@@ -24,7 +24,11 @@ const dialogOpen = ref(false)
 const saving = ref(false)
 const editingId = ref<string | null>(null)
 const formRef = ref<FormInstance>()
-const form = reactive({ name: '', intro: '' })
+const form = reactive<{ name: string; intro: string; permission: 'public' | 'private' }>({
+  name: '',
+  intro: '',
+  permission: 'private',
+})
 
 const dialogTitle = computed(() => (editingId.value ? '编辑相册' : '新建相册'))
 
@@ -52,6 +56,7 @@ function openCreate(): void {
   editingId.value = null
   form.name = ''
   form.intro = ''
+  form.permission = 'private'
   dialogOpen.value = true
   void nextTick(() => formRef.value?.clearValidate())
 }
@@ -60,6 +65,7 @@ function openEdit(album: Album): void {
   editingId.value = album.id
   form.name = album.name
   form.intro = album.intro
+  form.permission = album.permission
   dialogOpen.value = true
   void nextTick(() => formRef.value?.clearValidate())
 }
@@ -72,7 +78,7 @@ async function submit(): Promise<void> {
 
   saving.value = true
   try {
-    const input = { name: form.name.trim(), intro: form.intro.trim() }
+    const input = { name: form.name.trim(), intro: form.intro.trim(), permission: form.permission }
     if (editingId.value) {
       await updateAlbum(editingId.value, input)
       ElMessage.success('相册已更新')
@@ -160,6 +166,13 @@ onMounted(load)
           <el-table-column label="图片数" width="110">
             <template #default="{ row }">{{ formatNumber(row.image_count) }}</template>
           </el-table-column>
+          <el-table-column label="可见性" width="100">
+            <template #default="{ row }">
+              <el-tag size="small" :type="row.permission === 'public' ? 'success' : 'info'" effect="plain">
+                {{ row.permission === 'public' ? '公开' : '私密' }}
+              </el-tag>
+            </template>
+          </el-table-column>
           <el-table-column prop="intro" label="简介" min-width="200">
             <template #default="{ row }">
               <span v-if="row.intro">{{ row.intro }}</span>
@@ -221,6 +234,13 @@ onMounted(load)
             show-word-limit
           />
         </el-form-item>
+        <el-form-item label="可见性">
+          <el-radio-group v-model="form.permission">
+            <el-radio-button value="private">私密</el-radio-button>
+            <el-radio-button value="public">公开</el-radio-button>
+          </el-radio-group>
+          <div class="form-hint">公开后，任何人无需登录即可浏览相册及其中的图片。</div>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialogOpen = false">取消</el-button>
@@ -241,5 +261,12 @@ onMounted(load)
   gap: var(--ax-space-2);
   color: var(--ax-text);
   font-weight: var(--ax-weight-medium);
+}
+
+.form-hint {
+  margin-top: 4px;
+  color: var(--ax-text-4);
+  font-size: var(--ax-text-xs);
+  line-height: 1.5;
 }
 </style>

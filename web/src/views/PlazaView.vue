@@ -173,6 +173,7 @@ onMounted(load)
               {{ formatMime(item.mime_type) }} · {{ formatBytes(item.size) }} ·
               {{ formatDimensions(item.width, item.height) }}
             </p>
+            <p class="plaza-card__meta">作者：{{ item.owner_username || '匿名' }}</p>
             <p class="plaza-card__meta">{{ formatDateTime(item.created_at) }}</p>
             <el-button size="small" :icon="CopyDocument" @click="copyLink(item)">复制链接</el-button>
           </div>

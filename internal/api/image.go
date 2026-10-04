@@ -60,6 +60,7 @@ func imageFilterFromQuery(r *http.Request) service.ImageFilter {
 		Order:      query.Get("order"),
 		Keyword:    query.Get("keyword"),
 		Permission: query.Get("permission"),
+		UserID:     query.Get("user_id"),
 	}
 	if album := strings.TrimSpace(query.Get("album_id")); album != "" {
 		filter.AlbumID = &album

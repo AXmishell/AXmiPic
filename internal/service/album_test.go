@@ -165,3 +165,104 @@ func TestListPlazaOnlyPublic(t *testing.T) {
 		t.Fatalf("plaza = %+v, want only the public image", plaza)
 	}
 }
+
+func TestPublicAlbumVisibilityAndProfile(t *testing.T) {
+	repo := newRepo(t)
+	svc := service.NewAlbumService(repo)
+	ctx := context.Background()
+	newCustomer(t, repo, "u1")
+	u1 := &auth.Principal{UserID: "u1", Username: "u1", Role: auth.RoleUser}
+	guest := &auth.Principal{Guest: true}
+
+	privateAlbum, err := svc.Create(ctx, u1, service.AlbumInput{Name: "私密"})
+	if err != nil {
+		t.Fatalf("Create private: %v", err)
+	}
+	if privateAlbum.Permission != store.PermissionPrivate {
+		t.Fatalf("default permission = %q, want private", privateAlbum.Permission)
+	}
+	if _, err := svc.Get(ctx, guest, privateAlbum.ID); !errors.Is(err, service.ErrForbidden) {
+		t.Fatalf("guest Get private err = %v, want ErrForbidden", err)
+	}
+
+	publicAlbum, err := svc.Create(ctx, u1, service.AlbumInput{Name: "公开", Permission: store.PermissionPublic})
+	if err != nil {
+		t.Fatalf("Create public: %v", err)
+	}
+	if _, err := svc.Get(ctx, guest, publicAlbum.ID); err != nil {
+		t.Fatalf("guest Get public: %v", err)
+	}
+
+	list, err := svc.ListPublic(ctx, "")
+	if err != nil {
+		t.Fatalf("ListPublic: %v", err)
+	}
+	if len(list) != 1 || list[0].ID != publicAlbum.ID || list[0].OwnerUsername != "u1" {
+		t.Fatalf("public albums = %+v", list)
+	}
+
+	profile, err := svc.PublicProfile(ctx, "u1")
+	if err != nil {
+		t.Fatalf("PublicProfile: %v", err)
+	}
+	if profile.Username != "u1" || len(profile.PublicAlbums) != 1 {
+		t.Fatalf("profile = %+v", profile)
+	}
+	if _, err := svc.PublicProfile(ctx, "missing"); !errors.Is(err, service.ErrUserNotFound) {
+		t.Fatalf("missing profile err = %v, want ErrUserNotFound", err)
+	}
+}
+
+func TestPlazaOwnerAndUserFilter(t *testing.T) {
+	repo := newRepo(t)
+	newCustomer(t, repo, "u1")
+	newCustomer(t, repo, "u2")
+	upload := service.NewUploadService(repo, managerWithFallback(t, newFakeStorage()), pngPolicy())
+	ctx := context.Background()
+	u1 := &auth.Principal{UserID: "u1", Username: "u1", Role: auth.RoleUser}
+	u2 := &auth.Principal{UserID: "u2", Username: "u2", Role: auth.RoleUser}
+
+	img1, err := upload.Upload(ctx, u1, service.UploadInput{Data: testPNGSize(t, 8), MimeType: "image/png"})
+	if err != nil {
+		t.Fatalf("Upload u1: %v", err)
+	}
+	img2, err := upload.Upload(ctx, u2, service.UploadInput{Data: testPNGSize(t, 16), MimeType: "image/png"})
+	if err != nil {
+		t.Fatalf("Upload u2: %v", err)
+	}
+	if err := upload.SetPermission(ctx, u1, []string{img1.ID}, store.PermissionPublic); err != nil {
+		t.Fatalf("SetPermission u1: %v", err)
+	}
+	if err := upload.SetPermission(ctx, u2, []string{img2.ID}, store.PermissionPublic); err != nil {
+		t.Fatalf("SetPermission u2: %v", err)
+	}
+
+	plaza, err := upload.ListPlaza(ctx, 1, 20, service.ImageFilter{})
+	if err != nil {
+		t.Fatalf("ListPlaza: %v", err)
+	}
+	if plaza.Total != 2 {
+		t.Fatalf("plaza total = %d, want 2", plaza.Total)
+	}
+	for _, item := range plaza.Items {
+		if item.OwnerUsername == "" {
+			t.Fatalf("plaza item missing owner username: %+v", item)
+		}
+	}
+
+	filtered, err := upload.ListPlaza(ctx, 1, 20, service.ImageFilter{UserID: "u1"})
+	if err != nil {
+		t.Fatalf("ListPlaza filtered: %v", err)
+	}
+	if filtered.Total != 1 || filtered.Items[0].OwnerUsername != "u1" || filtered.Items[0].ID != img1.ID {
+		t.Fatalf("filtered plaza = %+v", filtered)
+	}
+
+	profile, err := service.NewAlbumService(repo).PublicProfile(ctx, "u1")
+	if err != nil {
+		t.Fatalf("PublicProfile: %v", err)
+	}
+	if profile.PublicImageCount != 1 {
+		t.Fatalf("public image count = %d, want 1", profile.PublicImageCount)
+	}
+}

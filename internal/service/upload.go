@@ -128,6 +128,8 @@ type ImageDTO struct {
 	AlbumID string `json:"album_id,omitempty"`
 	// Permission 为图片可见性：public（可出现在图片广场）或 private（默认）。
 	Permission string `json:"permission"`
+	// OwnerUsername 为图片所有者的用户名，仅在公开列表（广场/公开相册）中填充。
+	OwnerUsername string `json:"owner_username,omitempty"`
 	// OriginalName 为上传时的原始文件名；Filename 为重命名后的存储文件名；
 	// Hash 为内容 sha256 十六进制摘要。
 	OriginalName string    `json:"original_name"`
@@ -151,6 +153,8 @@ type ImageFilter struct {
 	AlbumID *string
 	// Permission 非空时仅返回该可见性的图片（public/private）。
 	Permission string
+	// UserID 非空时仅返回该用户的图片，用于图片广场按作者过滤。
+	UserID string
 }
 
 // ListResult 是图片的分页集合。
@@ -538,6 +542,7 @@ func (s *UploadService) ListPlaza(ctx context.Context, page, pageSize int, filte
 	page, pageSize = normalizePagination(page, pageSize)
 	return s.listImages(ctx, store.ImageListOptions{
 		Permission: store.PermissionPublic,
+		UserID:     strings.TrimSpace(filter.UserID),
 		Offset:     (page - 1) * pageSize,
 		Limit:      pageSize,
 		Order:      filter.Order,
@@ -546,15 +551,53 @@ func (s *UploadService) ListPlaza(ctx context.Context, page, pageSize int, filte
 	}, page, pageSize)
 }
 
-// listImages 执行列表查询并把结果转换为 DTO。
+// ListAlbumImages 返回相册中的图片，用于公开相册浏览。相册非公开时仅所有者
+// 或管理员可访问。
+func (s *UploadService) ListAlbumImages(ctx context.Context, principal *auth.Principal, albumID string, page, pageSize int) (*ListResult, error) {
+	album, err := s.repo.GetAlbumByID(ctx, albumID)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return nil, ErrAlbumNotFound
+		}
+		return nil, fmt.Errorf("list album images: %w", err)
+	}
+	if album.Permission != store.PermissionPublic && !canAccess(principal, album.UserID) {
+		return nil, ErrForbidden
+	}
+	page, pageSize = normalizePagination(page, pageSize)
+	return s.listImages(ctx, store.ImageListOptions{
+		AlbumID: &albumID,
+		Offset:  (page - 1) * pageSize,
+		Limit:   pageSize,
+	}, page, pageSize)
+}
+
+// listImages 执行列表查询并把结果转换为 DTO，同时批量填充所有者用户名。
 func (s *UploadService) listImages(ctx context.Context, opts store.ImageListOptions, page, pageSize int) (*ListResult, error) {
 	images, total, err := s.repo.ListImages(ctx, opts)
 	if err != nil {
 		return nil, fmt.Errorf("list images: %w", err)
 	}
 	items := make([]ImageDTO, 0, len(images))
+	ownerIDs := make([]string, 0)
+	seen := make(map[string]struct{})
 	for i := range images {
 		items = append(items, *toDTO(&images[i]))
+		if images[i].UserID != nil {
+			if _, ok := seen[*images[i].UserID]; !ok {
+				seen[*images[i].UserID] = struct{}{}
+				ownerIDs = append(ownerIDs, *images[i].UserID)
+			}
+		}
+	}
+	if len(ownerIDs) > 0 {
+		if names, nameErr := s.repo.UsernamesByIDs(ctx, ownerIDs); nameErr == nil {
+			for i := range images {
+				if images[i].UserID != nil {
+					items[i].OwnerUsername = names[*images[i].UserID]
+				}
+			}
+		}
 	}
 	return &ListResult{Items: items, Total: total, Page: page, PageSize: pageSize}, nil
 }
