@@ -1,0 +1,76 @@
+name: Docker
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# 同一分支/标签上的重复运行只保留最新一次。
+concurrency:
+  group: docker-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  build:
+    name: 构建并推送镜像
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      # GHCR 要求镜像名全小写，而仓库名可能包含大写字母。
+      - name: 生成小写镜像名
+        id: image
+        run: |
+          name="${REGISTRY}/$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')"
+          echo "name=${name}" >> "$GITHUB_OUTPUT"
+
+      - name: 设置 QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: 设置 Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 登录 GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 生成镜像标签与元数据
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.image.outputs.name }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=short
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: 构建并推送
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          # PR 仅构建 amd64 以加快反馈；其余场景构建多架构。
+          platforms: ${{ github.event_name == 'pull_request' && 'linux/amd64' || 'linux/amd64,linux/arm64' }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
