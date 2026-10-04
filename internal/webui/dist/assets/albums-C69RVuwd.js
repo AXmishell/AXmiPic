@@ -1,0 +1,1 @@
+import{r as t}from"./index-p9FTkz8M.js";function a(){return t({method:"GET",url:"/albums"})}function l(u){return t({method:"POST",url:"/albums",data:u})}function m(u,r){return t({method:"PATCH",url:`/albums/${u}`,data:r})}function n(u){return t({method:"DELETE",url:`/albums/${u}`})}export{l as c,n as d,a as l,m as u};

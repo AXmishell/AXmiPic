@@ -53,6 +53,10 @@ type ImageListOptions struct {
 	Order string
 	// Keyword 非空时按原文件名、存储文件名或键进行模糊匹配。
 	Keyword string
+	// Permission 非空时仅返回该可见性的图片（public/private）。
+	Permission string
+	// AlbumID 非空时仅返回属于该相册的图片。
+	AlbumID *string
 }
 
 // ListImages 返回一页图片以及记录总数。排序与关键字由 opts 控制。
@@ -62,6 +66,14 @@ func (r *Repository) ListImages(ctx context.Context, opts ImageListOptions) ([]I
 	if opts.UserID != "" {
 		countQuery = countQuery.Where("user_id = ?", opts.UserID)
 		listQuery = listQuery.Where("user_id = ?", opts.UserID)
+	}
+	if opts.Permission != "" {
+		countQuery = countQuery.Where("permission = ?", opts.Permission)
+		listQuery = listQuery.Where("permission = ?", opts.Permission)
+	}
+	if opts.AlbumID != nil {
+		countQuery = countQuery.Where("album_id = ?", *opts.AlbumID)
+		listQuery = listQuery.Where("album_id = ?", *opts.AlbumID)
 	}
 	if opts.Keyword != "" {
 		like := "%" + opts.Keyword + "%"
@@ -97,6 +109,18 @@ func orderClause(order string) string {
 	default:
 		return "created_at DESC"
 	}
+}
+
+// ListImagesByIDs 返回具有给定 id 的图片。它用于批量操作前的所有权校验。
+func (r *Repository) ListImagesByIDs(ctx context.Context, ids []string) ([]Image, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	var images []Image
+	if err := r.db.WithContext(ctx).Where("id IN ?", ids).Find(&images).Error; err != nil {
+		return nil, fmt.Errorf("store: list images by ids: %w", err)
+	}
+	return images, nil
 }
 
 // RenameImage 更新图片的原文件名并返回更新后的记录；name 由调用方负责校验。

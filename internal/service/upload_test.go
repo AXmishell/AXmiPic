@@ -274,7 +274,7 @@ func TestListOrderAndKeyword(t *testing.T) {
 		t.Fatalf("upload large: %v", err)
 	}
 
-	largest, err := svc.List(ctx, &auth.Principal{Role: auth.RoleAdmin}, 1, 20, "largest", "")
+	largest, err := svc.List(ctx, &auth.Principal{Role: auth.RoleAdmin}, 1, 20, service.ImageFilter{Order: "largest"})
 	if err != nil {
 		t.Fatalf("List largest: %v", err)
 	}
@@ -282,7 +282,7 @@ func TestListOrderAndKeyword(t *testing.T) {
 		t.Fatalf("largest order wrong: %+v", largest.Items)
 	}
 
-	smallest, err := svc.List(ctx, &auth.Principal{Role: auth.RoleAdmin}, 1, 20, "smallest", "")
+	smallest, err := svc.List(ctx, &auth.Principal{Role: auth.RoleAdmin}, 1, 20, service.ImageFilter{Order: "smallest"})
 	if err != nil {
 		t.Fatalf("List smallest: %v", err)
 	}
@@ -290,7 +290,7 @@ func TestListOrderAndKeyword(t *testing.T) {
 		t.Fatalf("smallest order wrong")
 	}
 
-	found, err := svc.List(ctx, &auth.Principal{Role: auth.RoleAdmin}, 1, 20, "", "large")
+	found, err := svc.List(ctx, &auth.Principal{Role: auth.RoleAdmin}, 1, 20, service.ImageFilter{Keyword: "large"})
 	if err != nil {
 		t.Fatalf("List keyword: %v", err)
 	}

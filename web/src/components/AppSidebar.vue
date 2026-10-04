@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, type Component } from 'vue'
 import { useRoute } from 'vue-router'
-import { ArrowRight, Close, Coin, Key, Odometer, Picture, Setting, User } from '@element-plus/icons-vue'
+import { ArrowRight, Close, Coin, Folder, Grid, Key, Odometer, Picture, Setting, User } from '@element-plus/icons-vue'
 
 import QuotaMeter from '@/components/QuotaMeter.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -34,6 +34,8 @@ const groups = computed<NavGroup[]>(() => {
       label: '资源',
       items: [
         { label: '图片管理', to: '/images', icon: Picture },
+        { label: '相册', to: '/albums', icon: Folder },
+        { label: '图片广场', to: '/plaza', icon: Grid },
         { label: '访问令牌', to: '/tokens', icon: Key },
       ],
     },

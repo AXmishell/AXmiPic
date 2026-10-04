@@ -1,20 +1,37 @@
 import { request } from './client'
-import type { ImageItem, PageData } from './types'
+import type { ImageItem, ImageOrder, ImagePermission, PageData } from './types'
 
-/** 图片列表排序方式。 */
-export type ImageOrder = 'newest' | 'earliest' | 'largest' | 'smallest'
+export type { ImageOrder } from './types'
 
-export function listImages(
-  page: number,
-  pageSize: number,
-  order: ImageOrder = 'newest',
-  keyword = '',
-): Promise<PageData<ImageItem>> {
-  return request<PageData<ImageItem>>({
-    method: 'GET',
-    url: '/images',
-    params: { page, page_size: pageSize, order, keyword: keyword || undefined },
-  })
+/** 图片列表查询参数。 */
+export interface ListImagesParams {
+  page: number
+  pageSize: number
+  order?: ImageOrder
+  keyword?: string
+  albumId?: string
+  permission?: ImagePermission
+}
+
+/** 将查询参数转换为后端使用的下划线命名。 */
+function listParams(params: ListImagesParams): Record<string, unknown> {
+  return {
+    page: params.page,
+    page_size: params.pageSize,
+    order: params.order,
+    keyword: params.keyword || undefined,
+    album_id: params.albumId || undefined,
+    permission: params.permission || undefined,
+  }
+}
+
+export function listImages(params: ListImagesParams): Promise<PageData<ImageItem>> {
+  return request<PageData<ImageItem>>({ method: 'GET', url: '/images', params: listParams(params) })
+}
+
+/** 图片广场：跨用户的公开图片。 */
+export function listPlaza(params: ListImagesParams): Promise<PageData<ImageItem>> {
+  return request<PageData<ImageItem>>({ method: 'GET', url: '/plaza', params: listParams(params) })
 }
 
 /** 通过后台界面上传一张图片；文件以 multipart 形式提交。 */
@@ -36,4 +53,27 @@ export function renameImage(id: string, name: string): Promise<ImageItem> {
 
 export function deleteImage(id: string): Promise<void> {
   return request<void>({ method: 'DELETE', url: `/images/${id}` })
+}
+
+/** 批量更新图片的可见性或所属相册。 */
+export interface BatchImageUpdate {
+  ids: string[]
+  permission?: ImagePermission
+  /** 目标相册 id；与 clearAlbum 互斥。 */
+  albumId?: string
+  /** 将图片移出相册。 */
+  clearAlbum?: boolean
+}
+
+export function batchUpdateImages(update: BatchImageUpdate): Promise<{ updated: number }> {
+  return request<{ updated: number }>({
+    method: 'POST',
+    url: '/images/batch',
+    data: {
+      ids: update.ids,
+      permission: update.permission,
+      album_id: update.albumId,
+      clear_album: update.clearAlbum || undefined,
+    },
+  })
 }

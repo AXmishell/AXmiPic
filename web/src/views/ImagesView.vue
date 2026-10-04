@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { UploadRawFile } from 'element-plus'
 import {
@@ -7,17 +8,28 @@ import {
   CopyDocument,
   Delete,
   EditPen,
+  Folder,
   InfoFilled,
+  Lock,
   Picture,
   Refresh,
   Search,
   Select,
+  Unlock,
   Upload,
 } from '@element-plus/icons-vue'
 
+import { listAlbums } from '@/api/albums'
 import { toApiError } from '@/api/client'
-import { deleteImage, listImages, renameImage, uploadImage, type ImageOrder } from '@/api/images'
-import type { ImageItem } from '@/api/types'
+import {
+  batchUpdateImages,
+  deleteImage,
+  listImages,
+  renameImage,
+  uploadImage,
+  type ImageOrder,
+} from '@/api/images'
+import type { Album, ImageItem, ImagePermission } from '@/api/types'
 import EmptyState from '@/components/EmptyState.vue'
 import ErrorState from '@/components/ErrorState.vue'
 import PageHeader from '@/components/PageHeader.vue'
@@ -39,14 +51,29 @@ const errorMessage = ref('')
 const failedIds = ref<Set<string>>(new Set())
 
 // 查询条件
+const route = useRoute()
 const order = ref<ImageOrder>('newest')
 const keyword = ref('')
+const albumFilter = ref('')
+const permissionFilter = ref<'' | ImagePermission>('')
+const albums = ref<Album[]>([])
 const orderOptions: { value: ImageOrder; label: string }[] = [
   { value: 'newest', label: '最新' },
   { value: 'earliest', label: '最早' },
   { value: 'largest', label: '最大' },
   { value: 'smallest', label: '最小' },
 ]
+const permissionOptions: { value: '' | ImagePermission; label: string }[] = [
+  { value: '', label: '全部可见性' },
+  { value: 'public', label: '公开' },
+  { value: 'private', label: '私有' },
+]
+
+// 归入相册
+const assignOpen = ref(false)
+const assignAlbumId = ref('')
+const assignIds = ref<string[]>([])
+const assigning = ref(false)
 
 // 上传
 const uploading = ref(false)
@@ -90,7 +117,14 @@ async function load(): Promise<void> {
   loading.value = true
   errorMessage.value = ''
   try {
-    const data = await listImages(page.value, pageSize.value, order.value, keyword.value.trim())
+    const data = await listImages({
+      page: page.value,
+      pageSize: pageSize.value,
+      order: order.value,
+      keyword: keyword.value.trim(),
+      albumId: albumFilter.value || undefined,
+      permission: permissionFilter.value || undefined,
+    })
     if (seq !== requestSeq) return
     items.value = data.items ?? []
     total.value = data.total ?? 0
@@ -124,6 +158,71 @@ function setOrder(value: ImageOrder): void {
 function handleSizeChange(): void {
   page.value = 1
   void load()
+}
+
+/** 加载相册列表，供过滤与归档操作使用。 */
+async function loadAlbums(): Promise<void> {
+  try {
+    albums.value = (await listAlbums()) ?? []
+  } catch {
+    // 相册加载失败不影响图片列表本身。
+  }
+}
+
+function setAlbumFilter(value: string): void {
+  albumFilter.value = value
+  page.value = 1
+  void load()
+}
+
+function setPermissionFilter(value: '' | ImagePermission): void {
+  permissionFilter.value = value
+  page.value = 1
+  void load()
+}
+
+function albumName(id?: string): string {
+  if (!id) return ''
+  return albums.value.find((a) => a.id === id)?.name ?? ''
+}
+
+/** 批量设置可见性。 */
+async function applyPermission(ids: string[], permission: ImagePermission): Promise<void> {
+  if (ids.length === 0) return
+  try {
+    await batchUpdateImages({ ids, permission })
+    ElMessage.success(permission === 'public' ? '已设为公开' : '已设为私有')
+    await load()
+  } catch (error) {
+    ElMessage.error(toApiError(error).message)
+  }
+}
+
+/** 打开「归入相册」对话框。 */
+function openAssign(ids: string[], current?: string): void {
+  if (ids.length === 0) return
+  assignIds.value = [...ids]
+  assignAlbumId.value = current ?? ''
+  assignOpen.value = true
+}
+
+async function submitAssign(): Promise<void> {
+  if (assigning.value || assignIds.value.length === 0) return
+  assigning.value = true
+  try {
+    await batchUpdateImages(
+      assignAlbumId.value
+        ? { ids: assignIds.value, albumId: assignAlbumId.value }
+        : { ids: assignIds.value, clearAlbum: true },
+    )
+    ElMessage.success('已更新所属相册')
+    assignOpen.value = false
+    await load()
+  } catch (error) {
+    ElMessage.error(toApiError(error).message)
+  } finally {
+    assigning.value = false
+  }
 }
 
 function onPreviewError(id: string): void {
@@ -407,6 +506,16 @@ function menuDelete(): void {
   if (item) runMenu(() => deleteOne(item))
 }
 
+function menuSetPermission(permission: ImagePermission): void {
+  const item = menuTarget.value
+  if (item) runMenu(() => applyPermission([item.id], permission))
+}
+
+function menuAssign(): void {
+  const item = menuTarget.value
+  if (item) runMenu(() => openAssign([item.id], item.album_id))
+}
+
 // ---- 键盘 ----
 function onKeydown(event: KeyboardEvent): void {
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') {
@@ -423,6 +532,9 @@ function onKeydown(event: KeyboardEvent): void {
 }
 
 onMounted(() => {
+  const queryAlbum = route.query.album_id
+  if (typeof queryAlbum === 'string') albumFilter.value = queryAlbum
+  void loadAlbums()
   void load()
   document.addEventListener('paste', onPaste)
   document.addEventListener('keydown', onKeydown)
@@ -472,6 +584,27 @@ onBeforeUnmount(() => {
             </el-dropdown-menu>
           </template>
         </el-dropdown>
+        <el-select
+          :model-value="albumFilter"
+          class="images-filter"
+          placeholder="全部相册"
+          @change="setAlbumFilter"
+        >
+          <el-option label="全部相册" value="" />
+          <el-option v-for="album in albums" :key="album.id" :label="album.name" :value="album.id" />
+        </el-select>
+        <el-select
+          :model-value="permissionFilter"
+          class="images-filter"
+          @change="setPermissionFilter"
+        >
+          <el-option
+            v-for="option in permissionOptions"
+            :key="option.value"
+            :label="option.label"
+            :value="option.value"
+          />
+        </el-select>
         <el-upload
           ref="uploadRef"
           :show-file-list="false"
@@ -515,6 +648,23 @@ onBeforeUnmount(() => {
         <span class="images-selection-bar__text">已选择 {{ selectedCount }} 张图片</span>
         <div class="images-selection-bar__actions">
           <el-button size="small" @click="clearSelection">取消选择</el-button>
+          <el-button
+            size="small"
+            :icon="Unlock"
+            @click="applyPermission([...selectedIds], 'public')"
+          >
+            设为公开
+          </el-button>
+          <el-button
+            size="small"
+            :icon="Lock"
+            @click="applyPermission([...selectedIds], 'private')"
+          >
+            设为私有
+          </el-button>
+          <el-button size="small" :icon="Folder" @click="openAssign([...selectedIds])">
+            归入相册
+          </el-button>
           <el-button
             size="small"
             type="danger"
@@ -572,6 +722,16 @@ onBeforeUnmount(() => {
             <p class="image-card__key" :title="item.original_name || item.filename || item.key">
               {{ item.original_name || item.filename || item.key }}
             </p>
+
+            <div class="image-card__badges">
+              <el-tag v-if="item.permission === 'public'" size="small" type="success" effect="dark">
+                公开
+              </el-tag>
+              <el-tag v-else size="small" type="info" effect="plain">私有</el-tag>
+              <el-tag v-if="item.album_id" size="small" effect="plain">
+                {{ albumName(item.album_id) }}
+              </el-tag>
+            </div>
 
             <dl class="image-card__meta">
               <div class="image-card__meta-row">
@@ -648,6 +808,13 @@ onBeforeUnmount(() => {
           <el-icon><CopyDocument /></el-icon>{{ fmt.label }}
         </li>
         <li @click="menuOpenTab"><el-icon><Picture /></el-icon>新窗口打开</li>
+        <li v-if="menuTarget.permission !== 'public'" @click="menuSetPermission('public')">
+          <el-icon><Unlock /></el-icon>设为公开
+        </li>
+        <li v-else @click="menuSetPermission('private')">
+          <el-icon><Lock /></el-icon>设为私有
+        </li>
+        <li @click="menuAssign"><el-icon><Folder /></el-icon>归入相册</li>
         <li class="images-context-menu__divider" />
         <li @click="menuRename"><el-icon><EditPen /></el-icon>重命名</li>
         <li @click="menuDetail"><el-icon><InfoFilled /></el-icon>详细信息</li>
@@ -671,6 +838,24 @@ onBeforeUnmount(() => {
       <template #footer>
         <el-button @click="renameOpen = false">取消</el-button>
         <el-button type="primary" :loading="renaming" @click="submitRename">确认</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 归入相册 -->
+    <el-dialog
+      v-model="assignOpen"
+      title="归入相册"
+      width="min(420px, 92vw)"
+      append-to-body
+      :close-on-click-modal="false"
+    >
+      <el-select v-model="assignAlbumId" placeholder="不归入相册" style="width: 100%">
+        <el-option label="不归入相册" value="" />
+        <el-option v-for="album in albums" :key="album.id" :label="album.name" :value="album.id" />
+      </el-select>
+      <template #footer>
+        <el-button @click="assignOpen = false">取消</el-button>
+        <el-button type="primary" :loading="assigning" @click="submitAssign">确认</el-button>
       </template>
     </el-dialog>
 
@@ -708,6 +893,14 @@ onBeforeUnmount(() => {
           </dd>
         </div>
         <div class="image-detail__row">
+          <dt>可见性</dt>
+          <dd>{{ detailTarget.permission === 'public' ? '公开' : '私有' }}</dd>
+        </div>
+        <div class="image-detail__row">
+          <dt>相册</dt>
+          <dd>{{ albumName(detailTarget.album_id) || '未归入相册' }}</dd>
+        </div>
+        <div class="image-detail__row">
           <dt>上传时间</dt>
           <dd>{{ formatDateTime(detailTarget.created_at) }}</dd>
         </div>
@@ -728,6 +921,10 @@ onBeforeUnmount(() => {
 
 .images-search {
   width: 200px;
+}
+
+.images-filter {
+  width: 150px;
 }
 
 .images-caret {
@@ -841,6 +1038,12 @@ onBeforeUnmount(() => {
   overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+}
+
+.image-card__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ax-space-2);
 }
 
 .image-card__meta {

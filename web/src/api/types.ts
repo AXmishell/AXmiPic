@@ -6,6 +6,12 @@ export interface ApiEnvelope<T> {
 
 export type UserRole = 'customer' | 'admin'
 
+/** 图片排序方式。 */
+export type ImageOrder = 'newest' | 'earliest' | 'largest' | 'smallest'
+
+/** 图片可见性：public 可出现在图片广场，private 仅本人可见（默认）。 */
+export type ImagePermission = 'public' | 'private'
+
 export interface User {
   id: string
   username: string
@@ -28,6 +34,18 @@ export interface ImageItem {
   width: number
   height: number
   created_at: string
+  album_id?: string
+  permission: ImagePermission
+}
+
+/** 相册。 */
+export interface Album {
+  id: string
+  name: string
+  intro: string
+  image_count: number
+  created_at: string
+  updated_at: string
 }
 
 export interface Token {

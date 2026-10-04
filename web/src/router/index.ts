@@ -35,6 +35,18 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '图片管理' },
       },
       {
+        path: 'albums',
+        name: 'albums',
+        component: () => import('@/views/AlbumsView.vue'),
+        meta: { title: '相册' },
+      },
+      {
+        path: 'plaza',
+        name: 'plaza',
+        component: () => import('@/views/PlazaView.vue'),
+        meta: { title: '图片广场' },
+      },
+      {
         path: 'tokens',
         name: 'tokens',
         component: () => import('@/views/TokensView.vue'),

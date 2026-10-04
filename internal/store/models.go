@@ -9,6 +9,10 @@ type Image struct {
 	UserID *string `gorm:"index;size:36"`
 	// StorageID 指向对象所在的存储后端；为空时回退到当前默认后端。
 	StorageID *string `gorm:"index;size:36"`
+	// AlbumID 指向所属相册；为空表示未归入任何相册。
+	AlbumID *string `gorm:"index;size:36"`
+	// Permission 为图片可见性：public（可出现在图片广场）或 private（默认）。
+	Permission string `gorm:"size:16;not null;default:'private'"`
 	// OriginalName 是上传时的原始文件名；Filename 是重命名后的存储文件名
 	// （即 Key 的最后一段）；Hash 是内容的 sha256 十六进制摘要。
 	OriginalName string `gorm:"size:255;not null;default:''"`
@@ -26,6 +30,29 @@ type Image struct {
 // TableName 返回存储 Image 的表名。
 func (Image) TableName() string {
 	return "images"
+}
+
+// 图片可见性取值。
+const (
+	// PermissionPrivate 表示图片仅本人可见（默认）。
+	PermissionPrivate = "private"
+	// PermissionPublic 表示图片可出现在公开的图片广场。
+	PermissionPublic = "public"
+)
+
+// Album 是用户创建的相册，用于归类图片。
+type Album struct {
+	ID        string  `gorm:"primaryKey;size:36"`
+	UserID    *string `gorm:"index;size:36"`
+	Name      string  `gorm:"size:100;not null"`
+	Intro     string  `gorm:"size:255;not null;default:''"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// TableName 返回存储 Album 的表名。
+func (Album) TableName() string {
+	return "albums"
 }
 
 // PendingUpload 跟踪尚未确认的预签名直传上传。该记录在签发预签名请求时创建，

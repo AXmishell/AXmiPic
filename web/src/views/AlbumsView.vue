@@ -1,0 +1,245 @@
+<script setup lang="ts">
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import type { FormInstance, FormRules } from 'element-plus'
+import { Folder, Picture, Plus, Refresh, EditPen, Delete } from '@element-plus/icons-vue'
+
+import { createAlbum, deleteAlbum, listAlbums, updateAlbum } from '@/api/albums'
+import { toApiError } from '@/api/client'
+import type { Album } from '@/api/types'
+import EmptyState from '@/components/EmptyState.vue'
+import ErrorState from '@/components/ErrorState.vue'
+import PageHeader from '@/components/PageHeader.vue'
+import { formatDateTime, formatNumber } from '@/utils/format'
+
+const router = useRouter()
+
+const albums = ref<Album[]>([])
+const loading = ref(false)
+const errorMessage = ref('')
+const removingId = ref<string | null>(null)
+
+const dialogOpen = ref(false)
+const saving = ref(false)
+const editingId = ref<string | null>(null)
+const formRef = ref<FormInstance>()
+const form = reactive({ name: '', intro: '' })
+
+const dialogTitle = computed(() => (editingId.value ? '编辑相册' : '新建相册'))
+
+const rules: FormRules = {
+  name: [
+    { required: true, message: '请输入相册名称', trigger: 'blur' },
+    { min: 1, max: 100, message: '名称长度为 1 到 100 个字符', trigger: 'blur' },
+  ],
+  intro: [{ max: 255, message: '简介最多 255 个字符', trigger: 'blur' }],
+}
+
+async function load(): Promise<void> {
+  loading.value = true
+  errorMessage.value = ''
+  try {
+    albums.value = (await listAlbums()) ?? []
+  } catch (error) {
+    errorMessage.value = toApiError(error).message
+  } finally {
+    loading.value = false
+  }
+}
+
+function openCreate(): void {
+  editingId.value = null
+  form.name = ''
+  form.intro = ''
+  dialogOpen.value = true
+  void nextTick(() => formRef.value?.clearValidate())
+}
+
+function openEdit(album: Album): void {
+  editingId.value = album.id
+  form.name = album.name
+  form.intro = album.intro
+  dialogOpen.value = true
+  void nextTick(() => formRef.value?.clearValidate())
+}
+
+async function submit(): Promise<void> {
+  const instance = formRef.value
+  if (!instance || saving.value) return
+  const valid = await instance.validate().catch(() => false)
+  if (!valid) return
+
+  saving.value = true
+  try {
+    const input = { name: form.name.trim(), intro: form.intro.trim() }
+    if (editingId.value) {
+      await updateAlbum(editingId.value, input)
+      ElMessage.success('相册已更新')
+    } else {
+      await createAlbum(input)
+      ElMessage.success('相册已创建')
+    }
+    dialogOpen.value = false
+    await load()
+  } catch (error) {
+    ElMessage.error(toApiError(error).message)
+  } finally {
+    saving.value = false
+  }
+}
+
+async function remove(album: Album): Promise<void> {
+  try {
+    await ElMessageBox.confirm(
+      `删除相册「${album.name}」后，其中的图片会保留但不再归入任何相册。`,
+      '删除相册',
+      {
+        confirmButtonText: '删除',
+        cancelButtonText: '取消',
+        type: 'warning',
+        confirmButtonClass: 'el-button--danger',
+      },
+    )
+  } catch {
+    return
+  }
+  removingId.value = album.id
+  try {
+    await deleteAlbum(album.id)
+    ElMessage.success('相册已删除')
+    await load()
+  } catch (error) {
+    ElMessage.error(toApiError(error).message)
+  } finally {
+    removingId.value = null
+  }
+}
+
+function viewImages(album: Album): void {
+  void router.push({ name: 'images', query: { album_id: album.id } })
+}
+
+onMounted(load)
+</script>
+
+<template>
+  <div class="ax-page">
+    <PageHeader title="相册" description="用相册归类图片，便于管理和浏览。">
+      <template #actions>
+        <el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button>
+        <el-button type="primary" :icon="Plus" @click="openCreate">新建相册</el-button>
+      </template>
+    </PageHeader>
+
+    <ErrorState v-if="errorMessage" :message="errorMessage" @retry="load" />
+
+    <div v-else-if="loading && albums.length === 0" class="ax-card" aria-busy="true">
+      <div class="ax-card__body"><el-skeleton :rows="5" animated /></div>
+    </div>
+
+    <EmptyState
+      v-else-if="albums.length === 0"
+      title="还没有相册"
+      description="创建相册后，即可在图片管理页把图片归入其中。"
+    >
+      <el-button type="primary" :icon="Plus" @click="openCreate">新建相册</el-button>
+    </EmptyState>
+
+    <div v-else class="ax-card table-card">
+      <div class="ax-table-scroll">
+        <el-table :data="albums" style="width: 100%">
+          <el-table-column prop="name" label="名称" min-width="180">
+            <template #default="{ row }">
+              <span class="album-name">
+                <el-icon :size="14"><Folder /></el-icon>
+                {{ row.name }}
+              </span>
+            </template>
+          </el-table-column>
+          <el-table-column label="图片数" width="110">
+            <template #default="{ row }">{{ formatNumber(row.image_count) }}</template>
+          </el-table-column>
+          <el-table-column prop="intro" label="简介" min-width="200">
+            <template #default="{ row }">
+              <span v-if="row.intro">{{ row.intro }}</span>
+              <span v-else class="ax-muted">—</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="创建时间" min-width="170">
+            <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
+          </el-table-column>
+          <el-table-column label="操作" width="230" align="right">
+            <template #default="{ row }">
+              <el-button link :icon="Picture" @click="viewImages(row)">查看图片</el-button>
+              <el-button link :icon="EditPen" @click="openEdit(row)">编辑</el-button>
+              <el-button
+                link
+                type="danger"
+                :icon="Delete"
+                :loading="removingId === row.id"
+                @click="remove(row)"
+              >
+                删除
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+    </div>
+
+    <el-dialog
+      v-model="dialogOpen"
+      :title="dialogTitle"
+      width="min(440px, 92vw)"
+      append-to-body
+      :close-on-click-modal="false"
+      @closed="formRef?.clearValidate()"
+    >
+      <el-form
+        ref="formRef"
+        :model="form"
+        :rules="rules"
+        label-position="top"
+        @submit.prevent="submit"
+      >
+        <el-form-item label="名称" prop="name">
+          <el-input
+            v-model="form.name"
+            placeholder="例如：旅行 / 壁纸"
+            maxlength="100"
+            show-word-limit
+          />
+        </el-form-item>
+        <el-form-item label="简介" prop="intro">
+          <el-input
+            v-model="form.intro"
+            type="textarea"
+            :rows="3"
+            placeholder="选填"
+            maxlength="255"
+            show-word-limit
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="dialogOpen = false">取消</el-button>
+        <el-button type="primary" :loading="saving" @click="submit">保存</el-button>
+      </template>
+    </el-dialog>
+  </div>
+</template>
+
+<style scoped>
+.table-card {
+  overflow: hidden;
+}
+
+.album-name {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ax-space-2);
+  color: var(--ax-text);
+  font-weight: var(--ax-weight-medium);
+}
+</style>

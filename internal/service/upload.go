@@ -112,6 +112,10 @@ type ImageDTO struct {
 	ID        string `json:"id"`
 	Key       string `json:"key"`
 	StorageID string `json:"storage_id,omitempty"`
+	// AlbumID 为所属相册 id；为空表示未归入任何相册。
+	AlbumID string `json:"album_id,omitempty"`
+	// Permission 为图片可见性：public（可出现在图片广场）或 private（默认）。
+	Permission string `json:"permission"`
 	// OriginalName 为上传时的原始文件名；Filename 为重命名后的存储文件名；
 	// Hash 为内容 sha256 十六进制摘要。
 	OriginalName string    `json:"original_name"`
@@ -123,6 +127,18 @@ type ImageDTO struct {
 	Width        int       `json:"width"`
 	Height       int       `json:"height"`
 	CreatedAt    time.Time `json:"created_at"`
+}
+
+// ImageFilter 约束图片列表查询。
+type ImageFilter struct {
+	// Order 为排序方式：newest（默认）、earliest、largest、smallest。
+	Order string
+	// Keyword 按原文件名、存储文件名或键模糊匹配。
+	Keyword string
+	// AlbumID 非空时仅返回属于该相册的图片。
+	AlbumID *string
+	// Permission 非空时仅返回该可见性的图片（public/private）。
+	Permission string
 }
 
 // ListResult 是图片的分页集合。
@@ -441,9 +457,62 @@ func (s *UploadService) CleanupExpired(ctx context.Context, now time.Time) (int,
 }
 
 // List 返回对 principal 可见的一页图片：管理员可见全部图片，其余人仅可见
-// 自己拥有的图片。order 控制排序（newest/earliest/largest/smallest），
-// keyword 用于按文件名模糊搜索。
-func (s *UploadService) List(ctx context.Context, principal *auth.Principal, page, pageSize int, order, keyword string) (*ListResult, error) {
+// 自己拥有的图片。filter 控制排序、关键字、相册与可见性过滤。
+func (s *UploadService) List(ctx context.Context, principal *auth.Principal, page, pageSize int, filter ImageFilter) (*ListResult, error) {
+	page, pageSize = normalizePagination(page, pageSize)
+
+	if !principal.IsAdmin() {
+		if principal.IsGuest() {
+			return &ListResult{Items: []ImageDTO{}, Total: 0, Page: page, PageSize: pageSize}, nil
+		}
+		return s.listImages(ctx, store.ImageListOptions{
+			UserID:     principal.UserID,
+			Offset:     (page - 1) * pageSize,
+			Limit:      pageSize,
+			Order:      filter.Order,
+			Keyword:    strings.TrimSpace(filter.Keyword),
+			Permission: filter.Permission,
+			AlbumID:    filter.AlbumID,
+		}, page, pageSize)
+	}
+	return s.listImages(ctx, store.ImageListOptions{
+		Offset:     (page - 1) * pageSize,
+		Limit:      pageSize,
+		Order:      filter.Order,
+		Keyword:    strings.TrimSpace(filter.Keyword),
+		Permission: filter.Permission,
+		AlbumID:    filter.AlbumID,
+	}, page, pageSize)
+}
+
+// ListPlaza 返回一页公开图片（permission=public），跨所有用户，用于图片广场。
+func (s *UploadService) ListPlaza(ctx context.Context, page, pageSize int, filter ImageFilter) (*ListResult, error) {
+	page, pageSize = normalizePagination(page, pageSize)
+	return s.listImages(ctx, store.ImageListOptions{
+		Permission: store.PermissionPublic,
+		Offset:     (page - 1) * pageSize,
+		Limit:      pageSize,
+		Order:      filter.Order,
+		Keyword:    strings.TrimSpace(filter.Keyword),
+		AlbumID:    filter.AlbumID,
+	}, page, pageSize)
+}
+
+// listImages 执行列表查询并把结果转换为 DTO。
+func (s *UploadService) listImages(ctx context.Context, opts store.ImageListOptions, page, pageSize int) (*ListResult, error) {
+	images, total, err := s.repo.ListImages(ctx, opts)
+	if err != nil {
+		return nil, fmt.Errorf("list images: %w", err)
+	}
+	items := make([]ImageDTO, 0, len(images))
+	for i := range images {
+		items = append(items, *toDTO(&images[i]))
+	}
+	return &ListResult{Items: items, Total: total, Page: page, PageSize: pageSize}, nil
+}
+
+// normalizePagination 将页码与每页数量收敛到合理范围。
+func normalizePagination(page, pageSize int) (int, int) {
 	if page < 1 {
 		page = 1
 	}
@@ -456,30 +525,7 @@ func (s *UploadService) List(ctx context.Context, principal *auth.Principal, pag
 	if page > 1_000_000 {
 		page = 1_000_000
 	}
-
-	filter := ""
-	if !principal.IsAdmin() {
-		if principal.IsGuest() {
-			return &ListResult{Items: []ImageDTO{}, Total: 0, Page: page, PageSize: pageSize}, nil
-		}
-		filter = principal.UserID
-	}
-
-	images, total, err := s.repo.ListImages(ctx, store.ImageListOptions{
-		UserID:  filter,
-		Offset:  (page - 1) * pageSize,
-		Limit:   pageSize,
-		Order:   order,
-		Keyword: strings.TrimSpace(keyword),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("list images: %w", err)
-	}
-	items := make([]ImageDTO, 0, len(images))
-	for i := range images {
-		items = append(items, *toDTO(&images[i]))
-	}
-	return &ListResult{Items: items, Total: total, Page: page, PageSize: pageSize}, nil
+	return page, pageSize
 }
 
 // Rename 修改一张图片的原文件名（展示名），保留其存储键、存储文件名与哈希
@@ -523,6 +569,79 @@ func (s *UploadService) GetByKey(ctx context.Context, key string) (*ImageDTO, er
 	}
 	return toDTO(image), nil
 }
+
+// SetPermission 批量设置图片的可见性。会先校验全部图片都归 principal 所有，
+// 避免越权修改他人图片。
+func (s *UploadService) SetPermission(ctx context.Context, principal *auth.Principal, ids []string, permission string) error {
+	if permission != store.PermissionPublic && permission != store.PermissionPrivate {
+		return fmt.Errorf("%w: unknown permission %q", ErrInvalidInput, permission)
+	}
+	owned, err := s.ownedImageIDs(ctx, principal, ids)
+	if err != nil {
+		return err
+	}
+	if len(owned) == 0 {
+		return nil
+	}
+	if err := s.repo.SetImagePermission(ctx, owned, permission); err != nil {
+		return fmt.Errorf("set permission: %w", err)
+	}
+	return nil
+}
+
+// SetAlbum 批量把图片移动到某个相册（albumID 为 nil 表示移出相册）。目标
+// 相册必须存在且归 principal 所有。
+func (s *UploadService) SetAlbum(ctx context.Context, principal *auth.Principal, ids []string, albumID *string) error {
+	if albumID != nil {
+		album, err := s.repo.GetAlbumByID(ctx, *albumID)
+		if err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				return ErrAlbumNotFound
+			}
+			return fmt.Errorf("set album: %w", err)
+		}
+		if !canAccess(principal, album.UserID) {
+			return ErrForbidden
+		}
+	}
+	owned, err := s.ownedImageIDs(ctx, principal, ids)
+	if err != nil {
+		return err
+	}
+	if len(owned) == 0 {
+		return nil
+	}
+	if err := s.repo.SetImageAlbum(ctx, owned, albumID); err != nil {
+		return fmt.Errorf("set album: %w", err)
+	}
+	return nil
+}
+
+// ownedImageIDs 校验 ids 中的每一张图片都归 principal 所有，并返回实际存在的
+// 图片 id。请求中的未知 id 会被忽略。
+func (s *UploadService) ownedImageIDs(ctx context.Context, principal *auth.Principal, ids []string) ([]string, error) {
+	if len(ids) == 0 {
+		return nil, fmt.Errorf("%w: no image ids provided", ErrInvalidInput)
+	}
+	if len(ids) > maxBatchImages {
+		return nil, fmt.Errorf("%w: at most %d images may be updated at once", ErrInvalidInput, maxBatchImages)
+	}
+	images, err := s.repo.ListImagesByIDs(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("update images: %w", err)
+	}
+	owned := make([]string, 0, len(images))
+	for i := range images {
+		if !canAccess(principal, images[i].UserID) {
+			return nil, ErrForbidden
+		}
+		owned = append(owned, images[i].ID)
+	}
+	return owned, nil
+}
+
+// maxBatchImages 限制单次批量操作涉及的图片数量。
+const maxBatchImages = 200
 
 // Delete 移除一张图片对象及其元数据，强制校验所有权并释放所有者的配额。
 func (s *UploadService) Delete(ctx context.Context, principal *auth.Principal, id string) error {
@@ -603,10 +722,16 @@ func sameOwner(principal *auth.Principal, ownerID *string) bool {
 }
 
 func toDTO(image *store.Image) *ImageDTO {
+	permission := image.Permission
+	if permission == "" {
+		permission = store.PermissionPrivate
+	}
 	return &ImageDTO{
 		ID:           image.ID,
 		Key:          image.Key,
 		StorageID:    storageIDValue(image.StorageID),
+		AlbumID:      storageIDValue(image.AlbumID),
+		Permission:   permission,
 		OriginalName: image.OriginalName,
 		Filename:     image.Filename,
 		Hash:         image.Hash,

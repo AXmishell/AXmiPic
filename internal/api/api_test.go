@@ -74,6 +74,7 @@ func newTestEnv(t *testing.T, requireAuth bool, quotaBytes int64) *testEnv {
 		Imaging:       imagingSvc,
 		Accounts:      accounts,
 		Admin:         service.NewAdminService(repo, "local", imaging.Default()),
+		Albums:        service.NewAlbumService(repo),
 		Storage:       storageSvc,
 		Authenticator: auth.NewAuthenticator(repo, issuer),
 		UploadLimiter: &auth.UploadLimiter{
@@ -427,5 +428,91 @@ func TestServeRejectsCoverWithoutDimensions(t *testing.T) {
 	env.router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/i/"+key+"?fit=cover&w=4", nil))
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d (%s), want 400", rec.Code, rec.Body.String())
+	}
+}
+
+// TestAlbumPlazaAndBatchFlow 覆盖相册 CRUD、批量设置可见性/相册以及图片广场。
+func TestAlbumPlazaAndBatchFlow(t *testing.T) {
+	env := newTestEnv(t, true, 1<<20)
+	token := env.token(t, "frank")
+
+	// 新建相册。
+	status, body := do(t, env.router, http.MethodPost, "/api/v1/albums", `{"name":"旅行","intro":"2026"}`, token)
+	if status != http.StatusCreated {
+		t.Fatalf("create album status = %d (%s)", status, body)
+	}
+	var album struct {
+		Data struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &album); err != nil || album.Data.ID == "" {
+		t.Fatalf("bad album response: %s", body)
+	}
+
+	// 上传图片并取回其 id。
+	status, _ = uploadPNG(t, env.router, testPNG(t, 8), token)
+	if status != http.StatusOK {
+		t.Fatalf("upload status = %d", status)
+	}
+	status, body = do(t, env.router, http.MethodGet, "/api/v1/images", "", token)
+	if status != http.StatusOK {
+		t.Fatalf("list images status = %d (%s)", status, body)
+	}
+	var list struct {
+		Data struct {
+			Items []struct {
+				ID string `json:"id"`
+			} `json:"items"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &list); err != nil || len(list.Data.Items) != 1 {
+		t.Fatalf("bad image list: %s", body)
+	}
+	imageID := list.Data.Items[0].ID
+
+	// 批量设为公开并归入相册。
+	status, body = do(t, env.router, http.MethodPost, "/api/v1/images/batch",
+		`{"ids":["`+imageID+`"],"permission":"public","album_id":"`+album.Data.ID+`"}`, token)
+	if status != http.StatusOK {
+		t.Fatalf("batch status = %d (%s)", status, body)
+	}
+
+	// 图片广场应包含该公开图片。
+	status, body = do(t, env.router, http.MethodGet, "/api/v1/plaza", "", token)
+	if status != http.StatusOK {
+		t.Fatalf("plaza status = %d (%s)", status, body)
+	}
+	var plaza struct {
+		Data struct {
+			Total int64 `json:"total"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &plaza); err != nil || plaza.Data.Total != 1 {
+		t.Fatalf("plaza total = %d (%s)", plaza.Data.Total, body)
+	}
+
+	// 按相册过滤应只返回这一张。
+	status, body = do(t, env.router, http.MethodGet, "/api/v1/images?album_id="+album.Data.ID, "", token)
+	if status != http.StatusOK {
+		t.Fatalf("album filter status = %d (%s)", status, body)
+	}
+	var filtered struct {
+		Data struct {
+			Total int64 `json:"total"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &filtered); err != nil || filtered.Data.Total != 1 {
+		t.Fatalf("filtered total = %d (%s)", filtered.Data.Total, body)
+	}
+
+	// 删除相册后图片仍存在，仅移出相册。
+	status, body = do(t, env.router, http.MethodDelete, "/api/v1/albums/"+album.Data.ID, "", token)
+	if status != http.StatusOK {
+		t.Fatalf("delete album status = %d (%s)", status, body)
+	}
+	status, body = do(t, env.router, http.MethodGet, "/api/v1/images/"+imageID, "", token)
+	if status != http.StatusOK {
+		t.Fatalf("image gone after album delete: %d (%s)", status, body)
 	}
 }

@@ -20,6 +20,7 @@ type Deps struct {
 	Imaging       *service.ImagingService
 	Accounts      *service.AccountService
 	Admin         *service.AdminService
+	Albums        *service.AlbumService
 	Storage       *service.StorageService
 	Authenticator *auth.Authenticator
 	UploadLimiter *auth.UploadLimiter
@@ -40,6 +41,7 @@ type Handler struct {
 	imaging        *service.ImagingService
 	accounts       *service.AccountService
 	admin          *service.AdminService
+	albums         *service.AlbumService
 	storageSvc     *service.StorageService
 	maxUploadBytes int64
 	logger         *slog.Logger
@@ -52,6 +54,7 @@ func NewRouter(d Deps) http.Handler {
 		imaging:        d.Imaging,
 		accounts:       d.Accounts,
 		admin:          d.Admin,
+		albums:         d.Albums,
 		storageSvc:     d.Storage,
 		maxUploadBytes: int64(d.MaxUploadMB) << 20,
 		logger:         d.Logger,
@@ -104,6 +107,13 @@ func NewRouter(d Deps) http.Handler {
 				r.Get("/images/{id}", h.getImage)
 				r.Patch("/images/{id}", h.renameImage)
 				r.Delete("/images/{id}", h.deleteImage)
+				r.Post("/images/batch", h.batchImages)
+				r.Get("/albums", h.listAlbums)
+				r.Post("/albums", h.createAlbum)
+				r.Get("/albums/{id}", h.getAlbum)
+				r.Patch("/albums/{id}", h.updateAlbum)
+				r.Delete("/albums/{id}", h.deleteAlbum)
+				r.Get("/plaza", h.listPlaza)
 			})
 
 			r.Group(func(r chi.Router) {

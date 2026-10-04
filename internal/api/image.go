@@ -29,14 +29,42 @@ func (h *Handler) listImages(w http.ResponseWriter, r *http.Request) {
 		principalOf(r),
 		queryInt(r, "page"),
 		queryInt(r, "page_size"),
-		r.URL.Query().Get("order"),
-		r.URL.Query().Get("keyword"),
+		imageFilterFromQuery(r),
 	)
 	if err != nil {
 		h.fail(w, r, err)
 		return
 	}
 	writeOK(w, result)
+}
+
+// listPlaza 返回公开图片广场的一页图片。
+func (h *Handler) listPlaza(w http.ResponseWriter, r *http.Request) {
+	result, err := h.svc.ListPlaza(
+		r.Context(),
+		queryInt(r, "page"),
+		queryInt(r, "page_size"),
+		imageFilterFromQuery(r),
+	)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeOK(w, result)
+}
+
+// imageFilterFromQuery 从查询参数构建图片过滤条件。
+func imageFilterFromQuery(r *http.Request) service.ImageFilter {
+	query := r.URL.Query()
+	filter := service.ImageFilter{
+		Order:      query.Get("order"),
+		Keyword:    query.Get("keyword"),
+		Permission: query.Get("permission"),
+	}
+	if album := strings.TrimSpace(query.Get("album_id")); album != "" {
+		filter.AlbumID = &album
+	}
+	return filter
 }
 
 func (h *Handler) getImage(w http.ResponseWriter, r *http.Request) {
@@ -74,6 +102,46 @@ func (h *Handler) deleteImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeOK(w, map[string]string{"id": id})
+}
+
+// batchImagesRequest 是 POST /api/v1/images/batch 的请求体。permission 与
+// album_id / clear_album 至少提供其一。
+type batchImagesRequest struct {
+	IDs        []string `json:"ids"`
+	Permission *string  `json:"permission"`
+	AlbumID    *string  `json:"album_id"`
+	ClearAlbum bool     `json:"clear_album"`
+}
+
+// batchImages 对一组图片批量设置可见性或所属相册。
+func (h *Handler) batchImages(w http.ResponseWriter, r *http.Request) {
+	var body batchImagesRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxJSONBody)).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if body.Permission == nil && body.AlbumID == nil && !body.ClearAlbum {
+		writeError(w, http.StatusBadRequest, http.StatusBadRequest, "no changes requested")
+		return
+	}
+	principal := principalOf(r)
+	if body.Permission != nil {
+		if err := h.svc.SetPermission(r.Context(), principal, body.IDs, *body.Permission); err != nil {
+			h.fail(w, r, err)
+			return
+		}
+	}
+	if body.AlbumID != nil || body.ClearAlbum {
+		var albumID *string
+		if !body.ClearAlbum {
+			albumID = body.AlbumID
+		}
+		if err := h.svc.SetAlbum(r.Context(), principal, body.IDs, albumID); err != nil {
+			h.fail(w, r, err)
+			return
+		}
+	}
+	writeOK(w, map[string]int{"updated": len(body.IDs)})
 }
 
 // serveImage 按以斜杠分隔的键流式传输已存储的对象，当查询参数要求时
