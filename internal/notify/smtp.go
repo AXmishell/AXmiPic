@@ -17,8 +17,7 @@ type SMTPSender struct {
 	password string
 	from     string
 	// useTLS 为 true 时使用隐式 TLS（通常是 465 端口）。
-	useTLS     bool
-	requireTLS bool
+	useTLS bool
 }
 
 // SMTPOptions 是构造 SMTPSender 的参数。

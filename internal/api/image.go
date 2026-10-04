@@ -270,7 +270,7 @@ func parseTransformQuery(query url.Values) (service.TransformRequest, error) {
 	req.Enlarge = parseBool(query.Get("enlarge"))
 	req.Flip = query.Get("flip")
 	req.Grayscale = parseBool(query.Get("gray"))
-	if req.Grayscale == false {
+	if !req.Grayscale {
 		req.Grayscale = parseBool(query.Get("grayscale"))
 	}
 	req.WatermarkText = query.Get("wm")
