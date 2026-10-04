@@ -14,6 +14,8 @@ import {
   ElInput,
   ElOption,
   ElPagination,
+  ElRadioButton,
+  ElRadioGroup,
   ElSelect,
   ElSkeleton,
   ElSkeletonItem,
@@ -37,15 +39,16 @@ import App from './App.vue'
 import router from './router'
 import { configureAuth } from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
-
-// Single locked theme: the console is dark-native.
-document.documentElement.classList.add('dark')
+import { useThemeStore } from '@/stores/theme'
 
 const app = createApp(App)
 const pinia = createPinia()
 
 app.use(pinia)
 app.use(router)
+
+// Apply the persisted (or OS-preferred) theme before mounting.
+useThemeStore(pinia).init()
 
 const globalComponents: Component[] = [
   ElAlert,
@@ -61,6 +64,8 @@ const globalComponents: Component[] = [
   ElInput,
   ElOption,
   ElPagination,
+  ElRadioButton,
+  ElRadioGroup,
   ElSelect,
   ElSkeleton,
   ElSkeletonItem,

@@ -76,7 +76,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   padding: 9px var(--ax-space-3);
   overflow-x: auto;
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--ax-tint-weak);
   border: 1px solid var(--ax-border-subtle);
   border-radius: var(--ax-radius-sm);
   color: var(--ax-text-2);

@@ -91,7 +91,7 @@ const fillStyle = computed(() => ({ transform: `scaleX(${percent.value / 100})` 
 .quota__track {
   height: 4px;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--ax-tint-strong);
   border-radius: var(--ax-radius-full);
 }
 

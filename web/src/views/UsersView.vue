@@ -449,7 +449,7 @@ onMounted(load)
 .user-usage__track {
   height: 3px;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--ax-tint-strong);
   border-radius: var(--ax-radius-full);
 }
 

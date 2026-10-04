@@ -151,7 +151,7 @@ function isActive(item: NavItem): boolean {
   width: 28px;
   height: 28px;
   background: var(--ax-accent-soft);
-  border: 1px solid rgba(113, 112, 255, 0.3);
+  border: 1px solid var(--ax-accent-ring);
   border-radius: var(--ax-radius-md);
   box-shadow: var(--ax-ring-inset);
 }
@@ -233,7 +233,7 @@ function isActive(item: NavItem): boolean {
 
 .nav-item:hover {
   color: var(--ax-text);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--ax-tint);
 }
 
 .nav-item.is-active {

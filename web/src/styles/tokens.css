@@ -1,16 +1,16 @@
 /**
  * AXmiPic Console — Design Tokens (design contract lives here, in code)
  *
- * Direction: dark-native precision console. Layer B reference: Linear
- * (near-black canvas, luminance-stepped surfaces, whisper-thin translucent
- * borders, single indigo accent reserved for interactive elements).
- * Layer A execution: taste-skill, operational dials (variance 4 / motion 3 /
- * density 5). Layer B is inspiration only; no brand assets or copy are copied.
+ * Two palettes share one contract: the dark-native precision console and a
+ * light counterpart. Every component reads from these variables, so switching
+ * `document.documentElement` between `theme-dark` and `theme-light` (see the
+ * theme store) restyles the whole app.
  *
  * Rule: no raw hex value, font size, spacing step, radius or shadow may be
  * used in any component unless it is declared here first.
  */
-:root {
+:root,
+.theme-dark {
   color-scheme: dark;
 
   /* ---- Color: surfaces (luminance stepping, never solid-on-dark) ---- */
@@ -34,6 +34,7 @@
   --ax-accent-hover: #828fff;
   --ax-accent-soft: rgba(94, 106, 210, 0.14);
   --ax-accent-ring: rgba(113, 112, 255, 0.22);
+  --ax-on-accent: #ffffff;
 
   /* ---- Color: status ---- */
   --ax-success: #27a644;
@@ -49,6 +50,23 @@
   --ax-border-subtle: rgba(255, 255, 255, 0.05);
   --ax-border-strong: rgba(255, 255, 255, 0.14);
   --ax-focus: rgba(113, 112, 255, 0.6);
+
+  /* ---- Color: theme-aware translucent layers used by components ---- */
+  --ax-tint-weak: rgba(255, 255, 255, 0.02);
+  --ax-tint: rgba(255, 255, 255, 0.04);
+  --ax-tint-strong: rgba(255, 255, 255, 0.06);
+  --ax-tint-hover: rgba(255, 255, 255, 0.08);
+  --ax-scrollbar: rgba(255, 255, 255, 0.14);
+  --ax-scrollbar-hover: rgba(255, 255, 255, 0.22);
+  --ax-grid-line: rgba(255, 255, 255, 0.03);
+  --ax-checker-a: rgba(255, 255, 255, 0.02);
+  --ax-checker-b: #0c0d0f;
+  --ax-scrim: rgba(4, 5, 8, 0.6);
+  --ax-topbar-bg: rgba(15, 16, 17, 0.72);
+  --ax-brand-panel: #0b0c0f;
+  --ax-brand-grid: rgba(255, 255, 255, 0.03);
+  --ax-skeleton-a: rgba(255, 255, 255, 0.04);
+  --ax-skeleton-b: rgba(255, 255, 255, 0.09);
 
   /* ---- Typography ---- */
   --ax-font-sans: 'Inter Variable', 'PingFang SC', 'HarmonyOS Sans SC', 'Microsoft YaHei',
@@ -101,6 +119,13 @@
   --ax-duration: 180ms;
   --ax-duration-slow: 300ms;
 
+  /* ---- Atmosphere (page background washes) ---- */
+  --ax-atmosphere: radial-gradient(1100px 520px at 82% -12%, rgba(94, 106, 210, 0.1), transparent 62%),
+    radial-gradient(820px 460px at -8% -4%, rgba(113, 112, 255, 0.06), transparent 58%);
+  --ax-aurora: radial-gradient(620px 420px at 18% 12%, rgba(94, 106, 210, 0.28), transparent 62%),
+    radial-gradient(520px 380px at 88% 82%, rgba(64, 150, 255, 0.12), transparent 66%),
+    radial-gradient(360px 300px at 70% 18%, rgba(130, 143, 255, 0.1), transparent 60%);
+
   /* ---- Layout ---- */
   --ax-sidebar-w: 232px;
   --ax-topbar-h: 56px;
@@ -108,4 +133,73 @@
   --ax-z-topbar: 20;
   --ax-z-scrim: 30;
   --ax-z-drawer: 40;
+}
+
+/**
+ * Light theme: a paper-white console with the same indigo accent and the same
+ * structural tokens. Surfaces step *down* in luminance instead of up, and
+ * borders are darkened ink instead of lightened white.
+ */
+.theme-light {
+  color-scheme: light;
+
+  --ax-canvas: #f6f7f9;
+  --ax-panel: #ffffff;
+  --ax-raised: #ffffff;
+  --ax-elevated: #ffffff;
+  --ax-hover: #eef0f4;
+  --ax-active: #e6e9ef;
+
+  --ax-text: #14161a;
+  --ax-text-2: #3a3f47;
+  --ax-text-3: #6b7280;
+  --ax-text-4: #9aa1ab;
+  --ax-text-disabled: #b9bfc8;
+
+  --ax-accent: #5e6ad2;
+  --ax-accent-bright: #4c57c0;
+  --ax-accent-hover: #3f49a8;
+  --ax-accent-soft: rgba(94, 106, 210, 0.1);
+  --ax-accent-ring: rgba(94, 106, 210, 0.2);
+  --ax-on-accent: #ffffff;
+
+  --ax-success: #1a8c3a;
+  --ax-success-soft: rgba(26, 140, 58, 0.1);
+  --ax-warning: #b7791f;
+  --ax-warning-soft: rgba(183, 121, 31, 0.12);
+  --ax-danger: #d64540;
+  --ax-danger-soft: rgba(214, 69, 64, 0.1);
+  --ax-info: #6b7280;
+
+  --ax-border: rgba(15, 20, 30, 0.12);
+  --ax-border-subtle: rgba(15, 20, 30, 0.08);
+  --ax-border-strong: rgba(15, 20, 30, 0.2);
+  --ax-focus: rgba(94, 106, 210, 0.5);
+
+  --ax-tint-weak: rgba(15, 20, 30, 0.015);
+  --ax-tint: rgba(15, 20, 30, 0.03);
+  --ax-tint-strong: rgba(15, 20, 30, 0.05);
+  --ax-tint-hover: rgba(15, 20, 30, 0.07);
+  --ax-scrollbar: rgba(15, 20, 30, 0.2);
+  --ax-scrollbar-hover: rgba(15, 20, 30, 0.3);
+  --ax-grid-line: rgba(15, 20, 30, 0.035);
+  --ax-checker-a: rgba(15, 20, 30, 0.02);
+  --ax-checker-b: #eceef2;
+  --ax-scrim: rgba(15, 20, 30, 0.35);
+  --ax-topbar-bg: rgba(255, 255, 255, 0.78);
+  --ax-brand-panel: #f0f1f4;
+  --ax-brand-grid: rgba(15, 20, 30, 0.035);
+  --ax-skeleton-a: rgba(15, 20, 30, 0.05);
+  --ax-skeleton-b: rgba(15, 20, 30, 0.09);
+
+  --ax-ring-inset: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  --ax-shadow-sm: 0 1px 2px rgba(15, 20, 30, 0.08);
+  --ax-shadow-md: 0 8px 24px rgba(15, 20, 30, 0.12);
+  --ax-shadow-lg: 0 16px 48px rgba(15, 20, 30, 0.18);
+
+  --ax-atmosphere: radial-gradient(1100px 520px at 82% -12%, rgba(94, 106, 210, 0.08), transparent 62%),
+    radial-gradient(820px 460px at -8% -4%, rgba(113, 112, 255, 0.05), transparent 58%);
+  --ax-aurora: radial-gradient(620px 420px at 18% 12%, rgba(94, 106, 210, 0.16), transparent 62%),
+    radial-gradient(520px 380px at 88% 82%, rgba(64, 150, 255, 0.08), transparent 66%),
+    radial-gradient(360px 300px at 70% 18%, rgba(130, 143, 255, 0.08), transparent 60%);
 }

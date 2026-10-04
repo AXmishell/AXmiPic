@@ -12,9 +12,11 @@ import PageHeader from '@/components/PageHeader.vue'
 import QuotaMeter from '@/components/QuotaMeter.vue'
 import UserAvatar from '@/components/UserAvatar.vue'
 import { useAuthStore } from '@/stores/auth'
+import { useThemeStore, type ThemeMode } from '@/stores/theme'
 import { formatBytes, formatDateTime, formatNumber } from '@/utils/format'
 
 const auth = useAuthStore()
+const theme = useThemeStore()
 const router = useRouter()
 
 const loading = ref(false)
@@ -23,6 +25,15 @@ const stats = ref<AdminStats | null>(null)
 
 const me = computed(() => auth.user)
 const isAdmin = computed(() => auth.isAdmin)
+
+const themeOptions: { value: ThemeMode; label: string }[] = [
+  { value: 'dark', label: '深色' },
+  { value: 'light', label: '浅色' },
+]
+
+function setTheme(mode: ThemeMode): void {
+  theme.setMode(mode)
+}
 
 async function load(): Promise<void> {
   loading.value = true
@@ -170,6 +181,23 @@ onMounted(load)
 
       <article class="ax-card settings-block">
         <header class="ax-card__head">
+          <h2 class="ax-card__title">外观主题</h2>
+        </header>
+        <div class="ax-card__body settings-theme">
+          <div class="settings-theme__text">
+            <strong>界面主题</strong>
+            <span>选择深色或浅色外观，设置会保存在本机浏览器。</span>
+          </div>
+          <el-radio-group :model-value="theme.mode" @change="setTheme($event as ThemeMode)">
+            <el-radio-button v-for="option in themeOptions" :key="option.value" :value="option.value">
+              {{ option.label }}
+            </el-radio-button>
+          </el-radio-group>
+        </div>
+      </article>
+
+      <article class="ax-card settings-block">
+        <header class="ax-card__head">
           <h2 class="ax-card__title">登录状态</h2>
         </header>
         <div class="ax-card__body settings-session">
@@ -272,6 +300,32 @@ onMounted(load)
   align-items: center;
   justify-content: space-between;
   gap: var(--ax-space-4);
+}
+
+.settings-theme {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ax-space-4);
+}
+
+.settings-theme__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 200px;
+}
+
+.settings-theme__text strong {
+  color: var(--ax-text-2);
+  font-size: var(--ax-text-sm);
+  font-weight: var(--ax-weight-medium);
+}
+
+.settings-theme__text span {
+  color: var(--ax-text-4);
+  font-size: var(--ax-text-xs);
 }
 
 .settings-session__text {

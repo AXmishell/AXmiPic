@@ -3,12 +3,14 @@ import { computed, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
-import { Box, DataLine, Lock, UploadFilled, User } from '@element-plus/icons-vue'
+import { Box, DataLine, Lock, Moon, Sunny, UploadFilled, User } from '@element-plus/icons-vue'
 
 import { ApiError } from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
+import { useThemeStore } from '@/stores/theme'
 
 const auth = useAuthStore()
+const theme = useThemeStore()
 const router = useRouter()
 const route = useRoute()
 
@@ -133,6 +135,17 @@ async function handleSubmit(): Promise<void> {
     </section>
 
     <section class="auth__panel">
+      <button
+        class="auth__theme"
+        type="button"
+        :aria-label="theme.isDark ? '切换到浅色主题' : '切换到深色主题'"
+        :title="theme.isDark ? '切换到浅色主题' : '切换到深色主题'"
+        @click="theme.toggle()"
+      >
+        <el-icon :size="16">
+          <component :is="theme.isDark ? Sunny : Moon" />
+        </el-icon>
+      </button>
       <div class="auth__card">
         <div class="auth__mobile-logo">
           <span class="auth__logo-mark" aria-hidden="true">
@@ -219,17 +232,14 @@ async function handleSubmit(): Promise<void> {
   display: flex;
   align-items: center;
   overflow: hidden;
-  background: #0b0c0f;
+  background: var(--ax-brand-panel);
   border-right: 1px solid var(--ax-border-subtle);
 }
 
 .auth__aurora {
   position: absolute;
   inset: 0;
-  background:
-    radial-gradient(620px 420px at 18% 12%, rgba(94, 106, 210, 0.28), transparent 62%),
-    radial-gradient(520px 380px at 88% 82%, rgba(64, 150, 255, 0.12), transparent 66%),
-    radial-gradient(360px 300px at 70% 18%, rgba(130, 143, 255, 0.1), transparent 60%);
+  background: var(--ax-aurora);
   pointer-events: none;
 }
 
@@ -237,8 +247,8 @@ async function handleSubmit(): Promise<void> {
   position: absolute;
   inset: 0;
   background-image:
-    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+    linear-gradient(var(--ax-brand-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--ax-brand-grid) 1px, transparent 1px);
   background-size: 44px 44px;
   mask-image: radial-gradient(ellipse 90% 70% at 40% 40%, #000 30%, transparent 78%);
   pointer-events: none;
@@ -266,9 +276,9 @@ async function handleSubmit(): Promise<void> {
   justify-content: center;
   width: 34px;
   height: 34px;
-  color: #b9bdff;
+  color: var(--ax-accent-bright);
   background: var(--ax-accent-soft);
-  border: 1px solid rgba(113, 112, 255, 0.32);
+  border: 1px solid var(--ax-accent-ring);
   border-radius: var(--ax-radius-md);
   box-shadow: var(--ax-ring-inset);
 }
@@ -318,8 +328,8 @@ async function handleSubmit(): Promise<void> {
   justify-content: center;
   width: 30px;
   height: 30px;
-  color: #b9bdff;
-  background: rgba(255, 255, 255, 0.04);
+  color: var(--ax-accent-bright);
+  background: var(--ax-tint);
   border: 1px solid var(--ax-border-subtle);
   border-radius: var(--ax-radius-sm);
 }
@@ -345,10 +355,36 @@ async function handleSubmit(): Promise<void> {
 
 /* ---- Form panel ---- */
 .auth__panel {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: var(--ax-space-8) var(--ax-space-6);
+}
+
+.auth__theme {
+  position: absolute;
+  top: var(--ax-space-6);
+  right: var(--ax-space-6);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  color: var(--ax-text-3);
+  background: var(--ax-tint);
+  border: 1px solid var(--ax-border-subtle);
+  border-radius: var(--ax-radius-sm);
+  cursor: pointer;
+  transition:
+    color var(--ax-duration-fast) var(--ax-ease),
+    background-color var(--ax-duration-fast) var(--ax-ease);
+}
+
+.auth__theme:hover {
+  color: var(--ax-text);
+  background: var(--ax-tint-strong);
 }
 
 .auth__card {
@@ -400,7 +436,7 @@ async function handleSubmit(): Promise<void> {
 }
 
 .auth__switch-btn:hover {
-  color: #a5b0ff;
+  color: var(--ax-accent-hover);
 }
 
 .auth__switch-btn:focus-visible {

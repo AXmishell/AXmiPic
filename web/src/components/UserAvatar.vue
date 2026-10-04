@@ -25,9 +25,9 @@ const initial = computed(() => {
   flex: none;
   align-items: center;
   justify-content: center;
-  color: #b9bdff;
+  color: var(--ax-accent-bright);
   background: var(--ax-accent-soft);
-  border: 1px solid rgba(113, 112, 255, 0.28);
+  border: 1px solid var(--ax-accent-ring);
   border-radius: var(--ax-radius-md);
   font-weight: var(--ax-weight-semibold);
   letter-spacing: 0;

@@ -37,7 +37,7 @@ defineProps<{
   height: 44px;
   margin-bottom: var(--ax-space-4);
   color: var(--ax-text-3);
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--ax-tint);
   border: 1px solid var(--ax-border-subtle);
   border-radius: var(--ax-radius-full);
 }

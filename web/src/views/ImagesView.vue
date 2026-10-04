@@ -231,7 +231,7 @@ onMounted(load)
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--ax-tint-weak);
   border: 1px solid var(--ax-border-subtle);
   border-radius: var(--ax-radius-lg);
   transition:
@@ -240,7 +240,7 @@ onMounted(load)
 }
 
 .image-card:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--ax-tint);
   border-color: var(--ax-border);
 }
 
@@ -250,9 +250,9 @@ onMounted(load)
   aspect-ratio: 16 / 10;
   overflow: hidden;
   background:
-    linear-gradient(45deg, rgba(255, 255, 255, 0.02) 25%, transparent 25%) 0 0 / 16px 16px,
-    linear-gradient(-45deg, rgba(255, 255, 255, 0.02) 25%, transparent 25%) 0 8px / 16px 16px,
-    #0c0d0f;
+    linear-gradient(45deg, var(--ax-checker-a) 25%, transparent 25%) 0 0 / 16px 16px,
+    linear-gradient(-45deg, var(--ax-checker-a) 25%, transparent 25%) 0 8px / 16px 16px,
+    var(--ax-checker-b);
   border-bottom: 1px solid var(--ax-border-subtle);
 }
 

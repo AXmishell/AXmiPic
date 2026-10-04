@@ -16,10 +16,7 @@ body {
 
 body {
   margin: 0;
-  background:
-    radial-gradient(1100px 520px at 82% -12%, rgba(94, 106, 210, 0.1), transparent 62%),
-    radial-gradient(820px 460px at -8% -4%, rgba(113, 112, 255, 0.06), transparent 58%),
-    var(--ax-canvas);
+  background: var(--ax-atmosphere), var(--ax-canvas);
   color: var(--ax-text-2);
   font-family: var(--ax-font-sans);
   font-size: var(--ax-text-base);
@@ -69,7 +66,7 @@ button {
 /* ---- Scrollbars ---- */
 * {
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
+  scrollbar-color: var(--ax-scrollbar) transparent;
 }
 
 *::-webkit-scrollbar {
@@ -82,14 +79,14 @@ button {
 }
 
 *::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--ax-scrollbar);
   background-clip: padding-box;
   border: 2px solid transparent;
   border-radius: var(--ax-radius-full);
 }
 
 *::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--ax-scrollbar-hover);
   background-clip: padding-box;
 }
 
@@ -113,7 +110,7 @@ button {
 
 /* Card: elevated surface built from luminance step + inset ring + hairline. */
 .ax-card {
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--ax-panel);
   border: 1px solid var(--ax-border-subtle);
   border-radius: var(--ax-radius-lg);
   box-shadow: var(--ax-ring-inset);
@@ -148,7 +145,7 @@ button {
 .ax-mono {
   padding: 2px 6px;
   border-radius: var(--ax-radius-xs);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--ax-tint);
   color: var(--ax-text-2);
   font-family: var(--ax-font-mono);
   font-size: var(--ax-text-xs);

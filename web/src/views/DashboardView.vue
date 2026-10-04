@@ -290,7 +290,7 @@ onMounted(load)
   justify-content: space-between;
   gap: var(--ax-space-4);
   padding: var(--ax-space-3) var(--ax-space-4);
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--ax-tint-weak);
   border: 1px solid var(--ax-border-subtle);
   border-radius: var(--ax-radius-md);
 }

@@ -89,7 +89,7 @@ watch(
   position: fixed;
   inset: 0;
   z-index: var(--ax-z-scrim);
-  background: rgba(4, 5, 8, 0.6);
+  background: var(--ax-scrim);
 }
 
 .scrim-enter-active,

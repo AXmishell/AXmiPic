@@ -31,7 +31,7 @@ defineProps<{
   gap: var(--ax-space-2);
   min-width: 0;
   padding: var(--ax-space-5);
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--ax-tint-weak);
   border: 1px solid var(--ax-border-subtle);
   border-radius: var(--ax-radius-lg);
   box-shadow: var(--ax-ring-inset);
@@ -60,17 +60,17 @@ defineProps<{
 }
 
 .stat-card__icon--accent {
-  color: #b9bdff;
+  color: var(--ax-accent-bright);
   background: var(--ax-accent-soft);
 }
 
 .stat-card__icon--success {
-  color: #6fe08b;
+  color: var(--ax-success);
   background: var(--ax-success-soft);
 }
 
 .stat-card__icon--warning {
-  color: #e8c169;
+  color: var(--ax-warning);
   background: var(--ax-warning-soft);
 }
 

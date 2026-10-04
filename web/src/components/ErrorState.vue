@@ -29,7 +29,7 @@ defineEmits<{ (event: 'retry'): void }>()
   align-items: center;
   gap: var(--ax-space-4);
   padding: var(--ax-space-5);
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--ax-tint-weak);
   border: 1px solid var(--ax-border-subtle);
   border-radius: var(--ax-radius-lg);
 }
@@ -41,7 +41,7 @@ defineEmits<{ (event: 'retry'): void }>()
   justify-content: center;
   width: 36px;
   height: 36px;
-  color: #e8a5a1;
+  color: var(--ax-danger);
   background: var(--ax-danger-soft);
   border-radius: var(--ax-radius-full);
 }

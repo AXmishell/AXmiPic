@@ -2,14 +2,16 @@
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowDown, Setting, SwitchButton } from '@element-plus/icons-vue'
+import { ArrowDown, Moon, Setting, Sunny, SwitchButton } from '@element-plus/icons-vue'
 
 import UserAvatar from '@/components/UserAvatar.vue'
 import { useAuthStore } from '@/stores/auth'
+import { useThemeStore } from '@/stores/theme'
 
 const emit = defineEmits<{ (event: 'toggle-menu'): void }>()
 
 const auth = useAuthStore()
+const theme = useThemeStore()
 const route = useRoute()
 const router = useRouter()
 
@@ -64,6 +66,18 @@ async function handleCommand(command: string | number | object): Promise<void> {
 
     <div class="topbar__spacer" />
 
+    <button
+      class="topbar__theme"
+      type="button"
+      :aria-label="theme.isDark ? '切换到浅色主题' : '切换到深色主题'"
+      :title="theme.isDark ? '切换到浅色主题' : '切换到深色主题'"
+      @click="theme.toggle()"
+    >
+      <el-icon :size="16">
+        <component :is="theme.isDark ? Sunny : Moon" />
+      </el-icon>
+    </button>
+
     <el-dropdown trigger="click" placement="bottom-end" @command="handleCommand">
       <button class="topbar__user" type="button" aria-label="账号菜单">
         <UserAvatar :name="auth.username" size="sm" />
@@ -95,7 +109,7 @@ async function handleCommand(command: string | number | object): Promise<void> {
   min-width: 0;
   height: var(--ax-topbar-h);
   padding-inline: var(--ax-space-5);
-  background: rgba(15, 16, 17, 0.72);
+  background: var(--ax-topbar-bg);
   border-bottom: 1px solid var(--ax-border-subtle);
   backdrop-filter: blur(12px);
 }
@@ -108,7 +122,7 @@ async function handleCommand(command: string | number | object): Promise<void> {
   height: 32px;
   padding: 0;
   color: var(--ax-text-2);
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--ax-tint);
   border: 1px solid var(--ax-border-subtle);
   border-radius: var(--ax-radius-sm);
   cursor: pointer;
@@ -119,7 +133,29 @@ async function handleCommand(command: string | number | object): Promise<void> {
 
 .topbar__menu:hover {
   color: var(--ax-text);
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--ax-tint-strong);
+}
+
+.topbar__theme {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  color: var(--ax-text-3);
+  background: var(--ax-tint);
+  border: 1px solid var(--ax-border-subtle);
+  border-radius: var(--ax-radius-sm);
+  cursor: pointer;
+  transition:
+    color var(--ax-duration-fast) var(--ax-ease),
+    background-color var(--ax-duration-fast) var(--ax-ease);
+}
+
+.topbar__theme:hover {
+  color: var(--ax-text);
+  background: var(--ax-tint-strong);
 }
 
 .topbar__crumbs {
@@ -158,7 +194,7 @@ async function handleCommand(command: string | number | object): Promise<void> {
   max-width: 240px;
   padding: 4px 10px 4px 6px;
   color: var(--ax-text-2);
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--ax-tint-weak);
   border: 1px solid var(--ax-border-subtle);
   border-radius: var(--ax-radius-full);
   cursor: pointer;
@@ -168,7 +204,7 @@ async function handleCommand(command: string | number | object): Promise<void> {
 }
 
 .topbar__user:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--ax-tint-strong);
   border-color: var(--ax-border);
 }
 
