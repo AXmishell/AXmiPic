@@ -55,6 +55,7 @@ var envPaths = map[string]string{
 	"processing_max_height":       "processing.max_height",
 	"processing_default_quality":  "processing.default_quality",
 	"auth_jwt_secret":             "auth.jwt_secret",
+	"auth_encryption_key":         "auth.encryption_key",
 	"auth_session_ttl_hours":      "auth.session_ttl_hours",
 	"auth_allow_registration":     "auth.allow_registration",
 	"auth_require_auth":           "auth.require_auth",
@@ -156,7 +157,11 @@ type ProcessingConfig struct {
 
 // AuthConfig 配置账户、会话和 API 令牌。
 type AuthConfig struct {
-	JWTSecret         string `koanf:"jwt_secret"`
+	JWTSecret string `koanf:"jwt_secret"`
+	// EncryptionKey 是可选的独立主密钥，仅用于加密存储后端密钥。留空时
+	// 回退使用 jwt_secret；两者都留空时会生成并持久化一个密钥文件，从而
+	// 保证重启后仍能解密，避免存储后端配置失效。
+	EncryptionKey     string `koanf:"encryption_key"`
 	SessionTTLHours   int    `koanf:"session_ttl_hours"`
 	AllowRegistration bool   `koanf:"allow_registration"`
 	RequireAuth       bool   `koanf:"require_auth"`

@@ -5,11 +5,14 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -54,13 +57,17 @@ func run() error {
 		}
 	}()
 
-	jwtKey, err := jwtSecret(cfg.Auth.JWTSecret, logger)
+	jwtKey, err := sessionSecret(cfg, logger)
 	if err != nil {
 		return err
 	}
 
 	manager := storage.NewManager()
-	cipher, err := secret.New(jwtKey)
+	cipherKey, err := cipherSecret(cfg, logger, jwtKey)
+	if err != nil {
+		return err
+	}
+	cipher, err := secret.New(cipherKey)
 	if err != nil {
 		return err
 	}
@@ -96,6 +103,7 @@ func run() error {
 	issuer := auth.NewSessionIssuer(jwtKey, time.Duration(cfg.Auth.SessionTTLHours)*time.Hour)
 	accounts := service.NewAccountService(repo, issuer, cfg.Auth.AllowRegistration, int64(cfg.Auth.DefaultQuotaMB)<<20)
 	adminSvc := service.NewAdminService(repo, cfg.Storage.Driver, processor)
+	albumSvc := service.NewAlbumService(repo)
 
 	bootstrapCtx, cancelBootstrap = context.WithTimeout(context.Background(), 30*time.Second)
 	err = accounts.EnsureBootstrapAdmin(bootstrapCtx, cfg.Auth.BootstrapAdmin)
@@ -109,6 +117,7 @@ func run() error {
 		Imaging:       imagingSvc,
 		Accounts:      accounts,
 		Admin:         adminSvc,
+		Albums:        albumSvc,
 		Storage:       storageSvc,
 		Authenticator: auth.NewAuthenticator(repo, issuer),
 		UploadLimiter: &auth.UploadLimiter{
@@ -132,18 +141,69 @@ func run() error {
 	return srv.Run(ctx)
 }
 
-// jwtSecret 返回配置的会话密钥，当未配置时生成一个随机密钥（并发出警告）。
-// 随机密钥会使会话在重启后失效，不适用于多实例部署。
-func jwtSecret(configured string, logger *slog.Logger) ([]byte, error) {
-	if configured != "" {
-		return []byte(configured), nil
+// sessionSecret 返回会话 JWT 的签名密钥。优先使用配置的 auth.jwt_secret；
+// 未配置时读取或生成一个持久化密钥，使会话在重启后依然有效。
+func sessionSecret(cfg config.Config, logger *slog.Logger) ([]byte, error) {
+	if key := strings.TrimSpace(cfg.Auth.JWTSecret); key != "" {
+		return []byte(key), nil
 	}
+	return persistedSecret(cfg, logger)
+}
+
+// cipherSecret 返回加密存储后端密钥所用的主密钥。优先使用独立的
+// auth.encryption_key，其次回退到会话密钥（保持对既有部署的兼容）。
+func cipherSecret(cfg config.Config, logger *slog.Logger, sessionKey []byte) ([]byte, error) {
+	if key := strings.TrimSpace(cfg.Auth.EncryptionKey); key != "" {
+		return []byte(key), nil
+	}
+	return sessionKey, nil
+}
+
+// persistedSecret 从磁盘读取一个稳定的自动生成主密钥；不存在时生成并写入。
+// 它仅在 auth.jwt_secret 留空时使用，目的是避免每次重启都更换加密主密钥而
+// 导致已加密入库的存储密钥无法解密。
+func persistedSecret(cfg config.Config, logger *slog.Logger) ([]byte, error) {
+	path := secretKeyPath(cfg)
+	data, err := os.ReadFile(path)
+	switch {
+	case err == nil:
+		if key := strings.TrimSpace(string(data)); key != "" {
+			return []byte(key), nil
+		}
+	case !errors.Is(err, os.ErrNotExist):
+		return nil, fmt.Errorf("main: read secret key %q: %w", path, err)
+	}
+
 	buf := make([]byte, 32)
 	if _, err := rand.Read(buf); err != nil {
-		return nil, fmt.Errorf("main: generate jwt secret: %w", err)
+		return nil, fmt.Errorf("main: generate secret key: %w", err)
 	}
-	logger.Warn("auth.jwt_secret is empty; generated a random secret (sessions will not survive restart)")
-	return []byte(base64.RawURLEncoding.EncodeToString(buf)), nil
+	key := base64.RawURLEncoding.EncodeToString(buf)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return nil, fmt.Errorf("main: create secret key directory for %q: %w", path, err)
+	}
+	if err := os.WriteFile(path, []byte(key), 0o600); err != nil {
+		return nil, fmt.Errorf("main: persist secret key %q: %w", path, err)
+	}
+	logger.Warn("auth.jwt_secret is empty; generated and persisted a secret key",
+		slog.String("path", path),
+		slog.String("hint", "set auth.jwt_secret or auth.encryption_key for multi-instance deployments"),
+	)
+	return []byte(key), nil
+}
+
+// secretKeyPath 返回自动生成主密钥的落盘位置：SQLite 场景放在数据库同目录，
+// 否则放在 ./data 下。
+func secretKeyPath(cfg config.Config) string {
+	dir := "data"
+	dsn := strings.TrimSpace(cfg.Database.DSN)
+	driver := strings.ToLower(strings.TrimSpace(cfg.Database.Driver))
+	if (driver == "" || driver == "sqlite") && dsn != "" && dsn != ":memory:" && !strings.HasPrefix(dsn, "file:") {
+		if d := filepath.Dir(dsn); d != "" {
+			dir = d
+		}
+	}
+	return filepath.Join(dir, ".axmipic-key")
 }
 
 // processingFormats 将配置的格式名称转换为 imaging 格式，跳过未知名称

@@ -9,4 +9,8 @@
 # Local configuration may contain secrets (DB password, jwt_secret).
 configs/config.yaml
 
+# Auto-generated master key (when jwt_secret/encryption_key are unset).
+.axmipic-key
+**/.axmipic-key
+
 .codegraph/
