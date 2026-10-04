@@ -3,6 +3,8 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+
+	"github.com/AXmishell/axmipic/internal/imaging"
 )
 
 type notifyTestRequest struct {
@@ -49,4 +51,18 @@ func (h *Handler) adminSecurityInfo(w http.ResponseWriter, r *http.Request) {
 		info["scanner"] = h.svc.ScannerName()
 	}
 	writeOK(w, info)
+}
+
+// adminImagingDrivers 返回当前二进制可用的图片处理驱动。
+func (h *Handler) adminImagingDrivers(w http.ResponseWriter, r *http.Request) {
+	drivers := imaging.AvailableDrivers()
+	names := make([]string, 0, len(drivers))
+	for _, d := range drivers {
+		names = append(names, string(d))
+	}
+	active := ""
+	if h.imaging != nil {
+		active = h.imaging.Capabilities().Name
+	}
+	writeOK(w, map[string]any{"available": names, "active": active})
 }

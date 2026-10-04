@@ -51,6 +51,7 @@ var envPaths = map[string]string{
 	"qiniu_presign_expiry_sec":    "storage.qiniu.presign_expiry_sec",
 	"upload_max_size_mb":          "upload.max_size_mb",
 	"processing_enabled":          "processing.enabled",
+	"processing_driver":           "processing.driver",
 	"processing_max_width":        "processing.max_width",
 	"processing_max_height":       "processing.max_height",
 	"processing_default_quality":  "processing.default_quality",
@@ -182,6 +183,8 @@ type UploadConfig struct {
 
 // ProcessingConfig 配置即时图像变换。
 type ProcessingConfig struct {
+	// Driver 选择处理器：purego（默认）/ libvips / magick。不可用时回退默认。
+	Driver         string   `koanf:"driver"`
 	Enabled        bool     `koanf:"enabled"`
 	MaxWidth       int      `koanf:"max_width"`
 	MaxHeight      int      `koanf:"max_height"`
@@ -315,6 +318,7 @@ func defaultConfig() Config {
 			AllowedMIMETypes: []string{"image/jpeg", "image/png", "image/gif", "image/webp"},
 		},
 		Processing: ProcessingConfig{
+			Driver:         "purego",
 			Enabled:        true,
 			MaxWidth:       4096,
 			MaxHeight:      4096,
@@ -443,6 +447,11 @@ func (c Config) validate() error {
 				return fmt.Errorf("config: processing.allowed_formats contains unknown format %q", name)
 			}
 		}
+	}
+	switch strings.ToLower(strings.TrimSpace(c.Processing.Driver)) {
+	case "", "purego", "libvips", "magick":
+	default:
+		return fmt.Errorf("config: processing.driver %q is not supported", c.Processing.Driver)
 	}
 	if c.Auth.SessionTTLHours < 1 {
 		return fmt.Errorf("config: auth.session_ttl_hours must be at least 1")

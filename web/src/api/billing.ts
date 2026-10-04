@@ -117,3 +117,11 @@ export function sendTestNotify(payload: {
 export function getSecurityInfo(): Promise<{ scanner?: string }> {
   return request<{ scanner?: string }>({ method: 'GET', url: '/admin/security' })
 }
+
+/** 管理端：可用的图片处理驱动。 */
+export function getImagingDrivers(): Promise<{ available: string[]; active: string }> {
+  return request<{ available: string[]; active: string }>({
+    method: 'GET',
+    url: '/admin/imaging/drivers',
+  })
+}

@@ -25,6 +25,11 @@ func Default() Processor {
 	return bimgProcessor{}
 }
 
+// init 注册 libvips 驱动。
+func init() {
+	register(DriverLibVips, func() (Processor, error) { return bimgProcessor{}, nil })
+}
+
 // Capabilities 报告 libvips 处理器的能力。
 func (bimgProcessor) Capabilities() Capabilities {
 	return Capabilities{

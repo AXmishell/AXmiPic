@@ -6,7 +6,7 @@ import { Key, Refresh, SwitchButton } from '@element-plus/icons-vue'
 
 import { fetchStats } from '@/api/admin'
 import { toApiError } from '@/api/client'
-import { getNotifyChannels, getSecurityInfo, sendTestNotify } from '@/api/billing'
+import { getImagingDrivers, getNotifyChannels, getSecurityInfo, sendTestNotify } from '@/api/billing'
 import type { AdminStats } from '@/api/types'
 import ErrorState from '@/components/ErrorState.vue'
 import PageHeader from '@/components/PageHeader.vue'
@@ -55,6 +55,7 @@ async function load(): Promise<void> {
 // 系统集成：通知渠道与安全扫描器。
 const channels = ref<{ sms: string; email: string }>({ sms: '', email: '' })
 const scannerName = ref('')
+const drivers = ref<{ available: string[]; active: string }>({ available: [], active: '' })
 const testChannel = ref<'sms' | 'email'>('sms')
 const testTo = ref('')
 const testBody = ref('')
@@ -62,9 +63,14 @@ const testing = ref(false)
 
 async function loadIntegrations(): Promise<void> {
   try {
-    const [ch, sec] = await Promise.all([getNotifyChannels(), getSecurityInfo()])
+    const [ch, sec, drv] = await Promise.all([
+      getNotifyChannels(),
+      getSecurityInfo(),
+      getImagingDrivers(),
+    ])
     channels.value = ch ?? { sms: '', email: '' }
     scannerName.value = sec?.scanner ?? ''
+    drivers.value = drv ?? { available: [], active: '' }
   } catch {
     // 集成信息加载失败不影响其他设置项。
   }
@@ -269,6 +275,10 @@ onMounted(load)
             <div class="info-list__row">
               <dt>内容扫描器</dt>
               <dd>{{ scannerName || '未配置' }}</dd>
+            </div>
+            <div class="info-list__row">
+              <dt>处理驱动</dt>
+              <dd>{{ drivers.active || '—' }}<span class="ax-muted">（可用：{{ drivers.available.join('、') || '—' }}）</span></dd>
             </div>
           </dl>
           <el-divider content-position="left">发送测试通知</el-divider>

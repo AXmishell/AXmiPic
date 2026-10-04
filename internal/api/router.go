@@ -219,6 +219,7 @@ func NewRouter(d Deps) http.Handler {
 				r.Get("/admin/notify/channels", h.adminNotifyChannels)
 				r.Post("/admin/notify/test", h.adminTestNotify)
 				r.Get("/admin/security", h.adminSecurityInfo)
+				r.Get("/admin/imaging/drivers", h.adminImagingDrivers)
 			})
 		})
 	})

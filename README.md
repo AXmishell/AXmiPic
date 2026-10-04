@@ -16,6 +16,7 @@
 - **工单系统**：用户提交工单并对接客服，管理员回复与关闭
 - **内容寻址与去重**：按内容 `sha256` 生成存储文件名并入库，相同内容自动去重
 - **保留原始文件名**：存储层使用重命名（哈希命名）后的文件，数据库中单独记录原文件名、存储文件名与哈希值
+- **多图片处理驱动**：纯 Go（默认）、libvips（`-tags libvips`）与 ImageMagick（`magick` 命令）三种处理器，运行时按配置选择并在不可用时回退
 - **即时图片处理**：通过 URL 查询参数实时缩放、裁剪、旋转、翻转、转灰度、模糊、锐化、文字水印与转码，带 ETag 缓存
 - **多存储后端**：本地文件系统、S3 兼容对象存储（AWS S3 / MinIO / Cloudflare R2 / 阿里云 OSS / 腾讯云 COS）、七牛云 Kodo
 - **运行中热切换存储**：后台可随时切换默认存储；已有图片按记录自动路由回其原存储读取，无需重启
@@ -523,6 +524,18 @@ pnpm build      # 构建到 ../internal/webui/dist（供 Go 内嵌）
 ```bash
 go build -tags libvips -o bin/axmipic ./cmd/axmipic
 ```
+
+### 图片处理驱动
+
+`processing.driver` 选择运行时使用的处理器，未知或不可用的驱动会在启动时回退到 `purego`：
+
+| 驱动 | 说明 | 依赖 |
+|------|------|------|
+| `purego` | 纯 Go（默认），支持 JPEG/PNG/GIF 输出 | 无 |
+| `libvips` | libvips/bimg，额外支持 WebP/AVIF 与更高性能 | `-tags libvips` + CGO + libvips |
+| `magick` | ImageMagick 命令行，额外支持 WebP/AVIF | 系统安装 `magick` 或 `convert` |
+
+`GET /api/v1/admin/imaging/drivers` 返回当前二进制可用的驱动与正在使用的处理器。
 
 ## 持续集成
 

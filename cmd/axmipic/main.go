@@ -89,10 +89,14 @@ func run() error {
 		PresignExpiry:    storagePresignExpiry(cfg),
 	})
 
-	processor := imaging.Default()
+	processor, processorName, err := imaging.ResolveWithFallback(cfg.Processing.Driver)
+	if err != nil {
+		return err
+	}
 	capabilities := processor.Capabilities()
 	logger.Info("imaging processor ready",
-		slog.String("processor", capabilities.Name),
+		slog.String("requested_driver", cfg.Processing.Driver),
+		slog.String("processor", processorName),
 		slog.Any("formats", capabilities.OutputFormats),
 	)
 	imagingSvc := service.NewImagingService(manager, processor, service.ProcessingPolicy{

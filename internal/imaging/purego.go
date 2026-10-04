@@ -28,6 +28,11 @@ func Default() Processor {
 	return pureGoProcessor{}
 }
 
+// init 注册纯 Go 驱动。
+func init() {
+	register(DriverPureGo, func() (Processor, error) { return pureGoProcessor{}, nil })
+}
+
 // Capabilities 报告纯 Go 处理器的能力。
 func (pureGoProcessor) Capabilities() Capabilities {
 	return Capabilities{

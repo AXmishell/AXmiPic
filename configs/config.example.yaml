@@ -55,6 +55,10 @@ upload:
     - "image/webp"
 
 processing:
+  # Image processing driver: purego | libvips | magick. libvips requires a
+  # -tags libvips (CGO) build; magick uses the ImageMagick CLI. Unknown or
+  # unavailable drivers fall back to purego at startup.
+  driver: "purego"
   enabled: true
   max_width: 4096
   max_height: 4096
