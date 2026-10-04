@@ -110,3 +110,77 @@ func TestProcessRejectsInvalidInput(t *testing.T) {
 		t.Fatalf("error = %v, want ErrDecode", err)
 	}
 }
+
+func TestProcessGrayscaleAndFlip(t *testing.T) {
+	processor := imaging.Default()
+	result, err := processor.Process(testPNG(t, 6, 4), imaging.Options{
+		Fit: imaging.FitContain, Quality: 82, Format: imaging.FormatPNG,
+		StripMetadata: true, Grayscale: true, Flip: "h",
+	})
+	if err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+	if result.Width != 6 || result.Height != 4 {
+		t.Fatalf("result = %dx%d, want 6x4", result.Width, result.Height)
+	}
+}
+
+func TestProcessBlurSharpen(t *testing.T) {
+	processor := imaging.Default()
+	if _, err := processor.Process(testPNG(t, 8, 8), imaging.Options{
+		Fit: imaging.FitContain, Quality: 82, Format: imaging.FormatPNG,
+		StripMetadata: true, Blur: 2, Sharpen: 1,
+	}); err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+}
+
+func TestProcessFillStretch(t *testing.T) {
+	processor := imaging.Default()
+	result, err := processor.Process(testPNG(t, 8, 4), imaging.Options{
+		Width: 4, Height: 8, Fit: imaging.FitFill, Quality: 82, Format: imaging.FormatPNG, StripMetadata: true,
+	})
+	if err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+	if result.Width != 4 || result.Height != 8 {
+		t.Fatalf("result = %dx%d, want 4x8", result.Width, result.Height)
+	}
+}
+
+func TestProcessWatermark(t *testing.T) {
+	processor := imaging.Default()
+	result, err := processor.Process(testPNG(t, 64, 64), imaging.Options{
+		Fit: imaging.FitContain, Quality: 82, Format: imaging.FormatPNG, StripMetadata: true,
+		Watermark: &imaging.Watermark{Text: "AXmiPic", Position: "bottom-right", Opacity: 70},
+	})
+	if err != nil {
+		t.Fatalf("Process: %v", err)
+	}
+	if len(result.Data) == 0 {
+		t.Fatal("empty output")
+	}
+}
+
+func TestProcessRejectsEmptyWatermark(t *testing.T) {
+	processor := imaging.Default()
+	_, err := processor.Process(testPNG(t, 8, 8), imaging.Options{
+		Fit: imaging.FitContain, Quality: 80, Format: imaging.FormatPNG, StripMetadata: true,
+		Watermark: &imaging.Watermark{Text: "   "},
+	})
+	if !errors.Is(err, imaging.ErrInvalidOptions) {
+		t.Fatalf("error = %v, want ErrInvalidOptions", err)
+	}
+}
+
+func TestParseFlipAndFill(t *testing.T) {
+	if f, ok := imaging.ParseFit("stretch"); !ok || f != imaging.FitFill {
+		t.Fatalf("ParseFit(stretch) = %q, %v", f, ok)
+	}
+	if v, ok := imaging.ParseFlip("both"); !ok || v != "hv" {
+		t.Fatalf("ParseFlip(both) = %q, %v", v, ok)
+	}
+	if _, ok := imaging.ParseFlip("diagonal"); ok {
+		t.Fatalf("ParseFlip(diagonal) should fail")
+	}
+}

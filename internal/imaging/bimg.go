@@ -56,6 +56,7 @@ func (bimgProcessor) Process(src []byte, opts Options) (Result, error) {
 		Enlarge:       opts.Enlarge,
 		Quality:       opts.Quality,
 		StripMetadata: opts.StripMetadata,
+		Force:         opts.Fit == FitFill,
 	}
 	if opts.Format != "" {
 		options.Type = bimgType(opts.Format)
@@ -67,6 +68,32 @@ func (bimgProcessor) Process(src []byte, opts Options) (Result, error) {
 		options.Rotate = bimg.D180
 	case 270:
 		options.Rotate = bimg.D270
+	}
+	switch opts.Flip {
+	case "h":
+		options.Flip = true
+	case "v":
+		options.Flop = true
+	case "hv":
+		options.Flip = true
+		options.Flop = true
+	}
+	if opts.Grayscale {
+		options.Interpretation = bimg.InterpretationBW
+	}
+	if opts.Blur > 0 {
+		options.GaussianBlur = bimg.GaussianBlur{Sigma: opts.Blur}
+	}
+	if opts.Sharpen > 0 {
+		options.Sharpen = bimg.Sharpen{Sigma: opts.Sharpen}
+	}
+	if opts.Watermark != nil {
+		options.Watermark = bimg.Watermark{
+			Text:       opts.Watermark.Text,
+			Opacity:    float64(effectiveOpacity(opts.Watermark.Opacity)) / 100,
+			Font:       "sans " + bimgWatermarkFontSize(opts.Watermark.Size),
+			Background: bimg.WatermarkBackground{Colour: bimgWatermarkColor(opts.Watermark.Color)},
+		}
 	}
 
 	data, err := bimg.NewImage(src).Process(options)
@@ -88,6 +115,51 @@ func (bimgProcessor) Process(src []byte, opts Options) (Result, error) {
 		Height:      meta.Size.Height,
 		Format:      outFormat,
 	}, nil
+}
+
+// effectiveOpacity 把水印不透明度收敛到默认的 80。
+func effectiveOpacity(opacity int) int {
+	if opacity <= 0 {
+		return 80
+	}
+	if opacity > 100 {
+		return 100
+	}
+	return opacity
+}
+
+// bimgWatermarkFontSize 返回 libvips 期望的字号字符串。
+func bimgWatermarkFontSize(size int) string {
+	if size <= 0 {
+		return "48"
+	}
+	return itoa(size)
+}
+
+// bimgWatermarkColor 返回 libvips 期望的十六进制颜色。
+func bimgWatermarkColor(value string) string {
+	if value == "" {
+		return "#ffffff"
+	}
+	if value[0] == '#' {
+		return value
+	}
+	return "#" + value
+}
+
+// itoa 是 strconv.Itoa 的轻量替代，避免再引入一个 import。
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	var buf [20]byte
+	i := len(buf)
+	for n > 0 {
+		i--
+		buf[i] = byte('0' + n%10)
+		n /= 10
+	}
+	return string(buf[i:])
 }
 
 func bimgType(f Format) bimg.ImageType {

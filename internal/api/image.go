@@ -253,9 +253,29 @@ func parseTransformQuery(query url.Values) (service.TransformRequest, error) {
 	if req.Rotate, err = queryIntStrict(query, "r"); err != nil {
 		return req, err
 	}
+	if req.WatermarkOpacity, err = queryIntStrict(query, "wm_opacity"); err != nil {
+		return req, err
+	}
+	if req.WatermarkSize, err = queryIntStrict(query, "wm_size"); err != nil {
+		return req, err
+	}
+	if req.Blur, err = queryFloatStrict(query, "blur"); err != nil {
+		return req, err
+	}
+	if req.Sharpen, err = queryFloatStrict(query, "sharpen"); err != nil {
+		return req, err
+	}
 	req.Fit = query.Get("fit")
 	req.Format = query.Get("f")
 	req.Enlarge = parseBool(query.Get("enlarge"))
+	req.Flip = query.Get("flip")
+	req.Grayscale = parseBool(query.Get("gray"))
+	if req.Grayscale == false {
+		req.Grayscale = parseBool(query.Get("grayscale"))
+	}
+	req.WatermarkText = query.Get("wm")
+	req.WatermarkPosition = query.Get("wm_pos")
+	req.WatermarkColor = query.Get("wm_color")
 	return req, nil
 }
 
@@ -265,6 +285,18 @@ func queryIntStrict(query url.Values, name string) (int, error) {
 		return 0, nil
 	}
 	value, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, fmt.Errorf("invalid %q query parameter", name)
+	}
+	return value, nil
+}
+
+func queryFloatStrict(query url.Values, name string) (float64, error) {
+	raw := query.Get(name)
+	if raw == "" {
+		return 0, nil
+	}
+	value, err := strconv.ParseFloat(raw, 64)
 	if err != nil {
 		return 0, fmt.Errorf("invalid %q query parameter", name)
 	}

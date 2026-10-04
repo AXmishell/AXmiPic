@@ -40,7 +40,22 @@ const (
 	FitContain Fit = "contain"
 	// FitCover 缩放并裁剪图像，使其恰好填满尺寸框。
 	FitCover Fit = "cover"
+	// FitFill 拉伸图像以恰好填满尺寸框（不保持宽高比）。
+	FitFill Fit = "fill"
 )
+
+// Watermark 描述一个文字水印。
+type Watermark struct {
+	Text string
+	// Position 为水印位置：top-left、top-right、bottom-left、bottom-right、center。
+	Position string
+	// Opacity 为不透明度（0-100）。
+	Opacity int
+	// Size 为字号（像素）；为 0 时按图像尺寸自适应。
+	Size int
+	// Color 为十六进制颜色，例如 #ffffff。
+	Color string
+}
 
 // Options 描述一次变换请求。
 type Options struct {
@@ -52,6 +67,16 @@ type Options struct {
 	StripMetadata bool
 	Enlarge       bool
 	Rotate        int
+	// Flip 为翻转方式：h（水平）、v（垂直）、hv（同时）。
+	Flip string
+	// Grayscale 为 true 时转为灰度。
+	Grayscale bool
+	// Blur 为高斯模糊半径；0 表示不模糊。
+	Blur float64
+	// Sharpen 为锐化强度；0 表示不锐化。
+	Sharpen float64
+	// Watermark 非空时叠加文字水印。
+	Watermark *Watermark
 }
 
 // Result 是处理后的图像。
@@ -112,6 +137,24 @@ func ParseFit(name string) (Fit, bool) {
 		return FitContain, true
 	case "cover", "crop":
 		return FitCover, true
+	case "fill", "stretch":
+		return FitFill, true
+	default:
+		return "", false
+	}
+}
+
+// ParseFlip 将翻转名称映射为规范化的 Flip 值；空值返回空字符串。
+func ParseFlip(name string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "":
+		return "", true
+	case "h", "horizontal":
+		return "h", true
+	case "v", "vertical":
+		return "v", true
+	case "hv", "vh", "both":
+		return "hv", true
 	default:
 		return "", false
 	}
@@ -141,12 +184,12 @@ func validateOptions(opts Options) error {
 		return fmt.Errorf("%w: negative dimension", ErrInvalidOptions)
 	}
 	switch opts.Fit {
-	case "", FitContain, FitCover:
+	case "", FitContain, FitCover, FitFill:
 	default:
 		return fmt.Errorf("%w: unknown fit %q", ErrInvalidOptions, opts.Fit)
 	}
-	if opts.Fit == FitCover && (opts.Width <= 0 || opts.Height <= 0) {
-		return fmt.Errorf("%w: cover requires both width and height", ErrInvalidOptions)
+	if (opts.Fit == FitCover || opts.Fit == FitFill) && (opts.Width <= 0 || opts.Height <= 0) {
+		return fmt.Errorf("%w: %s requires both width and height", ErrInvalidOptions, opts.Fit)
 	}
 	if opts.Quality < 1 || opts.Quality > 100 {
 		return fmt.Errorf("%w: quality %d out of range", ErrInvalidOptions, opts.Quality)
@@ -155,6 +198,25 @@ func validateOptions(opts Options) error {
 	case 0, 90, 180, 270:
 	default:
 		return fmt.Errorf("%w: rotate %d is not supported", ErrInvalidOptions, opts.Rotate)
+	}
+	switch opts.Flip {
+	case "", "h", "v", "hv":
+	default:
+		return fmt.Errorf("%w: unknown flip %q", ErrInvalidOptions, opts.Flip)
+	}
+	if opts.Blur < 0 || opts.Blur > 100 {
+		return fmt.Errorf("%w: blur radius out of range", ErrInvalidOptions)
+	}
+	if opts.Sharpen < 0 || opts.Sharpen > 100 {
+		return fmt.Errorf("%w: sharpen amount out of range", ErrInvalidOptions)
+	}
+	if opts.Watermark != nil {
+		if strings.TrimSpace(opts.Watermark.Text) == "" {
+			return fmt.Errorf("%w: watermark text is empty", ErrInvalidOptions)
+		}
+		if len([]rune(opts.Watermark.Text)) > 200 {
+			return fmt.Errorf("%w: watermark text is too long", ErrInvalidOptions)
+		}
 	}
 	return nil
 }

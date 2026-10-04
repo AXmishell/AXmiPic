@@ -54,6 +54,10 @@ var envPaths = map[string]string{
 	"processing_max_width":        "processing.max_width",
 	"processing_max_height":       "processing.max_height",
 	"processing_default_quality":  "processing.default_quality",
+	"processing_allow_enlarge":    "processing.allow_enlarge",
+	"processing_allow_effects":    "processing.allow_effects",
+	"processing_allow_watermark":  "processing.allow_watermark",
+	"processing_watermark_text":   "processing.watermark_text",
 	"auth_jwt_secret":             "auth.jwt_secret",
 	"auth_encryption_key":         "auth.encryption_key",
 	"auth_session_ttl_hours":      "auth.session_ttl_hours",
@@ -167,6 +171,14 @@ type ProcessingConfig struct {
 	MaxHeight      int      `koanf:"max_height"`
 	DefaultQuality int      `koanf:"default_quality"`
 	AllowedFormats []string `koanf:"allowed_formats"`
+	// AllowEnlarge 允许放大图像；默认 false。
+	AllowEnlarge bool `koanf:"allow_enlarge"`
+	// AllowEffects 允许灰度/模糊/锐化等滤镜；默认 true。
+	AllowEffects bool `koanf:"allow_effects"`
+	// AllowWatermark 允许通过 URL 叠加文字水印；默认 true。
+	AllowWatermark bool `koanf:"allow_watermark"`
+	// WatermarkText 为强制水印文字；非空时所有变换结果都会叠加。
+	WatermarkText string `koanf:"watermark_text"`
 }
 
 // AuthConfig 配置账户、会话和 API 令牌。
@@ -263,6 +275,9 @@ func defaultConfig() Config {
 			MaxHeight:      4096,
 			DefaultQuality: 82,
 			AllowedFormats: []string{"jpeg", "png", "gif", "webp", "avif"},
+			AllowEnlarge:   false,
+			AllowEffects:   true,
+			AllowWatermark: true,
 		},
 		Auth: AuthConfig{
 			SessionTTLHours:   24,

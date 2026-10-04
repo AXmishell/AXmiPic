@@ -99,6 +99,10 @@ func run() error {
 		MaxHeight:      cfg.Processing.MaxHeight,
 		DefaultQuality: cfg.Processing.DefaultQuality,
 		AllowedFormats: processingFormats(cfg.Processing.AllowedFormats),
+		AllowEnlarge:   cfg.Processing.AllowEnlarge,
+		AllowEffects:   cfg.Processing.AllowEffects,
+		AllowWatermark: cfg.Processing.AllowWatermark,
+		WatermarkText:  cfg.Processing.WatermarkText,
 	})
 
 	issuer := auth.NewSessionIssuer(jwtKey, time.Duration(cfg.Auth.SessionTTLHours)*time.Hour)

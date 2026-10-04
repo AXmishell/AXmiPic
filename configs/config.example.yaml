@@ -65,6 +65,14 @@ processing:
     - "gif"
     - "webp"
     - "avif"
+  # Allow enlarging beyond the source size (default false).
+  allow_enlarge: false
+  # Allow grayscale / blur / sharpen filters.
+  allow_effects: true
+  # Allow text watermarks requested via URL.
+  allow_watermark: true
+  # When non-empty, this watermark is always applied.
+  watermark_text: ""
 
 auth:
   # Leave empty to auto-generate a persisted secret on first run (stored next

@@ -62,6 +62,54 @@ export function renameImage(id: string, name: string): Promise<ImageItem> {
   return request<ImageItem>({ method: 'PATCH', url: `/images/${id}`, data: { name } })
 }
 
+/** 即时图片处理的参数。 */
+export interface TransformParams {
+  width?: number
+  height?: number
+  fit?: 'contain' | 'cover' | 'fill'
+  quality?: number
+  format?: string
+  rotate?: 0 | 90 | 180 | 270
+  flip?: '' | 'h' | 'v' | 'hv'
+  grayscale?: boolean
+  blur?: number
+  sharpen?: number
+  enlarge?: boolean
+  watermark?: string
+  watermarkPosition?: string
+  watermarkOpacity?: number
+  watermarkSize?: number
+  watermarkColor?: string
+}
+
+/**
+ * 在图片 URL 上附加即时处理参数。后端 `/i/*` 接口会按查询串实时变换并缓存。
+ */
+export function transformUrl(baseUrl: string, params: TransformParams): string {
+  const query = new URLSearchParams()
+  if (params.width) query.set('w', String(params.width))
+  if (params.height) query.set('h', String(params.height))
+  if (params.fit && params.fit !== 'contain') query.set('fit', params.fit)
+  if (params.quality) query.set('q', String(params.quality))
+  if (params.format) query.set('f', params.format)
+  if (params.rotate) query.set('r', String(params.rotate))
+  if (params.flip) query.set('flip', params.flip)
+  if (params.grayscale) query.set('gray', '1')
+  if (params.blur) query.set('blur', String(params.blur))
+  if (params.sharpen) query.set('sharpen', String(params.sharpen))
+  if (params.enlarge) query.set('enlarge', '1')
+  if (params.watermark) {
+    query.set('wm', params.watermark)
+    if (params.watermarkPosition) query.set('wm_pos', params.watermarkPosition)
+    if (params.watermarkOpacity) query.set('wm_opacity', String(params.watermarkOpacity))
+    if (params.watermarkSize) query.set('wm_size', String(params.watermarkSize))
+    if (params.watermarkColor) query.set('wm_color', params.watermarkColor)
+  }
+  const suffix = query.toString()
+  if (!suffix) return baseUrl
+  return baseUrl.includes('?') ? `${baseUrl}&${suffix}` : `${baseUrl}?${suffix}`
+}
+
 export function deleteImage(id: string): Promise<void> {
   return request<void>({ method: 'DELETE', url: `/images/${id}` })
 }

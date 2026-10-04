@@ -47,6 +47,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '图片管理' },
       },
       {
+        path: 'processing',
+        name: 'processing',
+        component: () => import('@/views/ProcessingView.vue'),
+        meta: { title: '图片处理' },
+      },
+      {
         path: 'albums',
         name: 'albums',
         component: () => import('@/views/AlbumsView.vue'),

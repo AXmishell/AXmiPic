@@ -14,7 +14,7 @@
 - **工单系统**：用户提交工单并对接客服，管理员回复与关闭
 - **内容寻址与去重**：按内容 `sha256` 生成存储文件名并入库，相同内容自动去重
 - **保留原始文件名**：存储层使用重命名（哈希命名）后的文件，数据库中单独记录原文件名、存储文件名与哈希值
-- **即时图片处理**：通过 URL 查询参数实时缩放、裁剪、旋转、转码，带 ETag 缓存
+- **即时图片处理**：通过 URL 查询参数实时缩放、裁剪、旋转、翻转、转灰度、模糊、锐化、文字水印与转码，带 ETag 缓存
 - **多存储后端**：本地文件系统、S3 兼容对象存储（AWS S3 / MinIO / Cloudflare R2 / 阿里云 OSS / 腾讯云 COS）、七牛云 Kodo
 - **运行中热切换存储**：后台可随时切换默认存储；已有图片按记录自动路由回其原存储读取，无需重启
 - **数据库可选**：SQLite（默认，开箱即用）或 PostgreSQL
@@ -194,13 +194,39 @@ http://localhost:8080/i/16/30/163053…bce4.png?w=400&h=300&fit=cover&f=webp&q=8
 |------|------|------|
 | `w` | 目标宽度 | 像素 |
 | `h` | 目标高度 | 像素 |
-| `fit` | 缩放策略 | `contain`（默认，等比缩放）/ `cover`（裁剪填充，需同时给出 `w`、`h`） |
+| `fit` | 缩放策略 | `contain`（默认，等比缩放）/ `cover`（裁剪填充）/ `fill`（拉伸填充，`cover`/`fill` 均需同时给出 `w`、`h`） |
 | `q` | 输出质量 | 1–100，缺省用 `processing.default_quality` |
 | `f` | 输出格式 | `jpeg`/`png`/`gif`/`webp`/`avif`（受 `processing.allowed_formats` 与处理器能力限制） |
 | `r` | 旋转角度 | `90`/`180`/`270` |
+| `flip` | 翻转 | `h`（水平）/`v`（垂直）/`hv`（同时） |
+| `gray` | 转灰度 | `1`/`true` |
+| `blur` | 高斯模糊半径 | 0–100 |
+| `sharpen` | 锐化强度 | 0–100 |
+| `wm` | 文字水印内容 | 任意文本（最长 200 字符） |
+| `wm_pos` | 水印位置 | `top-left`/`top-right`/`bottom-left`/`bottom-right`/`center` |
+| `wm_opacity` | 水印不透明度 | 0–100（默认 80） |
+| `wm_size` | 水印字号 | 像素，0 表示自适应 |
+| `wm_color` | 水印颜色 | 十六进制，如 `#ffffff` |
 | `enlarge` | 是否允许放大 | `1`/`true`/`yes`/`on` |
 
 带处理参数的响应会附带 `ETag`，支持 `If-None-Match` 返回 `304`。
+
+`processing` 配置提供开关与默认值：
+
+```yaml
+processing:
+  enabled: true
+  max_width: 4096
+  max_height: 4096
+  default_quality: 82
+  allowed_formats: ["jpeg", "png", "gif", "webp", "avif"]
+  allow_enlarge: false      # 是否允许放大
+  allow_effects: true       # 是否允许灰度/模糊/锐化
+  allow_watermark: true     # 是否允许通过 URL 加水印
+  watermark_text: ""        # 非空时为所有变换强制叠加该水印
+```
+
+前端「图片处理」页面（`/processing`）提供上述参数的实时预览，并生成可复制的处理链接。
 
 ## API
 

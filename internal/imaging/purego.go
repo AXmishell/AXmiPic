@@ -62,6 +62,7 @@ func (pureGoProcessor) Process(src []byte, opts Options) (Result, error) {
 		return Result{}, err
 	}
 	img = applyTransform(img, opts)
+	img = applyEffects(img, opts)
 	data, err := encodeImage(img, outFormat, opts.Quality)
 	if err != nil {
 		return Result{}, err
@@ -76,7 +77,7 @@ func (pureGoProcessor) Process(src []byte, opts Options) (Result, error) {
 	}, nil
 }
 
-// applyTransform 先旋转图像，再调整其尺寸。
+// applyTransform 先旋转/翻转图像，再调整其尺寸。
 func applyTransform(img image.Image, opts Options) image.Image {
 	switch opts.Rotate {
 	case 90:
@@ -86,17 +87,47 @@ func applyTransform(img image.Image, opts Options) image.Image {
 	case 270:
 		img = imaging.Rotate270(img)
 	}
+	switch opts.Flip {
+	case "h":
+		img = imaging.FlipH(img)
+	case "v":
+		img = imaging.FlipV(img)
+	case "hv":
+		img = imaging.FlipH(imaging.FlipV(img))
+	}
 	return applyFit(img, opts)
 }
 
-// applyFit 缩放图像（对于 cover 还会裁剪）以适配请求的尺寸框。
+// applyEffects 依次应用灰度、模糊/锐化与水印。
+func applyEffects(img image.Image, opts Options) image.Image {
+	if opts.Grayscale {
+		img = imaging.Grayscale(img)
+	}
+	if opts.Blur > 0 {
+		img = imaging.Blur(img, opts.Blur)
+	}
+	if opts.Sharpen > 0 {
+		img = imaging.Sharpen(img, opts.Sharpen)
+	}
+	if opts.Watermark != nil {
+		rgba := toRGBA(img)
+		drawTextWatermark(rgba, *opts.Watermark)
+		img = rgba
+	}
+	return img
+}
+
+// applyFit 缩放图像（对于 cover 还会裁剪，fill 则拉伸）以适配请求的尺寸框。
 func applyFit(img image.Image, opts Options) image.Image {
 	w, h := opts.Width, opts.Height
 	if w <= 0 && h <= 0 {
 		return img
 	}
-	if opts.Fit == FitCover {
+	switch opts.Fit {
+	case FitCover:
 		return imaging.Fill(img, w, h, imaging.Center, imaging.Lanczos)
+	case FitFill:
+		return imaging.Resize(img, w, h, imaging.Lanczos)
 	}
 	bounds := img.Bounds()
 	srcW, srcH := bounds.Dx(), bounds.Dy()

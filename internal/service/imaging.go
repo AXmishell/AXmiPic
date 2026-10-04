@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/AXmishell/axmipic/internal/imaging"
 	"github.com/AXmishell/axmipic/internal/storage"
@@ -31,12 +32,32 @@ type TransformRequest struct {
 	Format  string
 	Enlarge bool
 	Rotate  int
+	// Flip 为翻转方式：h、v、hv。
+	Flip string
+	// Grayscale 为 true 时转为灰度。
+	Grayscale bool
+	// Blur 为高斯模糊半径。
+	Blur float64
+	// Sharpen 为锐化强度。
+	Sharpen float64
+	// WatermarkText 非空时叠加文字水印。
+	WatermarkText string
+	// WatermarkPosition 为水印位置。
+	WatermarkPosition string
+	// WatermarkOpacity 为水印不透明度（0-100）。
+	WatermarkOpacity int
+	// WatermarkSize 为水印字号。
+	WatermarkSize int
+	// WatermarkColor 为水印颜色（十六进制）。
+	WatermarkColor string
 }
 
 // Empty 报告该请求是否不要求任何变换。
 func (r TransformRequest) Empty() bool {
 	return r.Width == 0 && r.Height == 0 && r.Format == "" &&
-		r.Quality == 0 && !r.Enlarge && r.Rotate == 0
+		r.Quality == 0 && !r.Enlarge && r.Rotate == 0 &&
+		r.Flip == "" && !r.Grayscale && r.Blur == 0 && r.Sharpen == 0 &&
+		r.WatermarkText == ""
 }
 
 // ProcessingPolicy 约束变换行为。
@@ -46,6 +67,14 @@ type ProcessingPolicy struct {
 	MaxHeight      int
 	DefaultQuality int
 	AllowedFormats []imaging.Format
+	// AllowEnlarge 为 false 时禁止放大。
+	AllowEnlarge bool
+	// AllowEffects 为 false 时禁止滤镜（灰度/模糊/锐化）。
+	AllowEffects bool
+	// AllowWatermark 为 false 时禁止水印。
+	AllowWatermark bool
+	// WatermarkText 为强制水印文字；非空时始终叠加到输出。
+	WatermarkText string
 }
 
 // ImagingService 对已存储的图片应用即时变换。
@@ -93,6 +122,13 @@ func (s *ImagingService) Options(req TransformRequest) (imaging.Options, error) 
 	if fit == imaging.FitCover && (req.Width <= 0 || req.Height <= 0) {
 		return imaging.Options{}, fmt.Errorf("%w: cover requires both width and height", ErrInvalidInput)
 	}
+	if fit == imaging.FitFill && (req.Width <= 0 || req.Height <= 0) {
+		return imaging.Options{}, fmt.Errorf("%w: fill requires both width and height", ErrInvalidInput)
+	}
+	enlarge := req.Enlarge
+	if enlarge && !s.policy.AllowEnlarge {
+		return imaging.Options{}, fmt.Errorf("%w: enlarging is disabled", ErrInvalidInput)
+	}
 	quality := req.Quality
 	if quality == 0 {
 		quality = s.policy.DefaultQuality
@@ -104,6 +140,36 @@ func (s *ImagingService) Options(req TransformRequest) (imaging.Options, error) 
 	case 0, 90, 180, 270:
 	default:
 		return imaging.Options{}, fmt.Errorf("%w: rotate must be 90, 180, or 270", ErrInvalidInput)
+	}
+	flip, ok := imaging.ParseFlip(req.Flip)
+	if !ok {
+		return imaging.Options{}, fmt.Errorf("%w: unknown flip %q", ErrInvalidInput, req.Flip)
+	}
+	if (req.Grayscale || req.Blur > 0 || req.Sharpen > 0) && !s.policy.AllowEffects {
+		return imaging.Options{}, fmt.Errorf("%w: image effects are disabled", ErrInvalidInput)
+	}
+	if req.Blur < 0 || req.Blur > 100 {
+		return imaging.Options{}, fmt.Errorf("%w: blur must be between 0 and 100", ErrInvalidInput)
+	}
+	if req.Sharpen < 0 || req.Sharpen > 100 {
+		return imaging.Options{}, fmt.Errorf("%w: sharpen must be between 0 and 100", ErrInvalidInput)
+	}
+
+	var watermark *imaging.Watermark
+	if text := strings.TrimSpace(req.WatermarkText); text != "" {
+		if !s.policy.AllowWatermark {
+			return imaging.Options{}, fmt.Errorf("%w: watermark is disabled", ErrInvalidInput)
+		}
+		watermark = &imaging.Watermark{
+			Text:     text,
+			Position: req.WatermarkPosition,
+			Opacity:  req.WatermarkOpacity,
+			Size:     req.WatermarkSize,
+			Color:    req.WatermarkColor,
+		}
+	} else if s.policy.WatermarkText != "" {
+		// 策略强制水印时始终叠加。
+		watermark = &imaging.Watermark{Text: s.policy.WatermarkText, Position: "bottom-right"}
 	}
 
 	var format imaging.Format
@@ -128,8 +194,13 @@ func (s *ImagingService) Options(req TransformRequest) (imaging.Options, error) 
 		Quality:       quality,
 		Format:        format,
 		StripMetadata: true,
-		Enlarge:       req.Enlarge,
+		Enlarge:       enlarge,
 		Rotate:        req.Rotate,
+		Flip:          flip,
+		Grayscale:     req.Grayscale,
+		Blur:          req.Blur,
+		Sharpen:       req.Sharpen,
+		Watermark:     watermark,
 	}, nil
 }
 
