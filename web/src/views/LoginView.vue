@@ -226,7 +226,7 @@ async function handleSubmit(): Promise<void> {
   min-height: 100dvh;
 }
 
-/* ---- Brand panel ---- */
+/* ---- 品牌面板 ---- */
 .auth__brand {
   position: relative;
   display: flex;
@@ -353,7 +353,7 @@ async function handleSubmit(): Promise<void> {
   font-size: var(--ax-text-xs);
 }
 
-/* ---- Form panel ---- */
+/* ---- 表单面板 ---- */
 .auth__panel {
   position: relative;
   display: flex;

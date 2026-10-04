@@ -11,14 +11,14 @@ import (
 	"github.com/AXmishell/axmipic/internal/storage"
 )
 
-// principalOf returns the authenticated principal attached to the request, or
-// nil for an anonymous request.
+// principalOf 返回附加到请求上的已认证主体，匿名请求则返回
+// nil。
 func principalOf(r *http.Request) *auth.Principal {
 	principal, _ := auth.FromContext(r.Context())
 	return principal
 }
 
-// envelope is the uniform JSON response body.
+// envelope 是统一的 JSON 响应体。
 type envelope struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
@@ -45,7 +45,7 @@ func writeError(w http.ResponseWriter, status, code int, message string) {
 	writeJSON(w, status, envelope{Code: code, Message: message, Data: nil})
 }
 
-// fail maps a domain error to an HTTP response, logging unexpected errors.
+// fail 将领域错误映射为 HTTP 响应，并记录非预期的错误。
 func (h *Handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, service.ErrFileTooLarge):

@@ -6,8 +6,8 @@ import (
 	"github.com/AXmishell/axmipic/internal/config"
 )
 
-// NewFromConfig builds the storage backend selected by cfg.Driver.
-// serverBaseURL is used by the local driver to build public object URLs.
+// NewFromConfig 构建由 cfg.Driver 选择的存储后端。
+// serverBaseURL 由本地驱动用于构建公开的对象 URL。
 func NewFromConfig(cfg config.StorageConfig, serverBaseURL string) (Storage, error) {
 	switch cfg.Driver {
 	case "local":

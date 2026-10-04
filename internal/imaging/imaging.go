@@ -1,7 +1,6 @@
-// Package imaging provides image transformation behind a build-selectable
-// processor. The default build uses a pure-Go implementation; compiling with
-// `-tags libvips` (which requires the libvips system library and CGO) uses the
-// faster bimg/libvips processor instead.
+// Package imaging 在可构建选择的处理器背后提供图像变换功能。默认构建使用纯 Go
+// 实现；使用 `-tags libvips` 编译（需要 libvips 系统库和 CGO）则会改用更快的
+// bimg/libvips 处理器。
 package imaging
 
 import (
@@ -10,20 +9,20 @@ import (
 	"strings"
 )
 
-// Errors returned by processors.
+// 处理器返回的错误。
 var (
-	// ErrDecode indicates the input bytes could not be decoded as an image.
+	// ErrDecode 表示输入的字节无法被解码为图像。
 	ErrDecode = errors.New("imaging: cannot decode image")
-	// ErrUnsupportedFormat indicates the processor cannot encode the format.
+	// ErrUnsupportedFormat 表示处理器无法编码该格式。
 	ErrUnsupportedFormat = errors.New("imaging: unsupported output format")
-	// ErrInvalidOptions indicates the requested transformation is not valid.
+	// ErrInvalidOptions 表示请求的变换无效。
 	ErrInvalidOptions = errors.New("imaging: invalid options")
 )
 
-// Format is an encodable image format.
+// Format 是可编码的图像格式。
 type Format string
 
-// Supported formats.
+// 支持的格式。
 const (
 	FormatJPEG Format = "jpeg"
 	FormatPNG  Format = "png"
@@ -32,19 +31,18 @@ const (
 	FormatAVIF Format = "avif"
 )
 
-// Fit is the strategy used when the requested box differs from the source
-// aspect ratio.
+// Fit 是当请求的尺寸框与源图像宽高比不同时使用的策略。
 type Fit string
 
-// Supported fit strategies.
+// 支持的适配策略。
 const (
-	// FitContain scales the image to fit inside the box, preserving aspect.
+	// FitContain 缩放图像使其适配到尺寸框内，并保持宽高比。
 	FitContain Fit = "contain"
-	// FitCover scales and crops the image to exactly fill the box.
+	// FitCover 缩放并裁剪图像，使其恰好填满尺寸框。
 	FitCover Fit = "cover"
 )
 
-// Options describes a single transformation request.
+// Options 描述一次变换请求。
 type Options struct {
 	Width         int
 	Height        int
@@ -56,7 +54,7 @@ type Options struct {
 	Rotate        int
 }
 
-// Result is a processed image.
+// Result 是处理后的图像。
 type Result struct {
 	Data        []byte
 	ContentType string
@@ -65,31 +63,31 @@ type Result struct {
 	Format      Format
 }
 
-// Info is image header information obtained without a full decode.
+// Info 是无需完整解码即可获取的图像头部信息。
 type Info struct {
 	Width  int
 	Height int
 	Format Format
 }
 
-// Capabilities describes what a processor supports.
+// Capabilities 描述处理器支持的能力。
 type Capabilities struct {
 	Name          string
 	OutputFormats []Format
 	StripMetadata bool
 }
 
-// Processor transforms and inspects images.
+// Processor 变换并检查图像。
 type Processor interface {
-	// Process re-encodes src according to opts.
+	// Process 根据 opts 重新编码 src。
 	Process(src []byte, opts Options) (Result, error)
-	// Info decodes only the image header.
+	// Info 仅解码图像头部。
 	Info(src []byte) (Info, error)
-	// Capabilities reports supported output formats.
+	// Capabilities 报告支持的输出格式。
 	Capabilities() Capabilities
 }
 
-// ParseFormat maps a format name (including the "jpg" alias) to a Format.
+// ParseFormat 将格式名称（包括 "jpg" 别名）映射为 Format。
 func ParseFormat(name string) (Format, bool) {
 	switch strings.ToLower(strings.TrimSpace(name)) {
 	case "jpeg", "jpg":
@@ -107,7 +105,7 @@ func ParseFormat(name string) (Format, bool) {
 	}
 }
 
-// ParseFit maps a fit name to a Fit. An empty name defaults to FitContain.
+// ParseFit 将适配名称映射为 Fit。空名称默认为 FitContain。
 func ParseFit(name string) (Fit, bool) {
 	switch strings.ToLower(strings.TrimSpace(name)) {
 	case "", "contain", "inside", "fit":
@@ -119,7 +117,7 @@ func ParseFit(name string) (Fit, bool) {
 	}
 }
 
-// ContentType returns the HTTP media type for a format.
+// ContentType 返回格式对应的 HTTP 媒体类型。
 func ContentType(f Format) string {
 	switch f {
 	case FormatJPEG:
@@ -137,7 +135,7 @@ func ContentType(f Format) string {
 	}
 }
 
-// validateOptions checks option invariants shared by all processors.
+// validateOptions 检查所有处理器共享的选项不变式。
 func validateOptions(opts Options) error {
 	if opts.Width < 0 || opts.Height < 0 {
 		return fmt.Errorf("%w: negative dimension", ErrInvalidOptions)

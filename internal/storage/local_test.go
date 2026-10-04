@@ -15,7 +15,7 @@ func TestLocalStatSniffsExtensionlessKey(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	// The PNG signature is enough for http.DetectContentType.
+	// PNG 文件头足以让 http.DetectContentType 识别。
 	png := []byte("\x89PNG\r\n\x1a\n\x00\x00\x00\x00")
 	if err := local.Put(ctx, "no-extension", bytes.NewReader(png), int64(len(png)), "image/png"); err != nil {
 		t.Fatalf("Put: %v", err)

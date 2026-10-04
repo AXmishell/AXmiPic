@@ -9,7 +9,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// Create inserts image metadata.
+// Create 插入图像元数据。
 func (r *Repository) Create(ctx context.Context, image *Image) error {
 	if err := r.db.WithContext(ctx).Create(image).Error; err != nil {
 		return fmt.Errorf("store: create image: %w", err)
@@ -17,7 +17,7 @@ func (r *Repository) Create(ctx context.Context, image *Image) error {
 	return nil
 }
 
-// GetByID returns the image with the given id, or ErrNotFound.
+// GetByID 返回具有给定 id 的图像，或 ErrNotFound。
 func (r *Repository) GetByID(ctx context.Context, id string) (*Image, error) {
 	var image Image
 	err := r.db.WithContext(ctx).First(&image, "id = ?", id).Error
@@ -30,7 +30,7 @@ func (r *Repository) GetByID(ctx context.Context, id string) (*Image, error) {
 	return &image, nil
 }
 
-// GetByKey returns the image stored under key, or ErrNotFound.
+// GetByKey 返回存储在 key 下的图像，或 ErrNotFound。
 func (r *Repository) GetByKey(ctx context.Context, key string) (*Image, error) {
 	var image Image
 	err := r.db.WithContext(ctx).First(&image, "key = ?", key).Error
@@ -43,9 +43,8 @@ func (r *Repository) GetByKey(ctx context.Context, key string) (*Image, error) {
 	return &image, nil
 }
 
-// List returns a page of images ordered by creation time (newest first) along
-// with the total number of records. When userID is non-empty, only images owned
-// by that user are returned.
+// List 返回按创建时间排序的一页图像（最新的在前）以及记录总数。
+// 当 userID 非空时，仅返回该用户拥有的图像。
 func (r *Repository) List(ctx context.Context, userID string, offset, limit int) ([]Image, int64, error) {
 	countQuery := r.db.WithContext(ctx).Model(&Image{})
 	listQuery := r.db.WithContext(ctx).Model(&Image{})
@@ -69,7 +68,7 @@ func (r *Repository) List(ctx context.Context, userID string, offset, limit int)
 	return images, total, nil
 }
 
-// Delete removes the image with the given id, or returns ErrNotFound.
+// Delete 移除具有给定 id 的图像，或返回 ErrNotFound。
 func (r *Repository) Delete(ctx context.Context, id string) error {
 	result := r.db.WithContext(ctx).Delete(&Image{}, "id = ?", id)
 	if result.Error != nil {
@@ -81,7 +80,7 @@ func (r *Repository) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
-// CreatePendingUpload records a pending presigned upload.
+// CreatePendingUpload 记录一个待处理的预签名上传。
 func (r *Repository) CreatePendingUpload(ctx context.Context, pending *PendingUpload) error {
 	if err := r.db.WithContext(ctx).Create(pending).Error; err != nil {
 		return fmt.Errorf("store: create pending upload: %w", err)
@@ -89,7 +88,7 @@ func (r *Repository) CreatePendingUpload(ctx context.Context, pending *PendingUp
 	return nil
 }
 
-// GetPendingUpload returns the pending upload for key, or ErrNotFound.
+// GetPendingUpload 返回 key 对应的待处理上传，或 ErrNotFound。
 func (r *Repository) GetPendingUpload(ctx context.Context, key string) (*PendingUpload, error) {
 	var pending PendingUpload
 	err := r.db.WithContext(ctx).First(&pending, "key = ?", key).Error
@@ -102,8 +101,8 @@ func (r *Repository) GetPendingUpload(ctx context.Context, key string) (*Pending
 	return &pending, nil
 }
 
-// DeletePendingUpload removes a pending upload. Deleting a missing row is a
-// no-op.
+// DeletePendingUpload 移除一个待处理上传。删除不存在的记录是
+// 无操作。
 func (r *Repository) DeletePendingUpload(ctx context.Context, key string) error {
 	if err := r.db.WithContext(ctx).Delete(&PendingUpload{}, "key = ?", key).Error; err != nil {
 		return fmt.Errorf("store: delete pending upload %q: %w", key, err)
@@ -111,7 +110,7 @@ func (r *Repository) DeletePendingUpload(ctx context.Context, key string) error 
 	return nil
 }
 
-// ExpiredPendingUploads returns pending uploads whose expiry is before cutoff.
+// ExpiredPendingUploads 返回到期时间早于 cutoff 的待处理上传。
 func (r *Repository) ExpiredPendingUploads(ctx context.Context, cutoff time.Time) ([]PendingUpload, error) {
 	var pending []PendingUpload
 	if err := r.db.WithContext(ctx).
@@ -122,7 +121,7 @@ func (r *Repository) ExpiredPendingUploads(ctx context.Context, cutoff time.Time
 	return pending, nil
 }
 
-// CreateToken inserts an API token.
+// CreateToken 插入一个 API 令牌。
 func (r *Repository) CreateToken(ctx context.Context, token *APIToken) error {
 	if err := r.db.WithContext(ctx).Create(token).Error; err != nil {
 		return fmt.Errorf("store: create token: %w", err)
@@ -130,7 +129,7 @@ func (r *Repository) CreateToken(ctx context.Context, token *APIToken) error {
 	return nil
 }
 
-// GetTokenByHash returns the token with the given hash, or ErrNotFound.
+// GetTokenByHash 返回具有给定哈希的令牌，或 ErrNotFound。
 func (r *Repository) GetTokenByHash(ctx context.Context, hash string) (*APIToken, error) {
 	var token APIToken
 	err := r.db.WithContext(ctx).First(&token, "token_hash = ?", hash).Error
@@ -143,7 +142,7 @@ func (r *Repository) GetTokenByHash(ctx context.Context, hash string) (*APIToken
 	return &token, nil
 }
 
-// ListTokensByUser returns a user's tokens, newest first.
+// ListTokensByUser 返回某个用户的令牌，最新的在前。
 func (r *Repository) ListTokensByUser(ctx context.Context, userID string) ([]APIToken, error) {
 	var tokens []APIToken
 	if err := r.db.WithContext(ctx).Where("user_id = ?", userID).Order("created_at DESC").Find(&tokens).Error; err != nil {
@@ -152,7 +151,7 @@ func (r *Repository) ListTokensByUser(ctx context.Context, userID string) ([]API
 	return tokens, nil
 }
 
-// DeleteToken removes a user's token, or returns ErrNotFound.
+// DeleteToken 移除某个用户的令牌，或返回 ErrNotFound。
 func (r *Repository) DeleteToken(ctx context.Context, userID, id string) error {
 	result := r.db.WithContext(ctx).Delete(&APIToken{}, "id = ? AND user_id = ?", id, userID)
 	if result.Error != nil {
@@ -164,7 +163,7 @@ func (r *Repository) DeleteToken(ctx context.Context, userID, id string) error {
 	return nil
 }
 
-// TouchToken records a token's last-used time.
+// TouchToken 记录某个令牌的最后使用时间。
 func (r *Repository) TouchToken(ctx context.Context, id string) error {
 	if err := r.db.WithContext(ctx).Model(&APIToken{}).
 		Where("id = ?", id).
@@ -174,7 +173,7 @@ func (r *Repository) TouchToken(ctx context.Context, id string) error {
 	return nil
 }
 
-// ImageStats returns the image count and total stored bytes.
+// ImageStats 返回图像数量和已存储的总字节数。
 func (r *Repository) ImageStats(ctx context.Context) (ImageStats, error) {
 	var stats ImageStats
 	if err := r.db.WithContext(ctx).Model(&Image{}).Count(&stats.Count).Error; err != nil {

@@ -19,17 +19,16 @@ import (
 	"github.com/disintegration/imaging"
 )
 
-// pureGoProcessor implements Processor with the pure-Go disintegration/imaging
-// library. It encodes JPEG, PNG, and GIF; it can decode WebP but cannot encode
-// it (that requires the libvips build).
+// pureGoProcessor 使用纯 Go 的 disintegration/imaging 库实现 Processor。它可编码
+// JPEG、PNG 和 GIF；可解码 WebP 但无法编码 WebP（编码 WebP 需要 libvips 构建）。
 type pureGoProcessor struct{}
 
-// Default returns the pure-Go processor.
+// Default 返回纯 Go 处理器。
 func Default() Processor {
 	return pureGoProcessor{}
 }
 
-// Capabilities reports the pure-Go processor's abilities.
+// Capabilities 报告纯 Go 处理器的能力。
 func (pureGoProcessor) Capabilities() Capabilities {
 	return Capabilities{
 		Name:          "purego",
@@ -38,7 +37,7 @@ func (pureGoProcessor) Capabilities() Capabilities {
 	}
 }
 
-// Info decodes the image header.
+// Info 解码图像头部。
 func (pureGoProcessor) Info(src []byte) (Info, error) {
 	cfg, name, err := image.DecodeConfig(bytes.NewReader(src))
 	if err != nil {
@@ -48,8 +47,8 @@ func (pureGoProcessor) Info(src []byte) (Info, error) {
 	return Info{Width: cfg.Width, Height: cfg.Height, Format: f}, nil
 }
 
-// Process applies the transformation and re-encodes the image. Re-encoding
-// with Go's standard encoders drops EXIF and other metadata.
+// Process 应用变换并重新编码图像。使用 Go 标准编码器重新编码会丢弃 EXIF 及其他
+// 元数据。
 func (pureGoProcessor) Process(src []byte, opts Options) (Result, error) {
 	if err := validateOptions(opts); err != nil {
 		return Result{}, err
@@ -77,7 +76,7 @@ func (pureGoProcessor) Process(src []byte, opts Options) (Result, error) {
 	}, nil
 }
 
-// applyTransform rotates then resizes the image.
+// applyTransform 先旋转图像，再调整其尺寸。
 func applyTransform(img image.Image, opts Options) image.Image {
 	switch opts.Rotate {
 	case 90:
@@ -90,7 +89,7 @@ func applyTransform(img image.Image, opts Options) image.Image {
 	return applyFit(img, opts)
 }
 
-// applyFit scales (and for cover, crops) the image to the requested box.
+// applyFit 缩放图像（对于 cover 还会裁剪）以适配请求的尺寸框。
 func applyFit(img image.Image, opts Options) image.Image {
 	w, h := opts.Width, opts.Height
 	if w <= 0 && h <= 0 {
@@ -134,9 +133,8 @@ func applyFit(img image.Image, opts Options) image.Image {
 	return imaging.Resize(img, 0, h, imaging.Lanczos)
 }
 
-// resolveOutputFormat picks the output format: an explicit request wins,
-// otherwise the source format when encodable, otherwise JPEG or PNG based on
-// transparency.
+// resolveOutputFormat 选择输出格式：显式请求优先，否则在源格式可编码时使用源格式，
+// 再否则根据透明度在 JPEG 和 PNG 之间选择。
 func resolveOutputFormat(srcFormatName string, img image.Image, requested Format) (Format, error) {
 	if requested != "" {
 		if !pureGoEncodable(requested) {
@@ -169,7 +167,7 @@ func isOpaque(img image.Image) bool {
 	return false
 }
 
-// encodeImage encodes the image to the target format.
+// encodeImage 将图像编码为目标格式。
 func encodeImage(img image.Image, f Format, quality int) ([]byte, error) {
 	var buf bytes.Buffer
 	switch f {
@@ -191,8 +189,7 @@ func encodeImage(img image.Image, f Format, quality int) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// flatten composites the image onto a white background so JPEG encoding does
-// not turn transparent pixels black.
+// flatten 将图像合成到白色背景上，使 JPEG 编码不会将透明像素变为黑色。
 func flatten(img image.Image) image.Image {
 	bounds := img.Bounds()
 	dst := image.NewRGBA(image.Rect(0, 0, bounds.Dx(), bounds.Dy()))

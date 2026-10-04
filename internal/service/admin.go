@@ -8,7 +8,7 @@ import (
 	"github.com/AXmishell/axmipic/internal/store"
 )
 
-// StatsDTO summarizes instance-wide metrics.
+// StatsDTO 汇总实例级别的指标。
 type StatsDTO struct {
 	Admins        int64    `json:"admins"`
 	Customers     int64    `json:"customers"`
@@ -20,24 +20,24 @@ type StatsDTO struct {
 	Formats       []string `json:"formats"`
 }
 
-// UpdateUserInput carries optional account changes.
+// UpdateUserInput 携带可选的账户变更。
 type UpdateUserInput struct {
 	Disabled *bool
 }
 
-// AdminService provides administrative operations over both account tables.
+// AdminService 针对两张账户表提供管理操作。
 type AdminService struct {
 	repo          *store.Repository
 	storageDriver string
 	processor     imaging.Processor
 }
 
-// NewAdminService constructs an AdminService.
+// NewAdminService 构造一个 AdminService。
 func NewAdminService(repo *store.Repository, storageDriver string, processor imaging.Processor) *AdminService {
 	return &AdminService{repo: repo, storageDriver: storageDriver, processor: processor}
 }
 
-// Stats returns aggregate instance metrics.
+// Stats 返回聚合的实例指标。
 func (s *AdminService) Stats(ctx context.Context) (*StatsDTO, error) {
 	admins, err := s.repo.CountAdmins(ctx)
 	if err != nil {
@@ -73,7 +73,7 @@ func (s *AdminService) Stats(ctx context.Context) (*StatsDTO, error) {
 	}, nil
 }
 
-// ListCustomers returns every customer account.
+// ListCustomers 返回所有客户账户。
 func (s *AdminService) ListCustomers(ctx context.Context) ([]UserDTO, error) {
 	accounts, err := s.repo.ListCustomers(ctx)
 	if err != nil {
@@ -82,7 +82,7 @@ func (s *AdminService) ListCustomers(ctx context.Context) ([]UserDTO, error) {
 	return toUserDTOs(accounts), nil
 }
 
-// ListAdmins returns every admin account.
+// ListAdmins 返回所有管理员账户。
 func (s *AdminService) ListAdmins(ctx context.Context) ([]UserDTO, error) {
 	accounts, err := s.repo.ListAdmins(ctx)
 	if err != nil {
@@ -91,12 +91,12 @@ func (s *AdminService) ListAdmins(ctx context.Context) ([]UserDTO, error) {
 	return toUserDTOs(accounts), nil
 }
 
-// RegisterAdmin creates an admin in the admins table.
+// RegisterAdmin 在 admins 表中创建一个管理员。
 func (s *AdminService) RegisterAdmin(ctx context.Context, accounts *AccountService, username, password string) (*UserDTO, error) {
 	return accounts.RegisterAdmin(ctx, username, password)
 }
 
-// UpdateCustomer applies optional changes to a customer account.
+// UpdateCustomer 对某个客户账户应用可选变更。
 func (s *AdminService) UpdateCustomer(ctx context.Context, id string, in UpdateUserInput) (*UserDTO, error) {
 	account, err := s.repo.UpdateCustomer(ctx, id, store.UserUpdate{Disabled: in.Disabled})
 	if err != nil {
@@ -105,9 +105,8 @@ func (s *AdminService) UpdateCustomer(ctx context.Context, id string, in UpdateU
 	return toUserDTO(account), nil
 }
 
-// UpdateAdmin applies optional changes to an admin account. It refuses to
-// disable the acting admin or the last enabled admin so the instance cannot be
-// locked out.
+// UpdateAdmin 对某个管理员账户应用可选变更。它拒绝禁用操作者本人或最后
+// 一个已启用的管理员，以免实例被锁死。
 func (s *AdminService) UpdateAdmin(ctx context.Context, actorID, id string, in UpdateUserInput) (*UserDTO, error) {
 	target, err := s.repo.GetAccountByID(ctx, store.RoleAdmin, id)
 	if err != nil {
@@ -133,7 +132,7 @@ func (s *AdminService) UpdateAdmin(ctx context.Context, actorID, id string, in U
 	return toUserDTO(account), nil
 }
 
-// DeleteCustomer removes a customer account.
+// DeleteCustomer 移除某个客户账户。
 func (s *AdminService) DeleteCustomer(ctx context.Context, id string) error {
 	if err := s.repo.DeleteAccount(ctx, store.RoleCustomer, id); err != nil {
 		return fmt.Errorf("delete customer: %w", err)
@@ -141,8 +140,8 @@ func (s *AdminService) DeleteCustomer(ctx context.Context, id string) error {
 	return nil
 }
 
-// DeleteAdmin removes an admin account. It refuses to delete the acting admin or
-// the last enabled admin.
+// DeleteAdmin 移除某个管理员账户。它拒绝删除操作者本人或最后一个已启用
+// 的管理员。
 func (s *AdminService) DeleteAdmin(ctx context.Context, actorID, id string) error {
 	target, err := s.repo.GetAccountByID(ctx, store.RoleAdmin, id)
 	if err != nil {

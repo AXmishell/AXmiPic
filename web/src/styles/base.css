@@ -1,6 +1,6 @@
 /**
- * Base layer: reset, typography, atmosphere, scrollbars, focus, and the
- * shared layout primitives every view composes from.
+ * 基础层：重置、排版、氛围、滚动条、焦点样式，以及所有视图都会组合使用的
+ * 共享布局原语。
  */
 
 *,
@@ -63,7 +63,7 @@ button {
   outline-offset: 2px;
 }
 
-/* ---- Scrollbars ---- */
+/* ---- 滚动条 ---- */
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--ax-scrollbar) transparent;
@@ -90,9 +90,9 @@ button {
   background-clip: padding-box;
 }
 
-/* ---- Shared primitives (documented in tokens.css; used across views) ---- */
+/* ---- 共享原语（在 tokens.css 中说明；跨视图使用） ---- */
 
-/* Page: enter transition. Transform/opacity only. */
+/* 页面：进入过渡。仅使用 transform/opacity。 */
 @keyframes ax-fade-rise {
   from {
     opacity: 0;
@@ -108,7 +108,7 @@ button {
   animation: ax-fade-rise var(--ax-duration-slow) var(--ax-ease) both;
 }
 
-/* Card: elevated surface built from luminance step + inset ring + hairline. */
+/* 卡片：由亮度阶梯 + 内嵌描边 + 细线构成的高层表面。 */
 .ax-card {
   background: var(--ax-panel);
   border: 1px solid var(--ax-border-subtle);
@@ -159,7 +159,7 @@ button {
   gap: var(--ax-space-3);
 }
 
-/* Intrinsic grid: adapts to its container; min() prevents narrow overflow. */
+/* 内在网格：自适应容器；min() 防止窄屏溢出。 */
 .ax-grid {
   display: grid;
   gap: var(--ax-space-4);
@@ -179,7 +179,7 @@ button {
   gap: var(--ax-space-2);
 }
 
-/* Horizontal scroll region with a single, declared job (wide tables). */
+/* 单一明确职责的水平滚动区域（用于宽表格）。 */
 .ax-table-scroll {
   overflow-x: auto;
 }
@@ -188,7 +188,7 @@ button {
   min-width: 640px;
 }
 
-/* Screen-reader-only text (used for skip link targets and icon buttons). */
+/* 仅供屏幕阅读器的文本（用于跳转链接目标与图标按钮）。 */
 .ax-sr-only {
   position: absolute;
   width: 1px;

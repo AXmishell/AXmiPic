@@ -1,19 +1,18 @@
 /**
- * AXmiPic Console — Design Tokens (design contract lives here, in code)
+ * AXmiPic Console —— 设计令牌（设计契约以代码形式存放于此）
  *
- * Two palettes share one contract: the dark-native precision console and a
- * light counterpart. Every component reads from these variables, so switching
- * `document.documentElement` between `theme-dark` and `theme-light` (see the
- * theme store) restyles the whole app.
+ * 两套调色板共享同一份契约：深色原生精密控制台，以及对应的浅色版本。
+ * 所有组件都从这些变量取值，因此在 `document.documentElement` 上切换
+ * `theme-dark` / `theme-light`（见 theme store）即可为整个应用换肤。
  *
- * Rule: no raw hex value, font size, spacing step, radius or shadow may be
- * used in any component unless it is declared here first.
+ * 规则：任何组件都不得使用未在此处声明的原始十六进制颜色、字号、间距、
+ * 圆角或阴影。
  */
 :root,
 .theme-dark {
   color-scheme: dark;
 
-  /* ---- Color: surfaces (luminance stepping, never solid-on-dark) ---- */
+  /* ---- 颜色：表面（亮度阶梯，而非深色上的纯色） ---- */
   --ax-canvas: #08090a;
   --ax-panel: #0f1011;
   --ax-raised: #141516;
@@ -21,14 +20,14 @@
   --ax-hover: #1f2124;
   --ax-active: #23252a;
 
-  /* ---- Color: text ---- */
+  /* ---- 颜色：文本 ---- */
   --ax-text: #f7f8f8;
   --ax-text-2: #d0d6e0;
   --ax-text-3: #8a8f98;
   --ax-text-4: #62666d;
   --ax-text-disabled: #4b4f56;
 
-  /* ---- Color: accent (the only chromatic family; interactive use only) ---- */
+  /* ---- 颜色：强调色（唯一的有彩色系；仅用于交互元素） ---- */
   --ax-accent: #5e6ad2;
   --ax-accent-bright: #7170ff;
   --ax-accent-hover: #828fff;
@@ -36,7 +35,7 @@
   --ax-accent-ring: rgba(113, 112, 255, 0.22);
   --ax-on-accent: #ffffff;
 
-  /* ---- Color: status ---- */
+  /* ---- 颜色：状态 ---- */
   --ax-success: #27a644;
   --ax-success-soft: rgba(39, 166, 68, 0.14);
   --ax-warning: #d29922;
@@ -45,13 +44,13 @@
   --ax-danger-soft: rgba(229, 83, 75, 0.14);
   --ax-info: #8a8f98;
 
-  /* ---- Color: borders ---- */
+  /* ---- 颜色：边框 ---- */
   --ax-border: rgba(255, 255, 255, 0.08);
   --ax-border-subtle: rgba(255, 255, 255, 0.05);
   --ax-border-strong: rgba(255, 255, 255, 0.14);
   --ax-focus: rgba(113, 112, 255, 0.6);
 
-  /* ---- Color: theme-aware translucent layers used by components ---- */
+  /* ---- 颜色：组件使用的、随主题变化的半透明层 ---- */
   --ax-tint-weak: rgba(255, 255, 255, 0.02);
   --ax-tint: rgba(255, 255, 255, 0.04);
   --ax-tint-strong: rgba(255, 255, 255, 0.06);
@@ -68,7 +67,7 @@
   --ax-skeleton-a: rgba(255, 255, 255, 0.04);
   --ax-skeleton-b: rgba(255, 255, 255, 0.09);
 
-  /* ---- Typography ---- */
+  /* ---- 排版 ---- */
   --ax-font-sans: 'Inter Variable', 'PingFang SC', 'HarmonyOS Sans SC', 'Microsoft YaHei',
     system-ui, -apple-system, 'Segoe UI', sans-serif;
   --ax-font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', Consolas, 'Liberation Mono',
@@ -82,14 +81,14 @@
   --ax-text-2xl: 24px;
   --ax-text-3xl: 30px;
   --ax-weight-regular: 400;
-  --ax-weight-medium: 510; /* signature between-weight */
+  --ax-weight-medium: 510; /* 标志性的中间字重 */
   --ax-weight-semibold: 590;
   --ax-leading-tight: 1.25;
   --ax-leading-normal: 1.5;
   --ax-tracking-tight: -0.011em;
   --ax-tracking-display: -0.022em;
 
-  /* ---- Spacing (4px base grid) ---- */
+  /* ---- 间距（4px 基准栅格） ---- */
   --ax-space-1: 4px;
   --ax-space-2: 8px;
   --ax-space-3: 12px;
@@ -100,33 +99,33 @@
   --ax-space-10: 40px;
   --ax-space-12: 48px;
 
-  /* ---- Radius (locked scale: micro / control / card / panel / pill) ---- */
+  /* ---- 圆角（锁定刻度：微 / 控件 / 卡片 / 面板 / 胶囊） ---- */
   --ax-radius-xs: 4px;
   --ax-radius-sm: 6px;
   --ax-radius-md: 8px;
   --ax-radius-lg: 12px;
   --ax-radius-full: 9999px;
 
-  /* ---- Depth (luminance + inset ring; shadows only for floating layers) ---- */
+  /* ---- 层次（亮度 + 内嵌描边；阴影仅用于浮层） ---- */
   --ax-ring-inset: inset 0 1px 0 rgba(255, 255, 255, 0.04);
   --ax-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
   --ax-shadow-md: 0 8px 24px rgba(0, 0, 0, 0.35);
   --ax-shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.5);
 
-  /* ---- Motion (transform/opacity only; honors reduced motion) ---- */
+  /* ---- 动效（仅 transform/opacity；遵循减少动效偏好） ---- */
   --ax-ease: cubic-bezier(0.16, 1, 0.3, 1);
   --ax-duration-fast: 120ms;
   --ax-duration: 180ms;
   --ax-duration-slow: 300ms;
 
-  /* ---- Atmosphere (page background washes) ---- */
+  /* ---- 氛围（页面背景晕染） ---- */
   --ax-atmosphere: radial-gradient(1100px 520px at 82% -12%, rgba(94, 106, 210, 0.1), transparent 62%),
     radial-gradient(820px 460px at -8% -4%, rgba(113, 112, 255, 0.06), transparent 58%);
   --ax-aurora: radial-gradient(620px 420px at 18% 12%, rgba(94, 106, 210, 0.28), transparent 62%),
     radial-gradient(520px 380px at 88% 82%, rgba(64, 150, 255, 0.12), transparent 66%),
     radial-gradient(360px 300px at 70% 18%, rgba(130, 143, 255, 0.1), transparent 60%);
 
-  /* ---- Layout ---- */
+  /* ---- 布局 ---- */
   --ax-sidebar-w: 232px;
   --ax-topbar-h: 56px;
   --ax-content-max: 1200px;
@@ -136,9 +135,8 @@
 }
 
 /**
- * Light theme: a paper-white console with the same indigo accent and the same
- * structural tokens. Surfaces step *down* in luminance instead of up, and
- * borders are darkened ink instead of lightened white.
+ * 浅色主题：纸白控制台，使用相同的靛蓝强调色与相同的结构性令牌。
+ * 表面在亮度上向下递进而非向上，边框使用压暗的墨色而非提亮的白色。
  */
 .theme-light {
   color-scheme: light;

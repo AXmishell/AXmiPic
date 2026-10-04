@@ -2,7 +2,7 @@ package store
 
 import "time"
 
-// Image is the persisted metadata for a single stored object.
+// Image 是单个已存储对象的持久化元数据。
 type Image struct {
 	ID        string  `gorm:"primaryKey;size:36"`
 	Key       string  `gorm:"uniqueIndex;size:255;not null"`
@@ -16,14 +16,13 @@ type Image struct {
 	UpdatedAt time.Time
 }
 
-// TableName returns the table backing Image.
+// TableName 返回存储 Image 的表名。
 func (Image) TableName() string {
 	return "images"
 }
 
-// PendingUpload tracks a presigned direct upload that has not been confirmed
-// yet. The row is created when a presigned request is issued and consumed by
-// the confirm step, which prevents clients from claiming arbitrary keys.
+// PendingUpload 跟踪尚未确认的预签名直传上传。该记录在签发预签名请求时创建，
+// 并在确认步骤中被消费，从而防止客户端认领任意键。
 type PendingUpload struct {
 	Key       string    `gorm:"primaryKey;size:255"`
 	UserID    *string   `gorm:"index;size:36"`
@@ -33,12 +32,12 @@ type PendingUpload struct {
 	CreatedAt time.Time
 }
 
-// TableName returns the table backing PendingUpload.
+// TableName 返回存储 PendingUpload 的表名。
 func (PendingUpload) TableName() string {
 	return "pending_uploads"
 }
 
-// Admin is a privileged account stored in its own table.
+// Admin 是存储在其自身表中的特权账户。
 type Admin struct {
 	ID           string `gorm:"primaryKey;size:36"`
 	Username     string `gorm:"uniqueIndex;size:64;not null"`
@@ -48,40 +47,40 @@ type Admin struct {
 	UpdatedAt    time.Time
 }
 
-// TableName returns the table backing Admin.
+// TableName 返回存储 Admin 的表名。
 func (Admin) TableName() string {
 	return "admins"
 }
 
-// Customer is an ordinary (non-privileged) account stored in its own table.
+// Customer 是存储在其自身表中的普通（非特权）账户。
 type Customer struct {
 	ID           string `gorm:"primaryKey;size:36"`
 	Username     string `gorm:"uniqueIndex;size:64;not null"`
 	PasswordHash string `gorm:"size:100;not null"`
 	Disabled     bool   `gorm:"not null;default:false"`
 	UsedBytes    int64  `gorm:"not null;default:0"`
-	QuotaBytes   int64  `gorm:"not null;default:0"` // 0 means unlimited
+	QuotaBytes   int64  `gorm:"not null;default:0"` // 0 表示不限额
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 }
 
-// TableName returns the table backing Customer.
+// TableName 返回存储 Customer 的表名。
 func (Customer) TableName() string {
 	return "customers"
 }
 
-// UserUpdate carries optional account field changes. Nil fields are ignored.
+// UserUpdate 携带可选的账户字段更改。Nil 字段将被忽略。
 type UserUpdate struct {
 	Disabled *bool
 }
 
-// ImageStats aggregates image counts and total bytes.
+// ImageStats 汇总图像数量和总字节数。
 type ImageStats struct {
 	Count      int64
 	TotalBytes int64
 }
 
-// APIToken is a long-lived programmatic credential. Only the hash is stored.
+// APIToken 是长期有效的程序化凭据。仅存储哈希值。
 type APIToken struct {
 	ID         string `gorm:"primaryKey;size:36"`
 	UserID     string `gorm:"index;size:36;not null"`
@@ -93,7 +92,7 @@ type APIToken struct {
 	CreatedAt  time.Time
 }
 
-// TableName returns the table backing APIToken.
+// TableName 返回存储 APIToken 的表名。
 func (APIToken) TableName() string {
 	return "api_tokens"
 }

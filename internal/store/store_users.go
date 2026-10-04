@@ -9,16 +9,16 @@ import (
 	"gorm.io/gorm"
 )
 
-// AccountRole distinguishes the two account tables.
+// AccountRole 区分两个账户表。
 type AccountRole string
 
-// Account roles, one per table.
+// 账户角色，每个表一个。
 const (
 	RoleAdmin    AccountRole = "admin"
 	RoleCustomer AccountRole = "customer"
 )
 
-// Account is a unified view over an admin or a customer record.
+// Account 是对管理员或客户记录的统一视图。
 type Account struct {
 	ID           string
 	Username     string
@@ -31,7 +31,7 @@ type Account struct {
 	UpdatedAt    time.Time
 }
 
-// table returns the gorm model backing the given role.
+// table 返回支撑给定角色的 gorm 模型。
 func tableFor(role AccountRole) any {
 	if role == RoleAdmin {
 		return &Admin{}
@@ -39,7 +39,7 @@ func tableFor(role AccountRole) any {
 	return &Customer{}
 }
 
-// CreateAdmin inserts an admin account.
+// CreateAdmin 插入一个管理员账户。
 func (r *Repository) CreateAdmin(ctx context.Context, admin *Admin) error {
 	if err := r.db.WithContext(ctx).Create(admin).Error; err != nil {
 		return fmt.Errorf("store: create admin: %w", err)
@@ -47,7 +47,7 @@ func (r *Repository) CreateAdmin(ctx context.Context, admin *Admin) error {
 	return nil
 }
 
-// CreateCustomer inserts a customer account.
+// CreateCustomer 插入一个客户账户。
 func (r *Repository) CreateCustomer(ctx context.Context, customer *Customer) error {
 	if err := r.db.WithContext(ctx).Create(customer).Error; err != nil {
 		return fmt.Errorf("store: create customer: %w", err)
@@ -55,8 +55,8 @@ func (r *Repository) CreateCustomer(ctx context.Context, customer *Customer) err
 	return nil
 }
 
-// GetAccountByID returns the account with id from the given role's table, or
-// ErrNotFound.
+// GetAccountByID 从给定角色的表中返回具有 id 的账户，或
+// ErrNotFound。
 func (r *Repository) GetAccountByID(ctx context.Context, role AccountRole, id string) (*Account, error) {
 	if role == RoleAdmin {
 		var admin Admin
@@ -72,9 +72,9 @@ func (r *Repository) GetAccountByID(ctx context.Context, role AccountRole, id st
 	return accountFromCustomer(&customer), nil
 }
 
-// GetAccountByUsername returns the account with username from the given role's
-// table, or ErrNotFound. Usernames are unique per table, so admins and customers
-// may share a username.
+// GetAccountByUsername 从给定角色的表中返回具有 username 的账户，
+// 或 ErrNotFound。用户名在每个表中唯一，因此管理员和客户可以
+// 共享同一个用户名。
 func (r *Repository) GetAccountByUsername(ctx context.Context, role AccountRole, username string) (*Account, error) {
 	if role == RoleAdmin {
 		var admin Admin
@@ -90,8 +90,8 @@ func (r *Repository) GetAccountByUsername(ctx context.Context, role AccountRole,
 	return accountFromCustomer(&customer), nil
 }
 
-// first loads the first matching row into dest, mapping gorm's not-found error
-// to ErrNotFound.
+// first 将第一个匹配的行加载到 dest 中，并把 gorm 的未找到错误映射
+// 为 ErrNotFound。
 func (r *Repository) first(ctx context.Context, dest any, query string, args ...any) error {
 	conditions := append([]any{query}, args...)
 	err := r.db.WithContext(ctx).First(dest, conditions...).Error
@@ -101,7 +101,7 @@ func (r *Repository) first(ctx context.Context, dest any, query string, args ...
 	return err
 }
 
-// ListCustomers returns every customer account ordered by creation time.
+// ListCustomers 返回按创建时间排序的所有客户账户。
 func (r *Repository) ListCustomers(ctx context.Context) ([]Account, error) {
 	var customers []Customer
 	if err := r.db.WithContext(ctx).Order("created_at ASC").Find(&customers).Error; err != nil {
@@ -114,7 +114,7 @@ func (r *Repository) ListCustomers(ctx context.Context) ([]Account, error) {
 	return accounts, nil
 }
 
-// ListAdmins returns every admin account ordered by creation time.
+// ListAdmins 返回按创建时间排序的所有管理员账户。
 func (r *Repository) ListAdmins(ctx context.Context) ([]Account, error) {
 	var admins []Admin
 	if err := r.db.WithContext(ctx).Order("created_at ASC").Find(&admins).Error; err != nil {
@@ -127,7 +127,7 @@ func (r *Repository) ListAdmins(ctx context.Context) ([]Account, error) {
 	return accounts, nil
 }
 
-// CountAdmins returns the number of admin accounts.
+// CountAdmins 返回管理员账户的数量。
 func (r *Repository) CountAdmins(ctx context.Context) (int64, error) {
 	var count int64
 	if err := r.db.WithContext(ctx).Model(&Admin{}).Count(&count).Error; err != nil {
@@ -136,7 +136,7 @@ func (r *Repository) CountAdmins(ctx context.Context) (int64, error) {
 	return count, nil
 }
 
-// CountEnabledAdmins returns the number of enabled admin accounts.
+// CountEnabledAdmins 返回已启用管理员账户的数量。
 func (r *Repository) CountEnabledAdmins(ctx context.Context) (int64, error) {
 	var count int64
 	if err := r.db.WithContext(ctx).Model(&Admin{}).
@@ -147,7 +147,7 @@ func (r *Repository) CountEnabledAdmins(ctx context.Context) (int64, error) {
 	return count, nil
 }
 
-// CountCustomers returns the number of customer accounts.
+// CountCustomers 返回客户账户的数量。
 func (r *Repository) CountCustomers(ctx context.Context) (int64, error) {
 	var count int64
 	if err := r.db.WithContext(ctx).Model(&Customer{}).Count(&count).Error; err != nil {
@@ -156,7 +156,7 @@ func (r *Repository) CountCustomers(ctx context.Context) (int64, error) {
 	return count, nil
 }
 
-// UpdateCustomer updates a customer's disabled flag and returns the result.
+// UpdateCustomer 更新客户的禁用标志并返回结果。
 func (r *Repository) UpdateCustomer(ctx context.Context, id string, update UserUpdate) (*Account, error) {
 	if err := r.db.WithContext(ctx).Model(&Customer{}).Where("id = ?", id).Updates(update).Error; err != nil {
 		return nil, fmt.Errorf("store: update customer %q: %w", id, err)
@@ -164,7 +164,7 @@ func (r *Repository) UpdateCustomer(ctx context.Context, id string, update UserU
 	return r.GetAccountByID(ctx, RoleCustomer, id)
 }
 
-// UpdateAdmin updates an admin's disabled flag and returns the result.
+// UpdateAdmin 更新管理员的禁用标志并返回结果。
 func (r *Repository) UpdateAdmin(ctx context.Context, id string, update UserUpdate) (*Account, error) {
 	if err := r.db.WithContext(ctx).Model(&Admin{}).Where("id = ?", id).Updates(update).Error; err != nil {
 		return nil, fmt.Errorf("store: update admin %q: %w", id, err)
@@ -172,8 +172,8 @@ func (r *Repository) UpdateAdmin(ctx context.Context, id string, update UserUpda
 	return r.GetAccountByID(ctx, RoleAdmin, id)
 }
 
-// ReserveQuota atomically increases a customer's used bytes if it stays within
-// quota. It returns false when the quota would be exceeded.
+// ReserveQuota 在不超过配额的情况下，原子性地增加客户的已用字节数。
+// 当会超出配额时返回 false。
 func (r *Repository) ReserveQuota(ctx context.Context, customerID string, amount int64) (bool, error) {
 	result := r.db.WithContext(ctx).Model(&Customer{}).
 		Where("id = ? AND (quota_bytes = 0 OR used_bytes + ? <= quota_bytes)", customerID, amount).
@@ -184,7 +184,7 @@ func (r *Repository) ReserveQuota(ctx context.Context, customerID string, amount
 	return result.RowsAffected == 1, nil
 }
 
-// ReleaseQuota decreases a customer's used bytes.
+// ReleaseQuota 减少客户的已用字节数。
 func (r *Repository) ReleaseQuota(ctx context.Context, customerID string, amount int64) error {
 	if err := r.db.WithContext(ctx).Model(&Customer{}).
 		Where("id = ? AND used_bytes >= ?", customerID, amount).
@@ -194,7 +194,7 @@ func (r *Repository) ReleaseQuota(ctx context.Context, customerID string, amount
 	return nil
 }
 
-// DeleteAccount removes an account from the table backing its role.
+// DeleteAccount 从支撑其角色的表中移除一个账户。
 func (r *Repository) DeleteAccount(ctx context.Context, role AccountRole, id string) error {
 	result := r.db.WithContext(ctx).Delete(tableFor(role), "id = ?", id)
 	if result.Error != nil {

@@ -9,25 +9,24 @@ import (
 	"github.com/AXmishell/axmipic/internal/store"
 )
 
-// tokenTouchInterval throttles last-used updates so a burst of API requests
-// does not cause one database write per request.
+// tokenTouchInterval 用于对「最近使用时间」的写入进行节流，避免大量 API 请求
+// 导致每个请求都写一次数据库。
 const tokenTouchInterval = time.Minute
 
-// Authenticator resolves Bearer credentials (API tokens or session JWTs) into a
-// Principal. It does not reject anonymous requests; use RequireAuth to enforce.
+// Authenticator 将 Bearer 凭证（API 令牌或会话 JWT）解析为 Principal。
+// 它不会拒绝匿名请求；如需强制认证，请使用 RequireAuth。
 type Authenticator struct {
 	repo   *store.Repository
 	issuer *SessionIssuer
 }
 
-// NewAuthenticator creates an Authenticator.
+// NewAuthenticator 创建一个 Authenticator。
 func NewAuthenticator(repo *store.Repository, issuer *SessionIssuer) *Authenticator {
 	return &Authenticator{repo: repo, issuer: issuer}
 }
 
-// Authenticate is optional authentication: a valid credential is attached to
-// the request context, an invalid one is rejected, and no credential passes
-// through as a guest.
+// Authenticate 是可选认证：有效凭证会附加到请求上下文，无效凭证会被拒绝，
+// 无凭证则作为访客放行。
 func (a *Authenticator) Authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		credential := bearerToken(r)
@@ -60,7 +59,7 @@ func (a *Authenticator) resolve(r *http.Request, credential string) (*Principal,
 			}
 			if token.LastUsedAt == nil || time.Since(*token.LastUsedAt) > tokenTouchInterval {
 				if err := a.repo.TouchToken(ctx, token.ID); err != nil {
-					// A failed last-used update must not block an otherwise valid request.
+					// 「最近使用时间」更新失败不应阻塞本身有效的请求。
 					_ = err
 				}
 			}
@@ -71,7 +70,7 @@ func (a *Authenticator) resolve(r *http.Request, credential string) (*Principal,
 				TokenID:  token.ID,
 			}, nil
 		}
-		// Admins occupy a separate table.
+		// 管理员存放在独立的表中。
 		admin, err := a.repo.GetAccountByID(ctx, store.RoleAdmin, token.UserID)
 		if err != nil {
 			return nil, ErrUnauthenticated
@@ -116,7 +115,7 @@ func (a *Authenticator) resolve(r *http.Request, credential string) (*Principal,
 	return &Principal{UserID: customer.ID, Username: customer.Username, Role: RoleUser}, nil
 }
 
-// RequireAdmin rejects requests from callers that are not authenticated admins.
+// RequireAdmin 拒绝非管理员已认证用户的请求。
 func RequireAdmin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		principal, ok := FromContext(r.Context())
@@ -132,7 +131,7 @@ func RequireAdmin(next http.Handler) http.Handler {
 	})
 }
 
-// RequireAuth rejects requests without an authenticated, non-guest principal.
+// RequireAuth 拒绝没有已认证（且非访客）主体的请求。
 func RequireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		principal, ok := FromContext(r.Context())
@@ -153,8 +152,7 @@ func bearerToken(r *http.Request) string {
 	return strings.TrimSpace(header[len(prefix):])
 }
 
-// writeAuthError emits an API error envelope. The auth package writes it
-// directly to avoid depending on the api package.
+// writeAuthError 输出 API 错误信封。auth 包直接写入，以避免依赖 api 包。
 func writeAuthError(w http.ResponseWriter, status int, message string) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)

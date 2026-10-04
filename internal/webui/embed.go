@@ -1,4 +1,4 @@
-// Package webui embeds and serves the AXmiPic single-page application.
+// Package webui 嵌入并提供 AXmiPic 单页应用。
 package webui
 
 import (
@@ -12,8 +12,8 @@ import (
 //go:embed all:dist
 var distFS embed.FS
 
-// Handler serves the embedded SPA. Unmatched non-API paths fall back to
-// index.html so client-side routes work on deep links and refreshes.
+// Handler 提供嵌入的 SPA。未匹配的非 API 路径回退到 index.html，使客户端路由
+// 在深链接和刷新时正常工作。
 func Handler() http.Handler {
 	sub, err := fs.Sub(distFS, "dist")
 	if err != nil {

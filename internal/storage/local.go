@@ -14,14 +14,14 @@ import (
 	"strings"
 )
 
-// Local stores objects on the local filesystem rooted at a directory.
+// Local 将对象存储在本地文件系统上，根目录由 root 指定。
 type Local struct {
 	root    string
 	baseURL string
 }
 
-// NewLocal creates a local storage driver rooted at root. baseURL is used to
-// build public object URLs.
+// NewLocal 创建一个以 root 为根目录的本地存储驱动。baseURL 用于
+// 构建公开的对象 URL。
 func NewLocal(root, baseURL string) (*Local, error) {
 	if strings.TrimSpace(root) == "" {
 		return nil, fmt.Errorf("storage: local root must not be empty")
@@ -36,7 +36,7 @@ func NewLocal(root, baseURL string) (*Local, error) {
 	return &Local{root: absRoot, baseURL: strings.TrimRight(baseURL, "/")}, nil
 }
 
-// Put writes an object atomically (temp file followed by rename).
+// Put 原子地写入对象（先写临时文件再重命名）。
 func (l *Local) Put(_ context.Context, key string, r io.Reader, size int64, _ string) error {
 	full, err := l.resolve(key)
 	if err != nil {
@@ -53,8 +53,8 @@ func (l *Local) Put(_ context.Context, key string, r io.Reader, size int64, _ st
 	}
 	tmpName := tmp.Name()
 	defer func() {
-		// Best-effort cleanup: a successful rename below already moved the file,
-		// so this is normally a no-op returning fs.ErrNotExist.
+		// 尽力清理：下面的重命名若成功已移动该文件，
+		// 因此这里通常是无操作，返回 fs.ErrNotExist。
 		_ = os.Remove(tmpName)
 	}()
 
@@ -76,9 +76,9 @@ func (l *Local) Put(_ context.Context, key string, r io.Reader, size int64, _ st
 	}
 
 	if err := os.Rename(tmpName, full); err != nil {
-		// On Windows Rename fails when the destination exists. Keys are
-		// content-addressed, so an existing destination means an identical
-		// object was committed concurrently, which satisfies this Put.
+		// 在 Windows 上，当目标已存在时 Rename 会失败。键是内容寻址的，
+		// 因此目标已存在意味着一个完全相同的对象已被并发提交，
+		// 这满足本次 Put。
 		if _, statErr := os.Stat(full); statErr == nil {
 			return nil
 		}
@@ -87,7 +87,7 @@ func (l *Local) Put(_ context.Context, key string, r io.Reader, size int64, _ st
 	return nil
 }
 
-// Get opens an object for reading.
+// Get 打开一个对象以供读取。
 func (l *Local) Get(_ context.Context, key string) (io.ReadCloser, error) {
 	full, err := l.resolve(key)
 	if err != nil {
@@ -103,7 +103,7 @@ func (l *Local) Get(_ context.Context, key string) (io.ReadCloser, error) {
 	return f, nil
 }
 
-// Delete removes an object. Deleting a missing object is a no-op.
+// Delete 删除一个对象。删除不存在的对象是无操作。
 func (l *Local) Delete(_ context.Context, key string) error {
 	full, err := l.resolve(key)
 	if err != nil {
@@ -118,7 +118,7 @@ func (l *Local) Delete(_ context.Context, key string) error {
 	return nil
 }
 
-// Exists reports whether an object is present.
+// Exists 报告对象是否存在。
 func (l *Local) Exists(_ context.Context, key string) (bool, error) {
 	full, err := l.resolve(key)
 	if err != nil {
@@ -133,7 +133,7 @@ func (l *Local) Exists(_ context.Context, key string) (bool, error) {
 	return true, nil
 }
 
-// Stat returns metadata for a stored object.
+// Stat 返回已存储对象的元数据。
 func (l *Local) Stat(_ context.Context, key string) (*ObjectInfo, error) {
 	full, err := l.resolve(key)
 	if err != nil {
@@ -153,9 +153,8 @@ func (l *Local) Stat(_ context.Context, key string) (*ObjectInfo, error) {
 	}, nil
 }
 
-// contentTypeFor returns the media type for a stored object. It prefers the
-// key extension and falls back to sniffing the file header, so extensionless
-// keys still report a correct type.
+// contentTypeFor 返回已存储对象的媒体类型。它优先使用键的扩展名，
+// 回退到嗅探文件头，因此无扩展名的键也能报告正确的类型。
 func contentTypeFor(full, ext string) string {
 	if contentType := mime.TypeByExtension(ext); contentType != "" {
 		return contentType
@@ -175,12 +174,12 @@ func contentTypeFor(full, ext string) string {
 	return http.DetectContentType(head[:n])
 }
 
-// URL returns the public URL for an object key.
+// URL 返回对象键对应的公开 URL。
 func (l *Local) URL(key string) string {
 	return l.baseURL + "/i/" + key
 }
 
-// resolve validates key and returns the absolute filesystem path it maps to.
+// resolve 校验 key 并返回其映射到的绝对文件系统路径。
 func (l *Local) resolve(key string) (string, error) {
 	if key == "" {
 		return "", fmt.Errorf("%w: empty key", ErrInvalidKey)

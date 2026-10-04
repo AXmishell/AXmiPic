@@ -8,25 +8,24 @@ import (
 	"github.com/h2non/bimg"
 )
 
-// NOTE: this file is only compiled with `-tags libvips` on a system with the
-// libvips library and pkg-config available, and it requires the bimg module:
+// 注意：仅在具备 libvips 库和 pkg-config、且使用 `-tags libvips` 时才编译此文件，
+// 并且它依赖 bimg 模块：
 //
 //	go get github.com/h2non/bimg
 //	go build -tags libvips ./cmd/axmipic
 //
-// The default build uses the pure-Go processor in purego.go. bimg is
-// deliberately not a default dependency so the module stays CGO-free.
+// 默认构建使用 purego.go 中的纯 Go 处理器。bimg 被有意设为非默认依赖，以保持
+// 模块无 CGO。
 
-// bimgProcessor implements Processor with bimg/libvips. It additionally encodes
-// WebP and AVIF.
+// bimgProcessor 使用 bimg/libvips 实现 Processor。它额外编码 WebP 和 AVIF。
 type bimgProcessor struct{}
 
-// Default returns the libvips processor.
+// Default 返回 libvips 处理器。
 func Default() Processor {
 	return bimgProcessor{}
 }
 
-// Capabilities reports the libvips processor's abilities.
+// Capabilities 报告 libvips 处理器的能力。
 func (bimgProcessor) Capabilities() Capabilities {
 	return Capabilities{
 		Name:          "libvips",
@@ -35,7 +34,7 @@ func (bimgProcessor) Capabilities() Capabilities {
 	}
 }
 
-// Info decodes the image header.
+// Info 解码图像头部。
 func (bimgProcessor) Info(src []byte) (Info, error) {
 	meta, err := bimg.Metadata(src)
 	if err != nil {
@@ -45,7 +44,7 @@ func (bimgProcessor) Info(src []byte) (Info, error) {
 	return Info{Width: meta.Size.Width, Height: meta.Size.Height, Format: f}, nil
 }
 
-// Process applies the transformation with libvips.
+// Process 使用 libvips 应用变换。
 func (bimgProcessor) Process(src []byte, opts Options) (Result, error) {
 	if err := validateOptions(opts); err != nil {
 		return Result{}, err

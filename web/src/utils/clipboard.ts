@@ -1,7 +1,6 @@
 /**
- * Copies text with a legacy fallback: the console can be served over plain
- * HTTP from the embedded Go binary, where navigator.clipboard is unavailable
- * because it requires a secure context.
+ * 复制文本，并带有降级方案：控制台可能通过内嵌 Go 二进制的纯 HTTP 提供服务，
+ * 此时 navigator.clipboard 因需要安全上下文而不可用。
  */
 export async function copyText(text: string): Promise<boolean> {
   if (!text) return false
@@ -11,7 +10,7 @@ export async function copyText(text: string): Promise<boolean> {
       await navigator.clipboard.writeText(text)
       return true
     } catch {
-      // Fall through to the textarea path.
+      // 降级到 textarea 方案。
     }
   }
 

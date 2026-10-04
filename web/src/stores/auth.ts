@@ -57,7 +57,7 @@ export const useAuthStore = defineStore('auth', () => {
       }
       localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
     } catch {
-      // Storage can be unavailable (private mode); session stays in memory.
+      // 存储可能不可用（隐私模式）；会话仅保留在内存中。
     }
   }
 
@@ -68,11 +68,11 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       localStorage.removeItem(STORAGE_KEY)
     } catch {
-      // Ignore storage failures.
+      // 忽略存储失败。
     }
   }
 
-  /** Restores a persisted session exactly once, dropping expired tokens. */
+  /** 仅恢复一次已持久化的会话，并丢弃过期令牌。 */
   function hydrate(): void {
     if (hydrated.value) return
     hydrated.value = true
@@ -92,7 +92,7 @@ export const useAuthStore = defineStore('auth', () => {
     return applySession(result)
   }
 
-  /** Signs in through the separate admin entrypoint. */
+  /** 通过独立的管理员入口登录。 */
   async function adminLogin(credentials: Credentials): Promise<User> {
     const result = await adminLoginApi(credentials)
     return applySession(result)
@@ -106,7 +106,7 @@ export const useAuthStore = defineStore('auth', () => {
     return result.user
   }
 
-  /** Registers the account, then signs it in with the same credentials. */
+  /** 注册账号后使用相同凭证自动登录。 */
   async function register(credentials: Credentials): Promise<User> {
     await registerApi(credentials)
     return login(credentials)

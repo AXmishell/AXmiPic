@@ -13,15 +13,15 @@ import (
 	"github.com/AXmishell/axmipic/internal/store"
 )
 
-// Errors returned by the account service.
+// 账户服务返回的错误。
 var (
-	// ErrUserExists indicates the username is already taken.
+	// ErrUserExists 表示用户名已被占用。
 	ErrUserExists = errors.New("service: username already exists")
-	// ErrInvalidCredentials indicates a bad username or password.
+	// ErrInvalidCredentials 表示用户名或密码错误。
 	ErrInvalidCredentials = errors.New("service: invalid username or password")
-	// ErrRegistrationDisabled indicates registration is turned off.
+	// ErrRegistrationDisabled 表示注册功能已关闭。
 	ErrRegistrationDisabled = errors.New("service: registration is disabled")
-	// ErrTokenNotFound indicates an API token does not exist.
+	// ErrTokenNotFound 表示某个 API 令牌不存在。
 	ErrTokenNotFound = errors.New("service: token not found")
 )
 
@@ -29,13 +29,13 @@ const (
 	minUsernameLength = 3
 	maxUsernameLength = 64
 	minPasswordLength = 8
-	// maxPasswordLength matches bcrypt's 72-byte input limit; longer inputs are
-	// rejected rather than surfacing as an internal error.
+	// maxPasswordLength 与 bcrypt 的 72 字节输入上限保持一致；更长的输入会被
+	// 拒绝，而不是作为内部错误暴露出来。
 	maxPasswordLength = 72
 )
 
-// dummyPasswordHash is compared against when a username does not exist so that
-// login latency does not reveal whether an account is registered.
+// dummyPasswordHash 会在用户名不存在时用于比对，这样登录耗时就不会泄露
+// 某个账户是否已注册。
 var dummyPasswordHash = func() string {
 	hash, err := auth.HashPassword("axmipic-nonexistent-account")
 	if err != nil {
@@ -44,7 +44,7 @@ var dummyPasswordHash = func() string {
 	return hash
 }()
 
-// UserDTO is the API representation of an account.
+// UserDTO 是账户在 API 中的表示形式。
 type UserDTO struct {
 	ID         string    `json:"id"`
 	Username   string    `json:"username"`
@@ -55,15 +55,15 @@ type UserDTO struct {
 	CreatedAt  time.Time `json:"created_at"`
 }
 
-// SessionDTO is returned by login.
+// SessionDTO 由登录操作返回。
 type SessionDTO struct {
 	Token     string    `json:"token"`
 	ExpiresAt time.Time `json:"expires_at"`
 	User      UserDTO   `json:"user"`
 }
 
-// TokenDTO is the API representation of an API token. The plaintext Token is
-// populated only when the token is created.
+// TokenDTO 是 API 令牌在 API 中的表示形式。明文 Token 仅在令牌创建时
+// 填充。
 type TokenDTO struct {
 	ID         string     `json:"id"`
 	Name       string     `json:"name"`
@@ -73,7 +73,7 @@ type TokenDTO struct {
 	CreatedAt  time.Time  `json:"created_at"`
 }
 
-// AccountService manages accounts, sessions, and API tokens.
+// AccountService 管理账户、会话和 API 令牌。
 type AccountService struct {
 	repo              *store.Repository
 	issuer            *auth.SessionIssuer
@@ -81,7 +81,7 @@ type AccountService struct {
 	defaultQuotaBytes int64
 }
 
-// NewAccountService constructs an AccountService.
+// NewAccountService 构造一个 AccountService。
 func NewAccountService(repo *store.Repository, issuer *auth.SessionIssuer, allowRegistration bool, defaultQuotaBytes int64) *AccountService {
 	return &AccountService{
 		repo:              repo,
@@ -91,7 +91,7 @@ func NewAccountService(repo *store.Repository, issuer *auth.SessionIssuer, allow
 	}
 }
 
-// RegisterCustomer creates a new ordinary (customer) account.
+// RegisterCustomer 创建一个新的普通（客户）账户。
 func (s *AccountService) RegisterCustomer(ctx context.Context, username, password string) (*UserDTO, error) {
 	username = strings.ToLower(strings.TrimSpace(username))
 	if err := validateCredentials(username, password); err != nil {
@@ -117,7 +117,7 @@ func (s *AccountService) RegisterCustomer(ctx context.Context, username, passwor
 		QuotaBytes:   s.defaultQuotaBytes,
 	}
 	if err := s.repo.CreateCustomer(ctx, customer); err != nil {
-		// A concurrent registration may have inserted the same username first.
+		// 并发的注册可能已经先插入了相同的用户名。
 		if strings.Contains(strings.ToLower(err.Error()), "unique") {
 			return nil, ErrUserExists
 		}
@@ -126,7 +126,7 @@ func (s *AccountService) RegisterCustomer(ctx context.Context, username, passwor
 	return toUserDTO(accountFromCustomer(customer)), nil
 }
 
-// RegisterAdmin creates an admin account in the admins table.
+// RegisterAdmin 在 admins 表中创建一个管理员账户。
 func (s *AccountService) RegisterAdmin(ctx context.Context, username, password string) (*UserDTO, error) {
 	username = strings.ToLower(strings.TrimSpace(username))
 	if err := validateCredentials(username, password); err != nil {
@@ -155,14 +155,12 @@ func (s *AccountService) RegisterAdmin(ctx context.Context, username, password s
 	return toUserDTO(accountFromAdmin(admin)), nil
 }
 
-// LoginCustomer verifies credentials against the customers table and issues a
-// session token.
+// LoginCustomer 针对 customers 表校验凭据，并签发一个会话令牌。
 func (s *AccountService) LoginCustomer(ctx context.Context, username, password string) (*SessionDTO, error) {
 	return s.login(ctx, store.RoleCustomer, username, password)
 }
 
-// LoginAdmin verifies credentials against the admins table and issues a session
-// token.
+// LoginAdmin 针对 admins 表校验凭据，并签发一个会话令牌。
 func (s *AccountService) LoginAdmin(ctx context.Context, username, password string) (*SessionDTO, error) {
 	return s.login(ctx, store.RoleAdmin, username, password)
 }
@@ -171,8 +169,8 @@ func (s *AccountService) login(ctx context.Context, role store.AccountRole, user
 	account, err := s.repo.GetAccountByUsername(ctx, role, strings.ToLower(strings.TrimSpace(username)))
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			// Perform a dummy comparison so a missing account and a wrong
-			// password take comparable time, preventing username enumeration.
+			// 执行一次哑比对，使账户不存在与密码错误两种情况耗时相近，
+			// 从而防止用户名枚举。
 			auth.VerifyPassword(dummyPasswordHash, password)
 			return nil, ErrInvalidCredentials
 		}
@@ -191,8 +189,7 @@ func (s *AccountService) login(ctx context.Context, role store.AccountRole, user
 	return &SessionDTO{Token: token, ExpiresAt: expiresAt, User: *toUserDTO(account)}, nil
 }
 
-// Me returns the account for a principal, resolving the correct table from the
-// principal's role.
+// Me 返回某个主体的账户，并根据该主体的角色解析出正确的表。
 func (s *AccountService) Me(ctx context.Context, principal *auth.Principal) (*UserDTO, error) {
 	account, err := s.repo.GetAccountByID(ctx, principal.StoreRole(), principal.UserID)
 	if err != nil {
@@ -201,7 +198,7 @@ func (s *AccountService) Me(ctx context.Context, principal *auth.Principal) (*Us
 	return toUserDTO(account), nil
 }
 
-// CreateToken issues a new API token for a user, returning the plaintext once.
+// CreateToken 为用户签发一个新的 API 令牌，并仅返回一次明文。
 func (s *AccountService) CreateToken(ctx context.Context, userID, name string) (*TokenDTO, error) {
 	plaintext, hash, prefix, err := auth.GenerateAPIToken()
 	if err != nil {
@@ -222,7 +219,7 @@ func (s *AccountService) CreateToken(ctx context.Context, userID, name string) (
 	return dto, nil
 }
 
-// ListTokens returns a user's tokens without secrets.
+// ListTokens 返回某个用户的令牌，但不含机密信息。
 func (s *AccountService) ListTokens(ctx context.Context, userID string) ([]TokenDTO, error) {
 	tokens, err := s.repo.ListTokensByUser(ctx, userID)
 	if err != nil {
@@ -235,7 +232,7 @@ func (s *AccountService) ListTokens(ctx context.Context, userID string) ([]Token
 	return dtos, nil
 }
 
-// RevokeToken deletes one of a user's tokens.
+// RevokeToken 删除某个用户的其中一个令牌。
 func (s *AccountService) RevokeToken(ctx context.Context, userID, tokenID string) error {
 	if err := s.repo.DeleteToken(ctx, userID, tokenID); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
@@ -246,9 +243,8 @@ func (s *AccountService) RevokeToken(ctx context.Context, userID, tokenID string
 	return nil
 }
 
-// EnsureBootstrapAdmin creates an admin account from a "username:password" spec
-// when no admin exists yet. It is a no-op when the spec is empty or an admin
-// already exists.
+// EnsureBootstrapAdmin 在尚无管理员存在时，根据 "username:password" 规格创建
+// 一个管理员账户。当规格为空或管理员已存在时，它不执行任何操作。
 func (s *AccountService) EnsureBootstrapAdmin(ctx context.Context, spec string) error {
 	if strings.TrimSpace(spec) == "" {
 		return nil

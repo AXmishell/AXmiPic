@@ -1,5 +1,5 @@
-// Package auth provides authentication primitives: principals, password
-// hashing, API tokens, session JWTs, middleware, and rate limiting.
+// Package auth 提供认证基础设施：主体身份、密码哈希、API 令牌、会话 JWT、
+// 中间件与限流。
 package auth
 
 import (
@@ -9,25 +9,24 @@ import (
 	"github.com/AXmishell/axmipic/internal/store"
 )
 
-// Role is an account's authorization level.
+// Role 表示账号的授权级别。
 type Role string
 
-// Account roles, matching the store's separate tables.
+// 账号角色，与 store 中相互独立的表一一对应。
 const (
 	RoleUser  Role = "customer"
 	RoleAdmin Role = "admin"
 )
 
-// Errors returned by authentication.
+// 认证过程中返回的错误。
 var (
-	// ErrUnauthenticated indicates a missing or invalid credential.
+	// ErrUnauthenticated 表示缺少凭证或凭证无效。
 	ErrUnauthenticated = errors.New("auth: authentication required")
-	// ErrInvalidCredentials indicates a bad username or password.
+	// ErrInvalidCredentials 表示用户名或密码错误。
 	ErrInvalidCredentials = errors.New("auth: invalid credentials")
 )
 
-// Principal is an authenticated caller. A nil Principal represents an
-// anonymous guest.
+// Principal 表示已认证的调用方。Principal 为 nil 时代表匿名访客。
 type Principal struct {
 	UserID   string
 	Username string
@@ -36,12 +35,12 @@ type Principal struct {
 	TokenID  string
 }
 
-// IsAdmin reports whether the principal has the admin role.
+// IsAdmin 判断该主体是否拥有管理员角色。
 func (p *Principal) IsAdmin() bool {
 	return p != nil && p.Role == RoleAdmin
 }
 
-// StoreRole maps the principal's role to the store account role.
+// StoreRole 将主体的角色映射为 store 中的账号角色。
 func (p *Principal) StoreRole() store.AccountRole {
 	if p.IsAdmin() {
 		return store.RoleAdmin
@@ -49,19 +48,19 @@ func (p *Principal) StoreRole() store.AccountRole {
 	return store.RoleCustomer
 }
 
-// IsGuest reports whether the principal is anonymous.
+// IsGuest 判断该主体是否为匿名访客。
 func (p *Principal) IsGuest() bool {
 	return p == nil || p.Guest
 }
 
 type principalKey struct{}
 
-// WithPrincipal stores p in ctx.
+// WithPrincipal 将 p 存入 ctx。
 func WithPrincipal(ctx context.Context, p *Principal) context.Context {
 	return context.WithValue(ctx, principalKey{}, p)
 }
 
-// FromContext returns the principal stored in ctx, if any.
+// FromContext 返回 ctx 中保存的主体身份（若存在）。
 func FromContext(ctx context.Context) (*Principal, bool) {
 	p, ok := ctx.Value(principalKey{}).(*Principal)
 	return p, ok

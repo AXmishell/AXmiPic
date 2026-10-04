@@ -1,4 +1,4 @@
-// Command axmipic runs the AXmiPic image hosting service.
+// Command axmipic 运行 AXmiPic 图床服务。
 package main
 
 import (
@@ -121,9 +121,8 @@ func run() error {
 	return srv.Run(ctx)
 }
 
-// jwtSecret returns the configured session secret, generating a random one (and
-// warning) when none is configured. A random secret invalidates sessions on
-// restart and is unsuitable for multi-instance deployments.
+// jwtSecret 返回配置的会话密钥，当未配置时生成一个随机密钥（并发出警告）。
+// 随机密钥会使会话在重启后失效，不适用于多实例部署。
 func jwtSecret(configured string, logger *slog.Logger) ([]byte, error) {
 	if configured != "" {
 		return []byte(configured), nil
@@ -136,8 +135,8 @@ func jwtSecret(configured string, logger *slog.Logger) ([]byte, error) {
 	return []byte(base64.RawURLEncoding.EncodeToString(buf)), nil
 }
 
-// processingFormats converts configured format names into imaging formats,
-// skipping unknown names (already rejected during config validation).
+// processingFormats 将配置的格式名称转换为 imaging 格式，跳过未知名称
+// （这些名称已在配置校验阶段被拒绝）。
 func processingFormats(names []string) []imaging.Format {
 	formats := make([]imaging.Format, 0, len(names))
 	for _, name := range names {
@@ -148,8 +147,8 @@ func processingFormats(names []string) []imaging.Format {
 	return formats
 }
 
-// runPendingUploadJanitor periodically removes expired pending uploads and the
-// orphaned objects they left behind. It runs until ctx is cancelled.
+// runPendingUploadJanitor 定期删除过期的待处理上传及其遗留的孤立对象。
+// 它运行直到 ctx 被取消。
 func runPendingUploadJanitor(ctx context.Context, svc *service.UploadService, logger *slog.Logger) {
 	const interval = time.Hour
 	cleanup := func() {
@@ -178,8 +177,7 @@ func runPendingUploadJanitor(ctx context.Context, svc *service.UploadService, lo
 	}
 }
 
-// storagePresignExpiry returns the presigned-upload lifetime for the active
-// storage driver.
+// storagePresignExpiry 返回当前存储驱动的预签名上传有效期。
 func storagePresignExpiry(cfg config.Config) time.Duration {
 	seconds := 0
 	switch cfg.Storage.Driver {
@@ -194,7 +192,7 @@ func storagePresignExpiry(cfg config.Config) time.Duration {
 	return time.Duration(seconds) * time.Second
 }
 
-// newLogger builds a structured JSON logger at the configured level.
+// newLogger 在配置的级别上构建结构化 JSON 日志器。
 func newLogger(level string) *slog.Logger {
 	var lvl slog.Level
 	if err := lvl.UnmarshalText([]byte(level)); err != nil {

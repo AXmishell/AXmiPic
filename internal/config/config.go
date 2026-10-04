@@ -1,4 +1,4 @@
-// Package config loads and validates AXmiPic configuration.
+// Package config 加载并校验 AXmiPic 配置。
 package config
 
 import (
@@ -14,12 +14,11 @@ import (
 	"github.com/AXmishell/axmipic/internal/imaging"
 )
 
-// envPrefix is the prefix used to override configuration through the environment.
+// envPrefix 是用于通过环境变量覆盖配置的前缀。
 const envPrefix = "AXMIPIC_"
 
-// envPaths maps every env-addressable AXMIPIC_* variable to its dotted
-// configuration path. Leaves are listed explicitly so underscores inside a
-// field name (for example max_size_mb) are never mistaken for nesting.
+// envPaths 将每个可通过环境变量设置的 AXMIPIC_* 变量映射到其点分隔的配置路径。
+// 叶子节点被显式列出，因此字段名中的下划线（例如 max_size_mb）不会被误认为嵌套。
 var envPaths = map[string]string{
 	"server_host":                 "server.host",
 	"server_port":                 "server.port",
@@ -70,7 +69,7 @@ var envPaths = map[string]string{
 	"logging_level":               "logging.level",
 }
 
-// Config is the top-level application configuration.
+// Config 是顶层应用配置。
 type Config struct {
 	Server     ServerConfig     `koanf:"server"`
 	Database   DatabaseConfig   `koanf:"database"`
@@ -82,7 +81,7 @@ type Config struct {
 	Logging    LoggingConfig    `koanf:"logging"`
 }
 
-// ServerConfig configures the HTTP listener.
+// ServerConfig 配置 HTTP 监听器。
 type ServerConfig struct {
 	Host               string `koanf:"host"`
 	Port               int    `koanf:"port"`
@@ -93,15 +92,15 @@ type ServerConfig struct {
 	ShutdownTimeoutSec int    `koanf:"shutdown_timeout_sec"`
 }
 
-// DatabaseConfig configures the metadata database.
+// DatabaseConfig 配置元数据数据库。
 type DatabaseConfig struct {
-	// Driver selects the backend: "sqlite" (default) or "postgres".
+	// Driver 选择后端："sqlite"（默认）或 "postgres"。
 	Driver string `koanf:"driver"`
-	// DSN is a file path for sqlite or a libpq connection string/URL for postgres.
+	// DSN 对于 sqlite 是文件路径，对于 postgres 是 libpq 连接字符串/URL。
 	DSN string `koanf:"dsn"`
 }
 
-// StorageConfig selects and configures the object storage backend.
+// StorageConfig 选择并配置对象存储后端。
 type StorageConfig struct {
 	Driver string             `koanf:"driver"`
 	Local  LocalStorageConfig `koanf:"local"`
@@ -109,12 +108,12 @@ type StorageConfig struct {
 	Qiniu  QiniuConfig        `koanf:"qiniu"`
 }
 
-// LocalStorageConfig configures the local filesystem backend.
+// LocalStorageConfig 配置本地文件系统后端。
 type LocalStorageConfig struct {
 	Root string `koanf:"root"`
 }
 
-// S3Config configures an S3-compatible backend.
+// S3Config 配置兼容 S3 的后端。
 type S3Config struct {
 	Endpoint         string `koanf:"endpoint"`
 	Region           string `koanf:"region"`
@@ -127,7 +126,7 @@ type S3Config struct {
 	PresignExpirySec int    `koanf:"presign_expiry_sec"`
 }
 
-// QiniuConfig configures a Qiniu Kodo backend.
+// QiniuConfig 配置七牛云 Kodo 后端。
 type QiniuConfig struct {
 	AccessKey        string `koanf:"access_key"`
 	SecretKey        string `koanf:"secret_key"`
@@ -140,13 +139,13 @@ type QiniuConfig struct {
 	PresignExpirySec int    `koanf:"presign_expiry_sec"`
 }
 
-// UploadConfig constrains accepted uploads.
+// UploadConfig 约束可接受的上传。
 type UploadConfig struct {
 	MaxSizeMB        int      `koanf:"max_size_mb"`
 	AllowedMIMETypes []string `koanf:"allowed_mime_types"`
 }
 
-// ProcessingConfig configures on-the-fly image transformation.
+// ProcessingConfig 配置即时图像变换。
 type ProcessingConfig struct {
 	Enabled        bool     `koanf:"enabled"`
 	MaxWidth       int      `koanf:"max_width"`
@@ -155,7 +154,7 @@ type ProcessingConfig struct {
 	AllowedFormats []string `koanf:"allowed_formats"`
 }
 
-// AuthConfig configures accounts, sessions, and API tokens.
+// AuthConfig 配置账户、会话和 API 令牌。
 type AuthConfig struct {
 	JWTSecret         string `koanf:"jwt_secret"`
 	SessionTTLHours   int    `koanf:"session_ttl_hours"`
@@ -165,7 +164,7 @@ type AuthConfig struct {
 	BootstrapAdmin    string `koanf:"bootstrap_admin"`
 }
 
-// LimitsConfig configures per-caller rate limits.
+// LimitsConfig 配置按调用方的速率限制。
 type LimitsConfig struct {
 	UploadPerMinute int `koanf:"upload_per_minute"`
 	UploadBurst     int `koanf:"upload_burst"`
@@ -175,7 +174,7 @@ type LimitsConfig struct {
 	ImageBurst      int `koanf:"image_burst"`
 }
 
-// LoggingConfig configures logging.
+// LoggingConfig 配置日志。
 type LoggingConfig struct {
 	Level string `koanf:"level"`
 }
@@ -227,8 +226,7 @@ func defaultConfig() Config {
 	}
 }
 
-// Load reads the YAML file at path, applies AXMIPIC_* environment overrides,
-// and validates the result.
+// Load 读取 path 处的 YAML 文件，应用 AXMIPIC_* 环境变量覆盖，并校验结果。
 func Load(path string) (Config, error) {
 	k := koanf.New(".")
 
@@ -340,8 +338,7 @@ func (c Config) validate() error {
 	return nil
 }
 
-// envKey maps an AXMIPIC_* variable to a dotted configuration path, or returns
-// an empty string for variables that are not recognized.
+// envKey 将 AXMIPIC_* 变量映射到点分隔的配置路径，对于无法识别的变量返回空字符串。
 func envKey(raw string) string {
 	key := strings.ToLower(strings.TrimPrefix(raw, envPrefix))
 	return envPaths[key]

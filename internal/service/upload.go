@@ -1,4 +1,4 @@
-// Package service contains the business logic of AXmiPic.
+// Package service 包含 AXmiPic 的业务逻辑。
 package service
 
 import (
@@ -29,33 +29,32 @@ import (
 	"github.com/AXmishell/axmipic/internal/store"
 )
 
-// ErrFileTooLarge is returned when an upload exceeds the configured size limit.
+// ErrFileTooLarge 在上传超过配置的大小限制时返回。
 var ErrFileTooLarge = errors.New("service: file exceeds the maximum allowed size")
 
-// ErrUnsupportedType is returned when an upload's media type is not allowed.
+// ErrUnsupportedType 在上传的媒体类型不被允许时返回。
 var ErrUnsupportedType = errors.New("service: unsupported media type")
 
-// ErrPresignUnsupported is returned when the active storage backend cannot
-// issue presigned direct-upload requests.
+// ErrPresignUnsupported 在当前存储后端无法签发预签名直传请求时返回。
 var ErrPresignUnsupported = errors.New("service: presigned upload is not supported by the configured storage driver")
 
-// ErrInvalidInput is returned when a request is malformed.
+// ErrInvalidInput 在请求格式错误时返回。
 var ErrInvalidInput = errors.New("service: invalid input")
 
-// ErrQuotaExceeded is returned when an upload would exceed the owner's quota.
+// ErrQuotaExceeded 在上传会超出所有者配额时返回。
 var ErrQuotaExceeded = errors.New("service: storage quota exceeded")
 
-// ErrForbidden is returned when a caller may not access a resource.
+// ErrForbidden 在调用者无权访问某个资源时返回。
 var ErrForbidden = errors.New("service: forbidden")
 
-// ErrNotFound is returned when a requested image does not exist.
+// ErrNotFound 在请求的图片不存在时返回。
 var ErrNotFound = store.ErrNotFound
 
-// dimensionProbeLimit bounds how much of an object is read to decode image
-// dimensions, avoiding a full download during confirm.
+// dimensionProbeLimit 限定了为解码图片尺寸而读取的对象大小上限，从而在
+// 确认时避免完整下载。
 const dimensionProbeLimit = 1 << 20
 
-// mimeExtensions maps an accepted MIME type to the key extension used on disk.
+// mimeExtensions 将可接受的 MIME 类型映射到磁盘上使用的键扩展名。
 var mimeExtensions = map[string]string{
 	"image/jpeg": ".jpg",
 	"image/png":  ".png",
@@ -63,9 +62,9 @@ var mimeExtensions = map[string]string{
 	"image/webp": ".webp",
 }
 
-// extensionForMIME returns the storage-key extension for a media type,
-// preferring the built-in table and falling back to the system MIME database so
-// an allowed type missing from the table still gets a usable extension.
+// extensionForMIME 返回某个媒体类型对应的存储键扩展名，优先使用内置表，
+// 再回退到系统 MIME 数据库，这样即使某个被允许的类型不在表中也能获得可用的
+// 扩展名。
 func extensionForMIME(mimeType string) string {
 	if ext, ok := mimeExtensions[mimeType]; ok {
 		return ext
@@ -76,26 +75,26 @@ func extensionForMIME(mimeType string) string {
 	return ""
 }
 
-// UploadPolicy constrains what UploadService accepts.
+// UploadPolicy 约束 UploadService 接受的内容。
 type UploadPolicy struct {
 	MaxSizeBytes     int64
 	AllowedMIMETypes []string
 	PresignExpiry    time.Duration
 }
 
-// UploadInput is an upload request ready to be persisted.
+// UploadInput 是一个已准备好被持久化的上传请求。
 type UploadInput struct {
 	Data     []byte
 	MimeType string
 }
 
-// PresignInput requests a presigned direct-upload for a piece of content.
+// PresignInput 请求为某份内容提供预签名直传。
 type PresignInput struct {
 	MimeType string
 	Size     int64
 }
 
-// PresignResult tells a client how to upload an object directly to storage.
+// PresignResult 告知客户端如何将对象直接上传到存储。
 type PresignResult struct {
 	Key       string            `json:"key"`
 	URL       string            `json:"url"`
@@ -106,7 +105,7 @@ type PresignResult struct {
 	ExpiresAt time.Time         `json:"expires_at"`
 }
 
-// ImageDTO is the API representation of a stored image.
+// ImageDTO 是已存储图片在 API 中的表示形式。
 type ImageDTO struct {
 	ID        string    `json:"id"`
 	Key       string    `json:"key"`
@@ -118,7 +117,7 @@ type ImageDTO struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// ListResult is a paginated collection of images.
+// ListResult 是图片的分页集合。
 type ListResult struct {
 	Items    []ImageDTO `json:"items"`
 	Total    int64      `json:"total"`
@@ -126,7 +125,7 @@ type ListResult struct {
 	PageSize int        `json:"page_size"`
 }
 
-// UploadService coordinates validation, deduplication, storage, and metadata.
+// UploadService 协调校验、去重、存储和元数据。
 type UploadService struct {
 	repo    *store.Repository
 	storage storage.Storage
@@ -134,7 +133,7 @@ type UploadService struct {
 	allowed map[string]struct{}
 }
 
-// NewUploadService constructs an UploadService.
+// NewUploadService 构造一个 UploadService。
 func NewUploadService(repo *store.Repository, backend storage.Storage, policy UploadPolicy) *UploadService {
 	allowed := make(map[string]struct{}, len(policy.AllowedMIMETypes))
 	for _, mimeType := range policy.AllowedMIMETypes {
@@ -143,8 +142,8 @@ func NewUploadService(repo *store.Repository, backend storage.Storage, policy Up
 	return &UploadService{repo: repo, storage: backend, policy: policy, allowed: allowed}
 }
 
-// Upload validates, stores, and records an image owned by principal. Identical
-// content is deduplicated by its content-addressed key.
+// Upload 校验、存储并记录一张归 principal 所有的图片。相同内容会按其
+// 内容寻址键进行去重。
 func (s *UploadService) Upload(ctx context.Context, principal *auth.Principal, in UploadInput) (*ImageDTO, error) {
 	size := int64(len(in.Data))
 	if size > s.policy.MaxSizeBytes {
@@ -179,8 +178,8 @@ func (s *UploadService) Upload(ctx context.Context, principal *auth.Principal, i
 		}
 	}()
 
-	// A content-addressed object may already exist without a metadata row if a
-	// previous write was interrupted; reuse it instead of writing again.
+	// 如果上一次写入被中断，某个内容寻址对象可能已存在却没有元数据行；
+	// 此时复用它，而不是再次写入。
 	exists, err := s.storage.Exists(ctx, key)
 	if err != nil {
 		return nil, fmt.Errorf("upload: check object existence: %w", err)
@@ -203,8 +202,7 @@ func (s *UploadService) Upload(ctx context.Context, principal *auth.Principal, i
 		Height:   height,
 	}
 	if err := s.repo.Create(ctx, image); err != nil {
-		// A concurrent upload of identical content may have inserted the row
-		// first; reuse that record and release our reservation.
+		// 并发上传相同内容可能已先插入该行；复用那条记录并释放我们的预留。
 		if concurrent, getErr := s.repo.GetByKey(ctx, key); getErr == nil {
 			return toDTO(concurrent), nil
 		}
@@ -214,8 +212,8 @@ func (s *UploadService) Upload(ctx context.Context, principal *auth.Principal, i
 	return toDTO(image), nil
 }
 
-// Presign validates a direct-upload request, issues a presigned request from
-// the storage backend, and records a pending upload for later confirmation.
+// Presign 校验直传请求，从存储后端签发一个预签名请求，并记录一条待确认的
+// 上传供后续确认。
 func (s *UploadService) Presign(ctx context.Context, principal *auth.Principal, in PresignInput) (*PresignResult, error) {
 	presigner, ok := s.storage.(storage.Presigner)
 	if !ok {
@@ -264,8 +262,8 @@ func (s *UploadService) Presign(ctx context.Context, principal *auth.Principal, 
 	}, nil
 }
 
-// Confirm verifies that a presigned object was uploaded and records its
-// metadata. It is idempotent for an already-recorded key.
+// Confirm 验证某个预签名对象已上传，并记录其元数据。对于已记录的键，
+// 它是幂等的。
 func (s *UploadService) Confirm(ctx context.Context, principal *auth.Principal, key string) (*ImageDTO, error) {
 	if strings.TrimSpace(key) == "" {
 		return nil, fmt.Errorf("%w: key must not be empty", ErrInvalidInput)
@@ -308,8 +306,8 @@ func (s *UploadService) Confirm(ctx context.Context, principal *auth.Principal, 
 		_ = s.repo.DeletePendingUpload(ctx, key)
 		return nil, fmt.Errorf("%w: %q", ErrUnsupportedType, info.ContentType)
 	}
-	// Verify the object actually looks like an allowed image instead of
-	// trusting the client-declared content type alone.
+	// 验证对象实际上看起来像一张被允许的图片，而不是仅凭客户端声明的
+	// 内容类型来信任。
 	detected, width, height := s.probeObject(ctx, key)
 	if _, ok := s.allowed[detected]; !ok {
 		_ = s.storage.Delete(ctx, key)
@@ -356,9 +354,8 @@ func (s *UploadService) Confirm(ctx context.Context, principal *auth.Principal, 
 	return toDTO(image), nil
 }
 
-// CleanupExpired removes pending uploads that have expired as of now and
-// deletes their unconfirmed storage objects. It returns the number of storage
-// objects removed.
+// CleanupExpired 移除截至 now 已过期的待确认上传，并删除其未确认的存储
+// 对象。它返回被移除的存储对象数量。
 func (s *UploadService) CleanupExpired(ctx context.Context, now time.Time) (int, error) {
 	pending, err := s.repo.ExpiredPendingUploads(ctx, now)
 	if err != nil {
@@ -368,7 +365,7 @@ func (s *UploadService) CleanupExpired(ctx context.Context, now time.Time) (int,
 	for i := range pending {
 		key := pending[i].Key
 		if _, err := s.repo.GetByKey(ctx, key); err == nil {
-			// The upload was confirmed after all; only drop the stale row.
+			// 该上传终究已被确认；只删除过期的行。
 			if delErr := s.repo.DeletePendingUpload(ctx, key); delErr != nil {
 				continue
 			}
@@ -387,8 +384,8 @@ func (s *UploadService) CleanupExpired(ctx context.Context, now time.Time) (int,
 	return removed, nil
 }
 
-// List returns a page of images visible to principal: all images for admins,
-// only owned images otherwise.
+// List 返回对 principal 可见的一页图片：管理员可见全部图片，其余人仅可见
+// 自己拥有的图片。
 func (s *UploadService) List(ctx context.Context, principal *auth.Principal, page, pageSize int) (*ListResult, error) {
 	if page < 1 {
 		page = 1
@@ -422,7 +419,7 @@ func (s *UploadService) List(ctx context.Context, principal *auth.Principal, pag
 	return &ListResult{Items: items, Total: total, Page: page, PageSize: pageSize}, nil
 }
 
-// Get returns a single image by id, enforcing ownership.
+// Get 按 id 返回单张图片，并强制校验所有权。
 func (s *UploadService) Get(ctx context.Context, principal *auth.Principal, id string) (*ImageDTO, error) {
 	image, err := s.repo.GetByID(ctx, id)
 	if err != nil {
@@ -434,8 +431,7 @@ func (s *UploadService) Get(ctx context.Context, principal *auth.Principal, id s
 	return toDTO(image), nil
 }
 
-// GetByKey returns a single image by its storage key. Public serving does not
-// enforce ownership.
+// GetByKey 按其存储键返回单张图片。公开服务不强制校验所有权。
 func (s *UploadService) GetByKey(ctx context.Context, key string) (*ImageDTO, error) {
 	image, err := s.repo.GetByKey(ctx, key)
 	if err != nil {
@@ -444,8 +440,7 @@ func (s *UploadService) GetByKey(ctx context.Context, key string) (*ImageDTO, er
 	return toDTO(image), nil
 }
 
-// Delete removes an image object and its metadata, enforcing ownership and
-// releasing the owner's quota.
+// Delete 移除一张图片对象及其元数据，强制校验所有权并释放所有者的配额。
 func (s *UploadService) Delete(ctx context.Context, principal *auth.Principal, id string) error {
 	image, err := s.repo.GetByID(ctx, id)
 	if err != nil {
@@ -468,8 +463,8 @@ func (s *UploadService) Delete(ctx context.Context, principal *auth.Principal, i
 	return nil
 }
 
-// reserveQuota reserves amount bytes for ownerID. It returns a release function
-// (a no-op for guests) and whether the reservation succeeded.
+// reserveQuota 为 ownerID 预留 amount 字节。它返回一个释放函数（对访客
+// 为空操作）以及预留是否成功。
 func (s *UploadService) reserveQuota(ctx context.Context, ownerID *string, amount int64) (func(), bool, error) {
 	if ownerID == nil {
 		return func() {}, true, nil
@@ -487,13 +482,12 @@ func (s *UploadService) reserveQuota(ctx context.Context, ownerID *string, amoun
 			return
 		}
 		released = true
-		// The request context may already be canceled; release must still run so
-		// quota is not leaked.
+		// 请求上下文可能已被取消；释放仍须执行，以免配额泄漏。
 		_ = s.repo.ReleaseQuota(context.WithoutCancel(ctx), *ownerID, amount)
 	}, true, nil
 }
 
-// ownerIDOf returns the user id a principal acts as, or nil for guests.
+// ownerIDOf 返回 principal 所代表的用户 id，访客则返回 nil。
 func ownerIDOf(principal *auth.Principal) *string {
 	if principal.IsGuest() || principal.UserID == "" {
 		return nil
@@ -502,7 +496,7 @@ func ownerIDOf(principal *auth.Principal) *string {
 	return &id
 }
 
-// canAccess reports whether principal may access a resource owned by ownerID.
+// canAccess 报告 principal 是否可以访问由 ownerID 拥有的资源。
 func canAccess(principal *auth.Principal, ownerID *string) bool {
 	if principal.IsAdmin() {
 		return true
@@ -510,7 +504,7 @@ func canAccess(principal *auth.Principal, ownerID *string) bool {
 	return sameOwner(principal, ownerID)
 }
 
-// sameOwner reports whether principal owns a resource with ownerID.
+// sameOwner 报告 principal 是否拥有 ownerID 对应的资源。
 func sameOwner(principal *auth.Principal, ownerID *string) bool {
 	current := ownerIDOf(principal)
 	switch {
@@ -536,21 +530,20 @@ func toDTO(image *store.Image) *ImageDTO {
 	}
 }
 
-// directKey builds a date-partitioned, unique key for a direct-to-storage
-// upload, where the server never sees the bytes and cannot content-address.
+// directKey 为直传到存储的上传构建一个按日期分区、唯一的键，此类上传
+// 服务器不会看到其字节内容，因而无法进行内容寻址。
 func directKey(mimeType string) string {
 	return path.Join(time.Now().UTC().Format("2006/01/02"), uuid.NewString()+extensionForMIME(mimeType))
 }
 
-// contentKey builds a content-addressed, slash-separated storage key.
+// contentKey 构建一个内容寻址、以斜杠分隔的存储键。
 func contentKey(data []byte, mimeType string) string {
 	sum := sha256.Sum256(data)
 	hash := hex.EncodeToString(sum[:])
 	return path.Join(hash[0:2], hash[2:4], hash+extensionForMIME(mimeType))
 }
 
-// decodeDimensions returns the pixel dimensions of an encoded image, or zeros
-// when the format cannot be decoded.
+// decodeDimensions 返回一张已编码图片的像素尺寸，当格式无法解码时返回零值。
 func decodeDimensions(data []byte) (int, int) {
 	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil {
@@ -559,9 +552,8 @@ func decodeDimensions(data []byte) (int, int) {
 	return cfg.Width, cfg.Height
 }
 
-// probeObject reads a bounded prefix of a stored object and reports its
-// detected media type and pixel dimensions. It returns an empty media type and
-// zero dimensions when the object cannot be read.
+// probeObject 读取某个已存储对象的一段有界前缀，并报告其检测到的媒体类型
+// 和像素尺寸。当对象无法读取时，它返回空媒体类型和零尺寸。
 func (s *UploadService) probeObject(ctx context.Context, key string) (string, int, int) {
 	object, err := s.storage.Get(ctx, key)
 	if err != nil {

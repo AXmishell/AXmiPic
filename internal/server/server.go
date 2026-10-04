@@ -1,4 +1,4 @@
-// Package server runs the AXmiPic HTTP server with graceful shutdown.
+// Package server 运行 AXmiPic HTTP 服务器并提供优雅关闭。
 package server
 
 import (
@@ -14,14 +14,14 @@ import (
 	"github.com/AXmishell/axmipic/internal/config"
 )
 
-// Server owns the HTTP listener lifecycle.
+// Server 管理 HTTP 监听器的生命周期。
 type Server struct {
 	logger          *slog.Logger
 	httpServer      *http.Server
 	shutdownTimeout time.Duration
 }
 
-// New builds the HTTP server from configuration and the root handler.
+// New 根据配置和根处理器构建 HTTP 服务器。
 func New(cfg config.Config, logger *slog.Logger, handler http.Handler) *Server {
 	addr := net.JoinHostPort(cfg.Server.Host, strconv.Itoa(cfg.Server.Port))
 	return &Server{
@@ -36,8 +36,7 @@ func New(cfg config.Config, logger *slog.Logger, handler http.Handler) *Server {
 	}
 }
 
-// Run starts the server and blocks until ctx is cancelled, then shuts down
-// gracefully.
+// Run 启动服务器并阻塞直到 ctx 被取消，然后优雅关闭。
 func (s *Server) Run(ctx context.Context) error {
 	errCh := make(chan error, 1)
 	go func() {

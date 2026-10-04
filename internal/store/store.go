@@ -1,4 +1,4 @@
-// Package store provides persistence for AXmiPic metadata.
+// Package store 为 AXmiPic 元数据提供持久化。
 package store
 
 import (
@@ -14,18 +14,17 @@ import (
 	gormlogger "gorm.io/gorm/logger"
 )
 
-// ErrNotFound is returned when a requested record does not exist.
+// ErrNotFound 在请求的记录不存在时返回。
 var ErrNotFound = errors.New("store: record not found")
 
-// Repository provides persistence operations for metadata.
+// Repository 提供元数据的持久化操作。
 type Repository struct {
 	db *gorm.DB
 }
 
-// Open opens the database selected by driver, runs migrations, and returns a
-// ready-to-use repository. Supported drivers are "sqlite" (default) and
-// "postgres". The dsn is a file path for sqlite or a libpq connection string
-// (or URL) for postgres.
+// Open 打开由 driver 选择的数据库，运行迁移，并返回一个即用型的
+// repository。支持的驱动有 "sqlite"（默认）和 "postgres"。dsn 对于
+// sqlite 是文件路径，对于 postgres 是 libpq 连接字符串（或 URL）。
 func Open(driver, dsn string) (*Repository, error) {
 	dialector, err := newDialector(driver, dsn)
 	if err != nil {
@@ -43,7 +42,7 @@ func Open(driver, dsn string) (*Repository, error) {
 	return &Repository{db: db}, nil
 }
 
-// newDialector builds the gorm dialector for the requested driver.
+// newDialector 为请求的驱动构建 gorm dialector。
 func newDialector(driver, dsn string) (gorm.Dialector, error) {
 	switch strings.ToLower(strings.TrimSpace(driver)) {
 	case "", "sqlite":
@@ -58,7 +57,7 @@ func newDialector(driver, dsn string) (gorm.Dialector, error) {
 	}
 }
 
-// Close releases the underlying database connection.
+// Close 释放底层数据库连接。
 func (r *Repository) Close() error {
 	sqlDB, err := r.db.DB()
 	if err != nil {
@@ -70,9 +69,8 @@ func (r *Repository) Close() error {
 	return nil
 }
 
-// withSQLitePragmas appends connection pragmas to a file-backed DSN so that
-// concurrent writers wait for the lock instead of failing, and readers are not
-// blocked by an in-progress write (WAL).
+// withSQLitePragmas 向基于文件的 DSN 追加连接 pragma，使并发写入者等待锁
+// 而不是失败，并且读者不会被进行中的写入阻塞（WAL）。
 func withSQLitePragmas(dsn string) string {
 	if dsn == "" || dsn == ":memory:" {
 		return dsn
@@ -84,7 +82,7 @@ func withSQLitePragmas(dsn string) string {
 	return dsn + separator + "_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)"
 }
 
-// ensureSQLiteDir creates the parent directory for a file-backed SQLite DSN.
+// ensureSQLiteDir 为基于文件的 SQLite DSN 创建父目录。
 func ensureSQLiteDir(dsn string) error {
 	if dsn == "" || dsn == ":memory:" || strings.HasPrefix(dsn, "file:") {
 		return nil

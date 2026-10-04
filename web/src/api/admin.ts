@@ -5,12 +5,12 @@ export function fetchStats(): Promise<AdminStats> {
   return request<AdminStats>({ method: 'GET', url: '/admin/stats' })
 }
 
-/** Ordinary accounts. */
+/** 普通账号。 */
 export function listCustomers(): Promise<User[]> {
   return request<User[]>({ method: 'GET', url: '/admin/customers' })
 }
 
-/** Privileged accounts. */
+/** 特权账号。 */
 export function listAdmins(): Promise<User[]> {
   return request<User[]>({ method: 'GET', url: '/admin/admins' })
 }

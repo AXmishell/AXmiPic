@@ -88,8 +88,7 @@ func TestAdminAndCustomerAreSeparateTables(t *testing.T) {
 		t.Fatalf("customers = %d, want 1", n)
 	}
 
-	// Cross-table login must fail: admin credentials cannot be used on the
-	// customer endpoint.
+	// 跨表登录必须失败：管理员凭证不能用于普通用户入口。
 	if _, err := svc.LoginCustomer(ctx, "shared", "password123"); err != nil {
 		t.Fatalf("customer login failed: %v", err)
 	}
@@ -151,7 +150,7 @@ func TestEnsureBootstrapAdmin(t *testing.T) {
 		t.Fatalf("role = %q, want admin", admin.Role)
 	}
 
-	// A second spec is ignored because an admin already exists.
+	// 第二个 spec 会被忽略，因为已经存在一个管理员。
 	if err := svc.EnsureBootstrapAdmin(ctx, "other:password123"); err != nil {
 		t.Fatalf("EnsureBootstrapAdmin (second): %v", err)
 	}

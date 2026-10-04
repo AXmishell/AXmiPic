@@ -13,8 +13,8 @@ import (
 	"github.com/AXmishell/axmipic/internal/config"
 )
 
-// S3 stores objects in any S3-compatible service (AWS S3, MinIO, Cloudflare
-// R2, Aliyun OSS, Tencent COS, ...).
+// S3 将对象存储在任何兼容 S3 的服务中（AWS S3、MinIO、Cloudflare
+// R2、阿里云 OSS、腾讯云 COS 等）。
 type S3 struct {
 	client        *minio.Client
 	bucket        string
@@ -24,7 +24,7 @@ type S3 struct {
 	secure        bool
 }
 
-// NewS3 creates an S3-compatible storage driver.
+// NewS3 创建一个兼容 S3 的存储驱动。
 func NewS3(cfg config.S3Config) (*S3, error) {
 	if strings.TrimSpace(cfg.Bucket) == "" {
 		return nil, fmt.Errorf("storage: s3.bucket must not be empty")
@@ -55,7 +55,7 @@ func NewS3(cfg config.S3Config) (*S3, error) {
 	}, nil
 }
 
-// Put uploads an object.
+// Put 上传一个对象。
 func (s *S3) Put(ctx context.Context, key string, r io.Reader, size int64, contentType string) error {
 	if _, err := s.client.PutObject(ctx, s.bucket, key, r, size, minio.PutObjectOptions{ContentType: contentType}); err != nil {
 		return fmt.Errorf("storage: s3 put %q: %w", key, err)
@@ -63,14 +63,14 @@ func (s *S3) Put(ctx context.Context, key string, r io.Reader, size int64, conte
 	return nil
 }
 
-// Get opens an object for reading.
+// Get 打开一个对象以供读取。
 func (s *S3) Get(ctx context.Context, key string) (io.ReadCloser, error) {
 	obj, err := s.client.GetObject(ctx, s.bucket, key, minio.GetObjectOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("storage: s3 get %q: %w", key, mapS3Error(err))
 	}
-	// GetObject is lazy; Stat forces the request so a missing object is
-	// reported now rather than on first read.
+	// GetObject 是惰性的；Stat 会强制发起请求，因此对象缺失会在此时报告，
+	// 而不是在首次读取时。
 	if _, err := obj.Stat(); err != nil {
 		_ = obj.Close()
 		return nil, fmt.Errorf("storage: s3 get %q: %w", key, mapS3Error(err))
@@ -78,7 +78,7 @@ func (s *S3) Get(ctx context.Context, key string) (io.ReadCloser, error) {
 	return obj, nil
 }
 
-// Delete removes an object. Deleting a missing object is a no-op.
+// Delete 删除一个对象。删除不存在的对象是无操作。
 func (s *S3) Delete(ctx context.Context, key string) error {
 	if err := s.client.RemoveObject(ctx, s.bucket, key, minio.RemoveObjectOptions{}); err != nil {
 		return fmt.Errorf("storage: s3 delete %q: %w", key, err)
@@ -86,7 +86,7 @@ func (s *S3) Delete(ctx context.Context, key string) error {
 	return nil
 }
 
-// Exists reports whether an object is present.
+// Exists 报告对象是否存在。
 func (s *S3) Exists(ctx context.Context, key string) (bool, error) {
 	if _, err := s.client.StatObject(ctx, s.bucket, key, minio.StatObjectOptions{}); err != nil {
 		if isS3NotFound(err) {
@@ -97,7 +97,7 @@ func (s *S3) Exists(ctx context.Context, key string) (bool, error) {
 	return true, nil
 }
 
-// Stat returns metadata for a stored object.
+// Stat 返回已存储对象的元数据。
 func (s *S3) Stat(ctx context.Context, key string) (*ObjectInfo, error) {
 	info, err := s.client.StatObject(ctx, s.bucket, key, minio.StatObjectOptions{})
 	if err != nil {
@@ -106,7 +106,7 @@ func (s *S3) Stat(ctx context.Context, key string) (*ObjectInfo, error) {
 	return &ObjectInfo{Key: key, Size: info.Size, ContentType: info.ContentType}, nil
 }
 
-// URL returns the public URL for an object key.
+// URL 返回对象键对应的公开 URL。
 func (s *S3) URL(key string) string {
 	if s.publicBaseURL != "" {
 		return s.publicBaseURL + "/" + key
@@ -121,8 +121,8 @@ func (s *S3) URL(key string) string {
 	return fmt.Sprintf("%s://%s.%s/%s", scheme, s.bucket, s.endpointHost, key)
 }
 
-// PresignPut issues an S3 POST policy that the client uses to upload directly.
-// The policy pins the exact key, media type, and size range.
+// PresignPut 签发一个 S3 POST 策略，客户端用它来直接上传。
+// 该策略固定确切的键、媒体类型和大小范围。
 func (s *S3) PresignPut(ctx context.Context, key string, opts PresignOptions) (*PresignedRequest, error) {
 	expiresAt := time.Now().Add(opts.Expires)
 	policy := minio.NewPostPolicy()
@@ -179,8 +179,8 @@ func isS3NotFound(err error) bool {
 		resp.Code == "NotFound" || resp.StatusCode == 404
 }
 
-// mapS3Error converts a "not found" S3 error into ErrNotFound, preserving the
-// storage error contract used by the service layer.
+// mapS3Error 将「未找到」类 S3 错误转换为 ErrNotFound，同时保留
+// 服务层所使用的存储错误契约。
 func mapS3Error(err error) error {
 	if isS3NotFound(err) {
 		return fmt.Errorf("storage: s3: %w", ErrNotFound)

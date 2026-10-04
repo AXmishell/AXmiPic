@@ -19,7 +19,7 @@ func (h *Handler) adminStats(w http.ResponseWriter, r *http.Request) {
 	writeOK(w, stats)
 }
 
-// adminCustomers lists ordinary accounts.
+// adminCustomers 列出普通账户。
 func (h *Handler) adminCustomers(w http.ResponseWriter, r *http.Request) {
 	users, err := h.admin.ListCustomers(r.Context())
 	if err != nil {
@@ -29,7 +29,7 @@ func (h *Handler) adminCustomers(w http.ResponseWriter, r *http.Request) {
 	writeOK(w, users)
 }
 
-// adminAdmins lists privileged accounts.
+// adminAdmins 列出特权账户。
 func (h *Handler) adminAdmins(w http.ResponseWriter, r *http.Request) {
 	users, err := h.admin.ListAdmins(r.Context())
 	if err != nil {
@@ -62,7 +62,7 @@ type updateUserRequest struct {
 	Disabled *bool `json:"disabled"`
 }
 
-// updateFunc applies a disable/enable change to an account of a given role.
+// updateFunc 对指定角色的账户应用禁用/启用更改。
 type updateFunc func(ctx context.Context, actorID, id string, in service.UpdateUserInput) (*service.UserDTO, error)
 
 func (h *Handler) adminUpdateCustomer(w http.ResponseWriter, r *http.Request) {

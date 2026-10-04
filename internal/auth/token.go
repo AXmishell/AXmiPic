@@ -8,11 +8,11 @@ import (
 	"fmt"
 )
 
-// TokenPrefix marks an AXmiPic API token.
+// TokenPrefix 是 AXmiPic API 令牌的标识前缀。
 const TokenPrefix = "axp_"
 
-// GenerateAPIToken returns a new token's plaintext, its storage hash, and a
-// short display prefix. Only the hash is persisted.
+// GenerateAPIToken 返回新令牌的明文、用于存储的哈希以及短展示前缀。
+// 仅哈希会被持久化。
 func GenerateAPIToken() (plaintext, hash, prefix string, err error) {
 	buf := make([]byte, 32)
 	if _, err := rand.Read(buf); err != nil {
@@ -22,7 +22,7 @@ func GenerateAPIToken() (plaintext, hash, prefix string, err error) {
 	return plaintext, HashToken(plaintext), plaintext[:8], nil
 }
 
-// HashToken returns the hex sha256 of a token, used for lookups.
+// HashToken 返回令牌的 sha256 十六进制摘要，用于查询。
 func HashToken(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(sum[:])

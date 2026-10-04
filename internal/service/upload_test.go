@@ -21,7 +21,7 @@ type storedObject struct {
 	contentType string
 }
 
-// fakeStorage is an in-memory Storage used to exercise the service layer.
+// fakeStorage 是用于驱动 service 层测试的内存 Storage。
 type fakeStorage struct {
 	objects map[string]storedObject
 }
@@ -69,7 +69,7 @@ func (f *fakeStorage) Stat(_ context.Context, key string) (*storage.ObjectInfo, 
 	return &storage.ObjectInfo{Key: key, Size: int64(len(obj.data)), ContentType: obj.contentType}, nil
 }
 
-// fakePresignStorage additionally supports presigned direct uploads.
+// fakePresignStorage 额外支持预签名直传。
 type fakePresignStorage struct {
 	*fakeStorage
 }
@@ -238,7 +238,7 @@ func TestConfirmRejectsSpoofedContent(t *testing.T) {
 	repo := newRepo(t)
 	fs := newFakeStorage()
 	const key = "2026/01/01/spoof.png"
-	// The declared content type is allowed but the bytes are not an image.
+	// 声明的类型是允许的，但这些字节并不是图片。
 	fs.objects[key] = storedObject{data: []byte("this is not an image"), contentType: "image/png"}
 	ctx := context.Background()
 	if err := repo.CreatePendingUpload(ctx, &store.PendingUpload{

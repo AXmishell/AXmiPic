@@ -22,7 +22,7 @@ const (
 	qiniuServerTokenTTL    = time.Hour
 )
 
-// Qiniu stores objects in Qiniu Kodo.
+// Qiniu 将对象存储在七牛云 Kodo 中。
 type Qiniu struct {
 	mac        *qiniuauth.Credentials
 	accessKey  string
@@ -31,8 +31,8 @@ type Qiniu struct {
 	uploadHost string
 	private    bool
 
-	// uploader needs no region; the bucket manager does, so it is resolved
-	// lazily (and only once) because it requires a network lookup.
+	// uploader 不需要 region；而 bucket manager 需要，因此它在首次使用时
+	// 惰性解析（且仅解析一次），因为该操作需要网络查询。
 	uploader *qiniustorage.FormUploader
 	qcfg     *qiniustorage.Config
 
@@ -41,7 +41,7 @@ type Qiniu struct {
 	zoneID  string
 }
 
-// NewQiniu creates a Qiniu Kodo storage driver.
+// NewQiniu 创建一个七牛云 Kodo 存储驱动。
 func NewQiniu(cfg config.QiniuConfig) (*Qiniu, error) {
 	if strings.TrimSpace(cfg.AccessKey) == "" || strings.TrimSpace(cfg.SecretKey) == "" {
 		return nil, fmt.Errorf("storage: qiniu.access_key and qiniu.secret_key must not be empty")
@@ -80,7 +80,7 @@ func NewQiniu(cfg config.QiniuConfig) (*Qiniu, error) {
 	return q, nil
 }
 
-// Put uploads an object.
+// Put 上传一个对象。
 func (q *Qiniu) Put(ctx context.Context, key string, r io.Reader, size int64, contentType string) error {
 	policy := qiniustorage.PutPolicy{
 		Scope:   q.bucket + ":" + key,
@@ -95,7 +95,7 @@ func (q *Qiniu) Put(ctx context.Context, key string, r io.Reader, size int64, co
 	return nil
 }
 
-// Get opens an object for reading.
+// Get 打开一个对象以供读取。
 func (q *Qiniu) Get(ctx context.Context, key string) (io.ReadCloser, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, q.objectURL(key), nil)
 	if err != nil {
@@ -117,7 +117,7 @@ func (q *Qiniu) Get(ctx context.Context, key string) (io.ReadCloser, error) {
 	}
 }
 
-// Delete removes an object. Deleting a missing object is a no-op.
+// Delete 删除一个对象。删除不存在的对象是无操作。
 func (q *Qiniu) Delete(ctx context.Context, key string) error {
 	manager, err := q.bucketManager(ctx)
 	if err != nil {
@@ -132,7 +132,7 @@ func (q *Qiniu) Delete(ctx context.Context, key string) error {
 	return nil
 }
 
-// Exists reports whether an object is present.
+// Exists 报告对象是否存在。
 func (q *Qiniu) Exists(ctx context.Context, key string) (bool, error) {
 	if _, err := q.Stat(ctx, key); err != nil {
 		if errors.Is(err, ErrNotFound) {
@@ -143,7 +143,7 @@ func (q *Qiniu) Exists(ctx context.Context, key string) (bool, error) {
 	return true, nil
 }
 
-// Stat returns metadata for a stored object.
+// Stat 返回已存储对象的元数据。
 func (q *Qiniu) Stat(ctx context.Context, key string) (*ObjectInfo, error) {
 	manager, err := q.bucketManager(ctx)
 	if err != nil {
@@ -159,13 +159,13 @@ func (q *Qiniu) Stat(ctx context.Context, key string) (*ObjectInfo, error) {
 	return &ObjectInfo{Key: key, Size: info.Fsize, ContentType: info.MimeType}, nil
 }
 
-// URL returns the public URL for an object key.
+// URL 返回对象键对应的公开 URL。
 func (q *Qiniu) URL(key string) string {
 	return q.domain + "/" + key
 }
 
-// PresignPut issues a Qiniu upload token that the client uses to upload
-// directly. The policy pins the exact key, size limit, and allowed media types.
+// PresignPut 签发一个七牛上传凭证，客户端用它来直接上传。
+// 该策略固定确切的键、大小限制和允许的媒体类型。
 func (q *Qiniu) PresignPut(_ context.Context, key string, opts PresignOptions) (*PresignedRequest, error) {
 	expiresAt := time.Now().Add(opts.Expires)
 	policy := qiniustorage.PutPolicy{
@@ -192,8 +192,8 @@ func (q *Qiniu) objectURL(key string) string {
 	return q.domain + "/" + key
 }
 
-// bucketManager returns the Qiniu bucket manager, resolving the bucket's region
-// on first use when no zone was configured.
+// bucketManager 返回七牛 bucket manager，在未配置 zone 时于首次使用时
+// 解析桶所在的 region。
 func (q *Qiniu) bucketManager(_ context.Context) (*qiniustorage.BucketManager, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()

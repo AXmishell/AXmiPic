@@ -47,7 +47,7 @@ const pinia = createPinia()
 app.use(pinia)
 app.use(router)
 
-// Apply the persisted (or OS-preferred) theme before mounting.
+// 在挂载前应用已持久化（或系统偏好）的主题。
 useThemeStore(pinia).init()
 
 const globalComponents: Component[] = [
@@ -82,7 +82,7 @@ for (const component of globalComponents) {
   app.component((component as { name?: string }).name ?? 'UnnamedComponent', component)
 }
 
-// The store never imports the API client's store hook; wiring happens here.
+// store 从不导入 API client 的 store hook；接线在此处完成。
 const auth = useAuthStore(pinia)
 configureAuth({
   getToken: () => auth.token,

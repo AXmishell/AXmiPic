@@ -1,4 +1,4 @@
-// Package api implements the HTTP API of AXmiPic.
+// Package api 实现 AXmiPic 的 HTTP API。
 package api
 
 import (
@@ -15,7 +15,7 @@ import (
 	"github.com/AXmishell/axmipic/internal/storage"
 )
 
-// Deps are the dependencies required to build the API router.
+// Deps 是构建 API 路由所需的依赖项。
 type Deps struct {
 	Upload        *service.UploadService
 	Imaging       *service.ImagingService
@@ -24,18 +24,18 @@ type Deps struct {
 	Storage       storage.Storage
 	Authenticator *auth.Authenticator
 	UploadLimiter *auth.UploadLimiter
-	// ImageLimiter rate-limits public image serving and transformation by IP.
+	// ImageLimiter 按 IP 对公开图片服务和转换进行限流。
 	ImageLimiter *auth.RateLimiter
-	// Static, when non-nil, serves the single-page app for unmatched routes.
+	// Static 非 nil 时，为未匹配的路由提供单页应用服务。
 	Static      http.Handler
 	RequireAuth bool
-	// TrustProxy enables parsing the client IP from X-Forwarded-For / X-Real-IP.
+	// TrustProxy 启用从 X-Forwarded-For / X-Real-IP 解析客户端 IP。
 	TrustProxy  bool
 	MaxUploadMB int
 	Logger      *slog.Logger
 }
 
-// Handler holds the dependencies shared by all HTTP handlers.
+// Handler 保存所有 HTTP 处理函数共享的依赖项。
 type Handler struct {
 	svc            *service.UploadService
 	imaging        *service.ImagingService
@@ -46,7 +46,7 @@ type Handler struct {
 	logger         *slog.Logger
 }
 
-// NewRouter builds the HTTP router with middleware and routes registered.
+// NewRouter 构建 HTTP 路由并注册中间件和路由。
 func NewRouter(d Deps) http.Handler {
 	h := &Handler{
 		svc:            d.Upload,
@@ -61,9 +61,8 @@ func NewRouter(d Deps) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	if d.TrustProxy {
-		// Only honour forwarding headers when explicitly configured to sit
-		// behind a trusted proxy; otherwise clients could spoof their IP to
-		// evade rate limiting.
+		// 仅在明确配置为位于可信代理之后时才信任转发头；否则客户端可能
+		// 伪造其 IP 以规避限流。
 		r.Use(trustProxyIP)
 	}
 	r.Use(securityHeaders)
@@ -128,7 +127,7 @@ func NewRouter(d Deps) http.Handler {
 	return r
 }
 
-// securityHeaders applies defense-in-depth response headers to every reply.
+// securityHeaders 为每个响应应用纵深防御的响应头。
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -138,10 +137,9 @@ func securityHeaders(next http.Handler) http.Handler {
 	})
 }
 
-// trustProxyIP rewrites RemoteAddr from forwarding headers. It is only installed
-// when server.trust_proxy is enabled, because clients can otherwise forge those
-// headers to spoof their IP. It replaces the deprecated chi middleware.RealIP,
-// which trusts those headers unconditionally.
+// trustProxyIP 根据转发头重写 RemoteAddr。它仅在 server.trust_proxy
+// 启用时安装，因为否则客户端可以伪造这些头以冒充其 IP。它替代了已废弃的
+// chi middleware.RealIP，后者无条件信任这些头。
 func trustProxyIP(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if ip := forwardedClientIP(r); ip != "" {
@@ -151,9 +149,8 @@ func trustProxyIP(next http.Handler) http.Handler {
 	})
 }
 
-// forwardedClientIP returns the client IP advertised by a trusted proxy,
-// preferring X-Real-IP (typically the proxy's peer address) and falling back to
-// the first X-Forwarded-For entry.
+// forwardedClientIP 返回可信代理所声明的客户端 IP，优先使用 X-Real-IP
+// （通常是代理的对端地址），并回退到 X-Forwarded-For 的第一项。
 func forwardedClientIP(r *http.Request) string {
 	if ip := strings.TrimSpace(r.Header.Get("X-Real-IP")); ip != "" {
 		return ip
@@ -165,7 +162,7 @@ func forwardedClientIP(r *http.Request) string {
 	return ""
 }
 
-// requestLogger logs each request with method, path, status, and duration.
+// requestLogger 记录每个请求的方法、路径、状态和耗时。
 func requestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

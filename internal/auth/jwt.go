@@ -7,24 +7,24 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// SessionIssuer signs and verifies session JWTs.
+// SessionIssuer 负责签发与校验会话 JWT。
 type SessionIssuer struct {
 	secret []byte
 	ttl    time.Duration
 }
 
-// sessionClaims carries the data needed to authorize a session.
+// sessionClaims 携带授权会话所需的数据。
 type sessionClaims struct {
 	Role string `json:"role"`
 	jwt.RegisteredClaims
 }
 
-// NewSessionIssuer creates a session issuer.
+// NewSessionIssuer 创建会话签发器。
 func NewSessionIssuer(secret []byte, ttl time.Duration) *SessionIssuer {
 	return &SessionIssuer{secret: secret, ttl: ttl}
 }
 
-// Issue returns a signed session token and its expiry.
+// Issue 返回已签名的会话令牌及其过期时间。
 func (s *SessionIssuer) Issue(userID, role string) (string, time.Time, error) {
 	now := time.Now()
 	expiresAt := now.Add(s.ttl)
@@ -43,7 +43,7 @@ func (s *SessionIssuer) Issue(userID, role string) (string, time.Time, error) {
 	return signed, expiresAt, nil
 }
 
-// Parse verifies a session token and returns its subject and role.
+// Parse 校验会话令牌并返回其主体与角色。
 func (s *SessionIssuer) Parse(tokenString string) (userID, role string, err error) {
 	claims := &sessionClaims{}
 	token, err := jwt.ParseWithClaims(tokenString, claims, func(t *jwt.Token) (any, error) {

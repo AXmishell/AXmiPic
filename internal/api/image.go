@@ -49,8 +49,8 @@ func (h *Handler) deleteImage(w http.ResponseWriter, r *http.Request) {
 	writeOK(w, map[string]string{"id": id})
 }
 
-// serveImage streams a stored object by its slash-separated key, applying an
-// on-the-fly transformation when query parameters request one.
+// serveImage 按以斜杠分隔的键流式传输已存储的对象，当查询参数要求时
+// 应用即时的转换。
 func (h *Handler) serveImage(w http.ResponseWriter, r *http.Request) {
 	key := chi.URLParam(r, "*")
 	req, err := parseTransformQuery(r.URL.Query())
@@ -58,8 +58,8 @@ func (h *Handler) serveImage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, http.StatusBadRequest, err.Error())
 		return
 	}
-	// Require registered metadata so on-the-fly transformation cannot serve
-	// arbitrary objects straight from the storage backend.
+	// 要求存在已注册的元数据，这样即时转换就无法直接从存储后端
+	// 提供任意对象。
 	dto, err := h.svc.GetByKey(r.Context(), key)
 	if err != nil {
 		h.fail(w, r, err)
@@ -100,7 +100,7 @@ func (h *Handler) serveImage(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// serveOriginal streams the stored object unchanged.
+// serveOriginal 原样流式传输已存储的对象。
 func (h *Handler) serveOriginal(w http.ResponseWriter, r *http.Request, dto *service.ImageDTO) {
 	object, err := h.storage.Get(r.Context(), dto.Key)
 	if err != nil {
@@ -125,13 +125,12 @@ func (h *Handler) serveOriginal(w http.ResponseWriter, r *http.Request, dto *ser
 		return
 	}
 	if _, err := io.Copy(w, object); err != nil {
-		// The status line and headers are already sent, so only logging is
-		// possible here.
+		// 状态行和头部已经发送，因此此处只能记录日志。
 		h.logger.WarnContext(r.Context(), "stream stored object", slog.Any("error", err))
 	}
 }
 
-// parseTransformQuery reads transformation parameters from the query string.
+// parseTransformQuery 从查询字符串中读取转换参数。
 func parseTransformQuery(query url.Values) (service.TransformRequest, error) {
 	var req service.TransformRequest
 	var err error
@@ -174,14 +173,14 @@ func parseBool(raw string) bool {
 	}
 }
 
-// transformETag returns a stable ETag for an original key plus transformation.
+// transformETag 为原始键加上转换返回一个稳定的 ETag。
 func transformETag(key string, opts imaging.Options) string {
 	sum := sha256.Sum256([]byte(key + "|" + fmt.Sprintf("%+v", opts)))
 	return fmt.Sprintf(`"%x"`, sum[:16])
 }
 
-// queryInt parses an integer query parameter, returning 0 when absent or
-// invalid so that the service can apply its defaults.
+// queryInt 解析整数查询参数，若缺失或无效则返回 0，以便服务端
+// 应用其默认值。
 func queryInt(r *http.Request, name string) int {
 	value, err := strconv.Atoi(r.URL.Query().Get(name))
 	if err != nil {

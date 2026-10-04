@@ -34,7 +34,7 @@ const errorMessage = ref('')
 const search = ref('')
 const pendingIds = ref<Set<string>>(new Set())
 
-// Create-admin dialog
+// 新建管理员对话框
 const createOpen = ref(false)
 const creating = ref(false)
 const createFormRef = ref<FormInstance>()

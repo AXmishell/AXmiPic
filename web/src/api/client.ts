@@ -3,7 +3,7 @@ import { ElMessage } from 'element-plus'
 
 import type { ApiEnvelope } from './types'
 
-/** Error shape normalized from transport failures and non-zero API codes. */
+/** 由传输失败与非零 API 状态码归一化而来的错误结构。 */
 export class ApiError extends Error {
   readonly code: number
   readonly status: number | null
@@ -19,7 +19,7 @@ export class ApiError extends Error {
 let tokenGetter: () => string | null = () => null
 let unauthorizedHandler: (() => void) | null = null
 
-/** Wired once from main.ts so the client never imports the store (no cycles). */
+/** 在 main.ts 中一次性接线，使 client 永不导入 store（避免循环依赖）。 */
 export function configureAuth(options: {
   getToken: () => string | null
   onUnauthorized: () => void
@@ -98,8 +98,8 @@ export function toApiError(error: unknown): ApiError {
 }
 
 /**
- * Unwraps the `{ code, message, data }` envelope. Success is HTTP 2xx with
- * `code: 0`; anything else becomes an ApiError carrying the server message.
+ * 解包 `{ code, message, data }` 信封。成功为 HTTP 2xx 且 `code: 0`；
+ * 其余情况会抛出携带服务端消息的 ApiError。
  */
 export async function request<T>(config: AxiosRequestConfig): Promise<T> {
   try {

@@ -10,16 +10,16 @@ import (
 	"github.com/AXmishell/axmipic/internal/service"
 )
 
-// multipartOverhead is extra request-body allowance for multipart boundaries
-// and headers beyond the file size limit.
+// multipartOverhead 是在文件大小限制之外，为 multipart 边界和头部预留的
+// 额外请求体余量。
 const multipartOverhead = 1 << 20
 
-// maxJSONBody bounds the size of JSON request bodies.
+// maxJSONBody 限制 JSON 请求体的大小。
 const maxJSONBody = 1 << 20
 
 func (h *Handler) uploadImage(w http.ResponseWriter, r *http.Request) {
-	// Reject an obviously oversized body up front so the client receives a
-	// clean 413 instead of having the connection closed mid-upload.
+	// 预先拒绝明显过大的请求体，这样客户端会收到干净的 413，
+	// 而不是在上传中途连接被关闭。
 	if r.ContentLength > h.maxUploadBytes+multipartOverhead {
 		h.fail(w, r, service.ErrFileTooLarge)
 		return
@@ -77,7 +77,7 @@ func (h *Handler) uploadImage(w http.ResponseWriter, r *http.Request) {
 	writeOK(w, dto)
 }
 
-// presignRequest is the JSON body for POST /api/v1/upload/presign.
+// presignRequest 是 POST /api/v1/upload/presign 的 JSON 请求体。
 type presignRequest struct {
 	MimeType string `json:"mime_type"`
 	Size     int64  `json:"size"`
@@ -97,7 +97,7 @@ func (h *Handler) presignUpload(w http.ResponseWriter, r *http.Request) {
 	writeOK(w, result)
 }
 
-// confirmRequest is the JSON body for POST /api/v1/upload/confirm.
+// confirmRequest 是 POST /api/v1/upload/confirm 的 JSON 请求体。
 type confirmRequest struct {
 	Key string `json:"key"`
 }

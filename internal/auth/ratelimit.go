@@ -9,14 +9,14 @@ import (
 	"golang.org/x/time/rate"
 )
 
-// maxRateLimiterKeys bounds the in-memory limiter map before eviction runs.
+// maxRateLimiterKeys 是限流器映射在触发淘汰前的规模上限。
 const maxRateLimiterKeys = 10000
 
-// staleLimiterAfter is how long an idle key is retained before eviction.
+// staleLimiterAfter 是空闲键在淘汰前保留的时长。
 const staleLimiterAfter = 10 * time.Minute
 
-// RateLimiter is a per-key token-bucket limiter. A nil *RateLimiter allows
-// everything, which conveniently disables limiting.
+// RateLimiter 是按 key 划分的令牌桶限流器。nil 指针允许一切请求，
+// 便于直接关闭限流。
 type RateLimiter struct {
 	mu       sync.Mutex
 	limit    rate.Limit
@@ -25,8 +25,8 @@ type RateLimiter struct {
 	seen     map[string]time.Time
 }
 
-// NewRateLimiter creates a limiter allowing perMinute requests with the given
-// burst. It returns nil (disabled) when either value is non-positive.
+// NewRateLimiter 创建每分钟允许 perMinute 次请求、突发为 burst 的限流器。
+// 当任一参数非正时返回 nil（表示禁用限流）。
 func NewRateLimiter(perMinute, burst int) *RateLimiter {
 	if perMinute <= 0 || burst <= 0 {
 		return nil
@@ -39,7 +39,7 @@ func NewRateLimiter(perMinute, burst int) *RateLimiter {
 	}
 }
 
-// Allow reports whether the key may proceed. A nil limiter always allows.
+// Allow 判断 key 是否可以继续。nil 限流器始终放行。
 func (r *RateLimiter) Allow(key string) bool {
 	if r == nil {
 		return true
@@ -59,7 +59,7 @@ func (r *RateLimiter) Allow(key string) bool {
 	return limiter.Allow()
 }
 
-// evictLocked drops limiters that have been idle for a while. Caller holds mu.
+// evictLocked 淘汰已空闲一段时间的限流器。调用方需持有 mu。
 func (r *RateLimiter) evictLocked() {
 	cutoff := time.Now().Add(-staleLimiterAfter)
 	for key, seen := range r.seen {
@@ -70,7 +70,7 @@ func (r *RateLimiter) evictLocked() {
 	}
 }
 
-// Middleware rate-limits requests by client IP. A nil limiter allows all.
+// Middleware 按客户端 IP 进行限流。nil 限流器放行所有请求。
 func (r *RateLimiter) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		if r == nil {
@@ -86,13 +86,13 @@ func (r *RateLimiter) Middleware(next http.Handler) http.Handler {
 	})
 }
 
-// UploadLimiter applies distinct limits to authenticated users and guests.
+// UploadLimiter 对已认证用户与访客分别施加不同的限流。
 type UploadLimiter struct {
 	User  *RateLimiter
 	Guest *RateLimiter
 }
 
-// Middleware enforces the appropriate limit based on the request principal.
+// Middleware 根据请求主体身份施加对应的限流。
 func (u *UploadLimiter) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if u == nil {

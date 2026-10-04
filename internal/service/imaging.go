@@ -10,21 +10,19 @@ import (
 	"github.com/AXmishell/axmipic/internal/storage"
 )
 
-// ErrProcessingFailed is returned when a transformation cannot be applied.
+// ErrProcessingFailed 在无法应用某种变换时返回。
 var ErrProcessingFailed = errors.New("service: image processing failed")
 
-// ErrProcessingUnsupported is returned when processing is disabled.
+// ErrProcessingUnsupported 在处理功能被禁用时返回。
 var ErrProcessingUnsupported = errors.New("service: image processing is disabled")
 
-// maxRenderSourceBytes bounds how much of a stored object is read to apply a
-// transformation.
+// maxRenderSourceBytes 限定了为应用变换而读取的已存储对象的大小上限。
 const maxRenderSourceBytes = 64 << 20
 
-// maxDecodePixels caps the decoded pixel count accepted for transformation to
-// guard against decompression bombs.
+// maxDecodePixels 限定变换时可接受的解码像素数量上限，以防范解压缩炸弹。
 const maxDecodePixels = 40_000_000
 
-// TransformRequest is a raw, unvalidated transformation request.
+// TransformRequest 是一个原始的、未经校验的变换请求。
 type TransformRequest struct {
 	Width   int
 	Height  int
@@ -35,13 +33,13 @@ type TransformRequest struct {
 	Rotate  int
 }
 
-// Empty reports whether the request asks for no transformation.
+// Empty 报告该请求是否不要求任何变换。
 func (r TransformRequest) Empty() bool {
 	return r.Width == 0 && r.Height == 0 && r.Format == "" &&
 		r.Quality == 0 && !r.Enlarge && r.Rotate == 0
 }
 
-// ProcessingPolicy constrains transformations.
+// ProcessingPolicy 约束变换行为。
 type ProcessingPolicy struct {
 	Enabled        bool
 	MaxWidth       int
@@ -50,7 +48,7 @@ type ProcessingPolicy struct {
 	AllowedFormats []imaging.Format
 }
 
-// ImagingService applies on-the-fly transformations to stored images.
+// ImagingService 对已存储的图片应用即时变换。
 type ImagingService struct {
 	storage   storage.Storage
 	processor imaging.Processor
@@ -58,7 +56,7 @@ type ImagingService struct {
 	allowed   map[imaging.Format]struct{}
 }
 
-// NewImagingService constructs an ImagingService.
+// NewImagingService 构造一个 ImagingService。
 func NewImagingService(backend storage.Storage, processor imaging.Processor, policy ProcessingPolicy) *ImagingService {
 	allowed := make(map[imaging.Format]struct{}, len(policy.AllowedFormats))
 	for _, f := range policy.AllowedFormats {
@@ -67,12 +65,12 @@ func NewImagingService(backend storage.Storage, processor imaging.Processor, pol
 	return &ImagingService{storage: backend, processor: processor, policy: policy, allowed: allowed}
 }
 
-// Enabled reports whether transformations are available.
+// Enabled 报告变换功能是否可用。
 func (s *ImagingService) Enabled() bool {
 	return s.policy.Enabled && s.processor != nil
 }
 
-// Capabilities returns the active processor's capabilities.
+// Capabilities 返回当前处理器的能力。
 func (s *ImagingService) Capabilities() imaging.Capabilities {
 	if s.processor == nil {
 		return imaging.Capabilities{}
@@ -80,8 +78,7 @@ func (s *ImagingService) Capabilities() imaging.Capabilities {
 	return s.processor.Capabilities()
 }
 
-// Options validates req against the policy and processor and returns the
-// processor options to use.
+// Options 根据策略和处理器校验 req，并返回要使用的处理器选项。
 func (s *ImagingService) Options(req TransformRequest) (imaging.Options, error) {
 	if req.Width < 0 || req.Height < 0 {
 		return imaging.Options{}, fmt.Errorf("%w: dimensions must not be negative", ErrInvalidInput)
@@ -145,7 +142,7 @@ func (s *ImagingService) canEncode(f imaging.Format) bool {
 	return false
 }
 
-// Render fetches the original object and applies opts.
+// Render 获取原始对象并应用 opts。
 func (s *ImagingService) Render(ctx context.Context, key string, opts imaging.Options) (*imaging.Result, error) {
 	if !s.Enabled() {
 		return nil, ErrProcessingUnsupported
