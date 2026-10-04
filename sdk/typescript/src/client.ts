@@ -14,6 +14,7 @@ import type {
   PublicProfile,
   Report,
   RoleGroup,
+  RuntimeInfo,
   Session,
   Share,
   SharePayload,
@@ -619,6 +620,10 @@ export class AxmipicClient {
 
   async adminImagingDrivers(): Promise<ImagingDrivers> {
     return this.request<ImagingDrivers>('/api/v1/admin/imaging/drivers')
+  }
+
+  async adminRuntimeInfo(): Promise<RuntimeInfo> {
+    return this.request<RuntimeInfo>('/api/v1/admin/runtime')
   }
 }
 

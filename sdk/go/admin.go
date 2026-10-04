@@ -49,6 +49,29 @@ type ImagingDrivers struct {
 	Active    string   `json:"active"`
 }
 
+// RuntimeInfo 描述实例的运行时与运行环境信息（不含密钥）。
+type RuntimeInfo struct {
+	SiteName          string   `json:"site_name"`
+	BaseURL           string   `json:"base_url"`
+	DatabaseDriver    string   `json:"database_driver"`
+	StorageDriver     string   `json:"storage_driver"`
+	Processor         string   `json:"processor"`
+	Formats           []string `json:"formats"`
+	AllowRegistration bool     `json:"allow_registration"`
+	RequireAuth       bool     `json:"require_auth"`
+	AllowGuestUpload  bool     `json:"allow_guest_upload"`
+	GuestQuotaMB      int      `json:"guest_quota_mb"`
+	GuestUploadMaxMB  int      `json:"guest_upload_max_mb"`
+	DefaultQuotaMB    int      `json:"default_quota_mb"`
+	UploadMaxMB       int      `json:"upload_max_mb"`
+	TrustProxy        bool     `json:"trust_proxy"`
+	SessionTTLHours   int      `json:"session_ttl_hours"`
+	InstallLockFile   string   `json:"install_lock_file"`
+	Installed         bool     `json:"installed"`
+	GoVersion         string   `json:"go_version"`
+	Platform          string   `json:"platform"`
+}
+
 // AdminStats 返回实例统计。
 func (c *Client) AdminStats(ctx context.Context) (*Stats, error) {
 	var out Stats
@@ -277,6 +300,15 @@ func (c *Client) AdminSecurity(ctx context.Context) (map[string]string, error) {
 func (c *Client) AdminImagingDrivers(ctx context.Context) (*ImagingDrivers, error) {
 	var out ImagingDrivers
 	if err := c.get(ctx, "/api/v1/admin/imaging/drivers", &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// AdminRuntimeInfo 返回实例运行环境信息。
+func (c *Client) AdminRuntimeInfo(ctx context.Context) (*RuntimeInfo, error) {
+	var out RuntimeInfo
+	if err := c.get(ctx, "/api/v1/admin/runtime", &out); err != nil {
 		return nil, err
 	}
 	return &out, nil

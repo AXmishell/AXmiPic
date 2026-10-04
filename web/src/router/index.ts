@@ -167,6 +167,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '存储配置' },
       },
       {
+        path: 'system',
+        name: 'admin-system',
+        component: () => import('@/views/SystemView.vue'),
+        meta: { title: '系统设置' },
+      },
+      {
         path: 'settings',
         name: 'admin-settings',
         component: () => import('@/views/SettingsView.vue'),

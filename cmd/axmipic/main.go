@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -225,6 +226,27 @@ func run() error {
 	shareSvc := service.NewShareService(repo, cfg.Server.BaseURL)
 	siteSvc := service.NewSiteService(repo)
 
+	runtimeInfo := api.RuntimeInfo{
+		SiteName:          "AXmiPic",
+		BaseURL:           cfg.Server.BaseURL,
+		DatabaseDriver:    normalizeDBDriver(cfg.Database.Driver),
+		StorageDriver:     cfg.Storage.Driver,
+		Processor:         processorName,
+		Formats:           formatNames(capabilities.OutputFormats),
+		AllowRegistration: cfg.Auth.AllowRegistration,
+		RequireAuth:       cfg.Auth.RequireAuth,
+		AllowGuestUpload:  cfg.Auth.AllowGuestUpload,
+		GuestQuotaMB:      cfg.Auth.GuestQuotaMB,
+		GuestUploadMaxMB:  cfg.Auth.GuestUploadMaxMB,
+		DefaultQuotaMB:    cfg.Auth.DefaultQuotaMB,
+		UploadMaxMB:       cfg.Upload.MaxSizeMB,
+		TrustProxy:        cfg.Server.TrustProxy,
+		SessionTTLHours:   cfg.Auth.SessionTTLHours,
+		InstallLockFile:   cfg.Install.LockFile,
+		GoVersion:         runtime.Version(),
+		Platform:          runtime.GOOS + "/" + runtime.GOARCH,
+	}
+
 	gateways := []payment.Gateway{payment.ManualGateway{}, payment.NewMockGateway(cfg.Server.BaseURL, logger)}
 	if cfg.Payment.Alipay.Enabled {
 		alipay, err := payment.NewAlipayGateway(payment.AlipayOptions{
@@ -269,6 +291,7 @@ func run() error {
 		Billing:       billingSvc,
 		Notify:        notifySvc,
 		Install:       installSvc,
+		Runtime:       runtimeInfo,
 		InstallRepo:   store.Open,
 		InstallSeed:   installSeed,
 		Authenticator: auth.NewAuthenticator(repo, issuer),
@@ -369,6 +392,27 @@ func processingFormats(names []string) []imaging.Format {
 		}
 	}
 	return formats
+}
+
+// formatNames 将处理器能力中的格式转换为可读名称列表。
+func formatNames(formats []imaging.Format) []string {
+	names := make([]string, 0, len(formats))
+	for _, f := range formats {
+		names = append(names, string(f))
+	}
+	return names
+}
+
+// normalizeDBDriver 返回规范化的数据库驱动名称（空值视为 sqlite）。
+func normalizeDBDriver(driver string) string {
+	switch strings.ToLower(strings.TrimSpace(driver)) {
+	case "", "sqlite":
+		return "sqlite"
+	case "postgres", "postgresql", "pgx":
+		return "postgres"
+	default:
+		return driver
+	}
 }
 
 // seedGuest 确保 Guest 访客角色组与 Guest 账户存在，并按配置决定访客是否可上传。

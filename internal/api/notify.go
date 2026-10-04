@@ -66,3 +66,39 @@ func (h *Handler) adminImagingDrivers(w http.ResponseWriter, r *http.Request) {
 	}
 	writeOK(w, map[string]any{"available": names, "active": active})
 }
+
+// RuntimeInfo 描述实例的运行时与运行环境信息（不含任何密钥）。
+type RuntimeInfo struct {
+	SiteName          string   `json:"site_name"`
+	BaseURL           string   `json:"base_url"`
+	DatabaseDriver    string   `json:"database_driver"`
+	StorageDriver     string   `json:"storage_driver"`
+	Processor         string   `json:"processor"`
+	Formats           []string `json:"formats"`
+	AllowRegistration bool     `json:"allow_registration"`
+	RequireAuth       bool     `json:"require_auth"`
+	AllowGuestUpload  bool     `json:"allow_guest_upload"`
+	GuestQuotaMB      int      `json:"guest_quota_mb"`
+	GuestUploadMaxMB  int      `json:"guest_upload_max_mb"`
+	DefaultQuotaMB    int      `json:"default_quota_mb"`
+	UploadMaxMB       int      `json:"upload_max_mb"`
+	TrustProxy        bool     `json:"trust_proxy"`
+	SessionTTLHours   int      `json:"session_ttl_hours"`
+	InstallLockFile   string   `json:"install_lock_file"`
+	Installed         bool     `json:"installed"`
+	GoVersion         string   `json:"go_version"`
+	Platform          string   `json:"platform"`
+}
+
+// adminRuntimeInfo 返回实例运行环境信息。
+func (h *Handler) adminRuntimeInfo(w http.ResponseWriter, r *http.Request) {
+	info := h.runtime
+	if h.install != nil {
+		status := h.install.Status()
+		info.Installed = status.Installed
+		if info.InstallLockFile == "" {
+			info.InstallLockFile = status.LockFile
+		}
+	}
+	writeOK(w, info)
+}

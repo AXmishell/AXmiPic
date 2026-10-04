@@ -278,3 +278,25 @@ export interface ImagingDrivers {
   available: string[]
   active: string
 }
+
+export interface RuntimeInfo {
+  site_name: string
+  base_url: string
+  database_driver: string
+  storage_driver: string
+  processor: string
+  formats: string[]
+  allow_registration: boolean
+  require_auth: boolean
+  allow_guest_upload: boolean
+  guest_quota_mb: number
+  guest_upload_max_mb: number
+  default_quota_mb: number
+  upload_max_mb: number
+  trust_proxy: boolean
+  session_ttl_hours: number
+  install_lock_file: string
+  installed: boolean
+  go_version: string
+  platform: string
+}

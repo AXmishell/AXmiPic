@@ -18,18 +18,20 @@ import (
 
 // Deps 是构建 API 路由所需的依赖项。
 type Deps struct {
-	Upload        *service.UploadService
-	Imaging       *service.ImagingService
-	Accounts      *service.AccountService
-	Admin         *service.AdminService
-	Albums        *service.AlbumService
-	Storage       *service.StorageService
-	Policies      *service.PolicyService
-	Shares        *service.ShareService
-	Site          *service.SiteService
-	Billing       *service.BillingService
-	Notify        *service.NotifyService
-	Install       *service.InstallService
+	Upload   *service.UploadService
+	Imaging  *service.ImagingService
+	Accounts *service.AccountService
+	Admin    *service.AdminService
+	Albums   *service.AlbumService
+	Storage  *service.StorageService
+	Policies *service.PolicyService
+	Shares   *service.ShareService
+	Site     *service.SiteService
+	Billing  *service.BillingService
+	Notify   *service.NotifyService
+	Install  *service.InstallService
+	// Runtime 是实例运行环境信息，供管理端展示（不含密钥）。
+	Runtime       RuntimeInfo
 	Authenticator *auth.Authenticator
 	UploadLimiter *auth.UploadLimiter
 	// ImageLimiter 按 IP 对公开图片服务和转换进行限流。
@@ -63,6 +65,7 @@ type Handler struct {
 	billing        *service.BillingService
 	notify         *service.NotifyService
 	install        *service.InstallService
+	runtime        RuntimeInfo
 	installRepo    func(driver, dsn string) (*store.Repository, error)
 	installSeed    func(ctx context.Context, repo *store.Repository, in service.InstallInput) error
 	maxUploadBytes int64
@@ -84,6 +87,7 @@ func NewRouter(d Deps) http.Handler {
 		billing:        d.Billing,
 		notify:         d.Notify,
 		install:        d.Install,
+		runtime:        d.Runtime,
 		installRepo:    d.InstallRepo,
 		installSeed:    d.InstallSeed,
 		maxUploadBytes: int64(d.MaxUploadMB) << 20,
@@ -239,6 +243,7 @@ func NewRouter(d Deps) http.Handler {
 				r.Post("/admin/notify/test", h.adminTestNotify)
 				r.Get("/admin/security", h.adminSecurityInfo)
 				r.Get("/admin/imaging/drivers", h.adminImagingDrivers)
+				r.Get("/admin/runtime", h.adminRuntimeInfo)
 			})
 		})
 	})

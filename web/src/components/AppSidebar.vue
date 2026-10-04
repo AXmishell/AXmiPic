@@ -77,7 +77,10 @@ const adminGroups: NavGroup[] = [
   },
   {
     label: '系统',
-    items: [{ label: '账号设置', to: '/admin/settings', icon: Setting }],
+    items: [
+      { label: '系统设置', to: '/admin/system', icon: Setting },
+      { label: '账号设置', to: '/admin/settings', icon: User },
+    ],
   },
 ]
 
