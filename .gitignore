@@ -6,4 +6,7 @@
 *.db
 .env
 
+# Local configuration may contain secrets (DB password, jwt_secret).
+configs/config.yaml
+
 .codegraph/
