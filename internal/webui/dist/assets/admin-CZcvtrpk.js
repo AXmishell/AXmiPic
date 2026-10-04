@@ -1,1 +1,0 @@
-import{r as t}from"./index-C0fOodNm.js";function u(){return t({method:"GET",url:"/admin/stats"})}function a(){return t({method:"GET",url:"/admin/users"})}function n(r,s){return t({method:"PATCH",url:`/admin/users/${r}`,data:s})}export{u as f,a as l,n as u};
