@@ -11,6 +11,7 @@
 - **多存储后端**：本地文件系统、S3 兼容对象存储（AWS S3 / MinIO / Cloudflare R2 / 阿里云 OSS / 腾讯云 COS）、七牛云 Kodo
 - **运行中热切换存储**：后台可随时切换默认存储；已有图片按记录自动路由回其原存储读取，无需重启
 - **数据库可选**：SQLite（默认，开箱即用）或 PostgreSQL
+- **相册与图片广场**：用相册归类图片；可将图片设为公开，出现在跨用户的图片广场
 - **账户体系**：管理员与普通用户分表管理；JWT 会话 + 长期 API 令牌
 - **配额与限流**：按用户的存储配额，按用户/访客/IP 的速率限制
 - **安全**：密钥 AES-256-GCM 加密存储、bcrypt 密码、纵深防御响应头
@@ -154,7 +155,8 @@ processing:
 
 ```yaml
 auth:
-  jwt_secret: ""                        # 留空则启动时随机生成（重启后会话失效）
+  jwt_secret: ""                        # 留空时自动生成并持久化（见下方说明）
+  encryption_key: ""                    # 可选：仅用于加密存储后端密钥，留空回退 jwt_secret
   session_ttl_hours: 24
   allow_registration: true
   require_auth: true                    # true 时仅登录用户可上传
@@ -170,7 +172,7 @@ limits:
   image_burst: 120
 ```
 
-生产环境请务必设置固定的 `auth.jwt_secret`（否则每次重启都会使全部会话失效，且多实例部署无法共享）。
+生产环境与多实例部署请务必显式设置固定的 `auth.jwt_secret`。当日 `jwt_secret` 与 `encryption_key` 都留空时，服务会生成一个主密钥并持久化到磁盘（SQLite 场景为数据库同目录下的 `.axmipic-key`，否则为 `./data/.axmipic-key`），从而保证重启后已加密入库的存储密钥仍可解密；单实例部署可依赖此机制开箱即用。
 
 ## 图片处理
 
@@ -232,6 +234,7 @@ http://localhost:8080/i/16/30/163053…bce4.png?w=400&h=300&fit=cover&f=webp&q=8
     "original_name": "新图.png",
     "filename": "163053….png",
     "hash": "163053ece784c464ae8fe55e2532d2804a3762eeac80e5b6cbef4f7e2c16bce4",
+    "permission": "private",
     "size": 73,
     "mime_type": "image/png",
     "width": 5,
@@ -253,12 +256,35 @@ curl -X POST http://localhost:8080/api/v1/upload \
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/images` | 图片列表（分页 `page`、`page_size`） |
+| GET | `/images` | 图片列表（分页与过滤，见下） |
 | GET | `/images/{id}` | 单张图片信息 |
+| PATCH | `/images/{id}` | 重命名图片（仅修改展示用原文件名） |
 | DELETE | `/images/{id}` | 删除图片 |
+| POST | `/images/batch` | 批量设置可见性 / 所属相册 |
 | POST | `/tokens` | 创建 API 令牌（明文仅返回一次） |
 | GET | `/tokens` | 令牌列表 |
 | DELETE | `/tokens/{id}` | 吊销令牌 |
+
+`GET /images` 支持查询参数 `page`、`page_size`、`order`（`newest`/`earliest`/`largest`/`smallest`）、`keyword`（按文件名搜索）、`permission`（`public`/`private`）与 `album_id`（按相册过滤）。
+
+`POST /images/batch` 请求体示例，`permission` 与 `album_id`/`clear_album` 至少提供其一：
+
+```json
+{ "ids": ["<id1>", "<id2>"], "permission": "public", "album_id": "<album_id>" }
+```
+
+### 相册与图片广场
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/albums` | 相册列表（含图片数量） |
+| POST | `/albums` | 新建相册 |
+| GET | `/albums/{id}` | 相册详情 |
+| PATCH | `/albums/{id}` | 修改相册名称/简介 |
+| DELETE | `/albums/{id}` | 删除相册（图片保留，仅移出相册） |
+| GET | `/plaza` | 公开图片广场（跨用户，返回 `permission=public` 的图片） |
+
+图片的 `permission` 取值为 `private`（默认，仅本人可见）或 `public`（可出现在图片广场）。
 
 ### 管理接口（需管理员）
 
@@ -274,6 +300,37 @@ curl -X POST http://localhost:8080/api/v1/upload \
 | POST | `/admin/storage/{id}/activate` | 切换默认存储（热切换） |
 
 存储后端的密钥（S3/七牛的 Secret）以密文入库，接口仅返回「是否已设置」，不回传明文。
+
+## Docker 部署
+
+仓库提供多阶段 `Dockerfile`：前端用 Node 构建，后端交叉编译为纯静态二进制（CGO 关闭），运行在非 root 的 distroless 镜像中，数据统一放在 `/app/data`。
+
+### 构建与运行
+
+```bash
+docker build -t axmipic .
+
+docker run -d --name axmipic \
+  -p 8080:8080 \
+  -v axmipic-data:/app/data \
+  -e AXMIPIC_SERVER_BASE_URL=http://localhost:8080 \
+  -e AXMIPIC_AUTH_BOOTSTRAP_ADMIN="admin:你的强密码" \
+  axmipic
+```
+
+- 容器内默认读取 `/app/configs/config.yaml`（由 `configs/config.example.yaml` 生成）；可挂载自定义配置 `-v /path/config.yaml:/app/configs/config.yaml:ro`，或用 `AXMIPIC_*` 环境变量覆盖单项配置。
+- `/app/data` 保存 SQLite 数据库、本地上传文件与自动生成的主密钥，务必挂载持久化卷，否则重启后加密密钥会变化。
+- 镜像以非 root 用户（uid 65532）运行，`base_url` 请按实际对外地址通过 `AXMIPIC_SERVER_BASE_URL` 设置。
+
+### 使用 GHCR 镜像
+
+CI 在 `main` 分支、`v*` 标签与手动触发时构建多架构（linux/amd64、linux/arm64）镜像并推送到 GitHub Container Registry：
+
+```bash
+docker pull ghcr.io/axmishell/axmipic:latest
+```
+
+标签策略：`main`、默认分支的 `latest`、`sha-<short>`，以及版本标签对应的 `1.2`、`1.2.3`。Pull Request 只构建（amd64）不推送。
 
 ## 开发
 
@@ -310,6 +367,7 @@ go build -tags libvips -o bin/axmipic ./cmd/axmipic
 仓库包含 GitHub Actions 工作流：
 
 - `.github/workflows/ci.yml`：后端执行 `go mod tidy` 整洁性、`gofmt`、`go vet`、`staticcheck`、构建与竞态测试；前端执行类型检查与构建；并做前后端端到端构建。
+- `.github/workflows/docker.yml`：构建多架构容器镜像并推送到 GHCR（Pull Request 仅构建、不推送）。
 - `.github/workflows/release.yml`：推送 `v*` 标签时交叉编译多平台二进制并创建 GitHub Release。
 
 ## 目录结构
