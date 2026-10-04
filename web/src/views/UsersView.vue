@@ -10,11 +10,12 @@ import {
   deleteCustomer,
   listAdmins,
   listCustomers,
+  listRoleGroups,
   updateAdmin,
   updateCustomer,
 } from '@/api/admin'
 import { toApiError } from '@/api/client'
-import type { User as UserModel, UserUpdate } from '@/api/types'
+import type { RoleGroup, User as UserModel, UserUpdate } from '@/api/types'
 import EmptyState from '@/components/EmptyState.vue'
 import ErrorState from '@/components/ErrorState.vue'
 import PageHeader from '@/components/PageHeader.vue'
@@ -29,6 +30,7 @@ const activeTab = ref<Tab>('customers')
 
 const customers = ref<UserModel[]>([])
 const admins = ref<UserModel[]>([])
+const roleGroups = ref<RoleGroup[]>([])
 const loading = ref(false)
 const errorMessage = ref('')
 const search = ref('')
@@ -68,9 +70,14 @@ async function load(): Promise<void> {
   loading.value = true
   errorMessage.value = ''
   try {
-    const [customerList, adminList] = await Promise.all([listCustomers(), listAdmins()])
+    const [customerList, adminList, groupList] = await Promise.all([
+      listCustomers(),
+      listAdmins(),
+      listRoleGroups(),
+    ])
     customers.value = customerList ?? []
     admins.value = adminList ?? []
+    roleGroups.value = groupList ?? []
   } catch (error) {
     errorMessage.value = toApiError(error).message
   } finally {
@@ -146,6 +153,11 @@ async function applyDisabled(target: UserModel, disabled: boolean, isAdmin: bool
   }
   const run = isAdmin ? updateAdmin : updateCustomer
   await patch(target, { disabled }, run, isAdmin ? admins : customers)
+}
+
+async function onRoleGroupChange(target: UserModel, value: unknown): Promise<void> {
+  const roleGroupID = typeof value === 'string' ? value : ''
+  await patch(target, { role_group_id: roleGroupID }, updateCustomer, customers)
 }
 
 async function removeUser(target: UserModel, isAdmin: boolean): Promise<void> {
@@ -270,6 +282,24 @@ onMounted(load)
                       {{ row.disabled ? '已禁用' : '正常' }}
                     </span>
                   </div>
+                </template>
+              </el-table-column>
+              <el-table-column label="角色组" min-width="170">
+                <template #default="{ row }">
+                  <el-select
+                    :model-value="row.role_group_id ?? ''"
+                    :loading="pendingIds.has(row.id)"
+                    style="width: 100%"
+                    @change="onRoleGroupChange(row, $event)"
+                  >
+                    <el-option label="默认角色组" value="" />
+                    <el-option
+                      v-for="group in roleGroups"
+                      :key="group.id"
+                      :label="group.name"
+                      :value="group.id"
+                    />
+                  </el-select>
                 </template>
               </el-table-column>
               <el-table-column label="注册时间" min-width="170">

@@ -105,12 +105,44 @@ func run() error {
 	adminSvc := service.NewAdminService(repo, cfg.Storage.Driver, processor)
 	albumSvc := service.NewAlbumService(repo)
 
+	policies := service.NewPolicyService(repo, service.PolicyDefaults{
+		QuotaBytes:       int64(cfg.Auth.DefaultQuotaMB) << 20,
+		UploadMaxBytes:   int64(cfg.Upload.MaxSizeMB) << 20,
+		AllowedMIMETypes: cfg.Upload.AllowedMIMETypes,
+		Rate: service.RateSettings{
+			UploadPerMinute: cfg.Limits.UploadPerMinute,
+			UploadBurst:     cfg.Limits.UploadBurst,
+			ImagePerMinute:  cfg.Limits.ImagePerMinute,
+			ImageBurst:      cfg.Limits.ImageBurst,
+		},
+		Processing: service.ProcessingSettings{
+			Enabled:        cfg.Processing.Enabled,
+			MaxWidth:       cfg.Processing.MaxWidth,
+			MaxHeight:      cfg.Processing.MaxHeight,
+			DefaultQuality: cfg.Processing.DefaultQuality,
+			AllowedFormats: cfg.Processing.AllowedFormats,
+		},
+	})
+
 	bootstrapCtx, cancelBootstrap = context.WithTimeout(context.Background(), 30*time.Second)
 	err = accounts.EnsureBootstrapAdmin(bootstrapCtx, cfg.Auth.BootstrapAdmin)
+	if err == nil {
+		err = policies.SeedDefaults(bootstrapCtx)
+	}
 	cancelBootstrap()
 	if err != nil {
 		return err
 	}
+
+	if adopted, adoptErr := policies.AdoptUnassigned(context.Background()); adoptErr != nil {
+		logger.Warn("failed to assign existing users to the default role group", slog.Any("error", adoptErr))
+	} else if adopted > 0 {
+		logger.Info("assigned existing users to the default role group", slog.Int64("count", adopted))
+	}
+
+	uploadSvc.SetPolicyResolver(policies)
+	accounts.SetPolicyService(policies)
+	adminSvc.SetPolicyService(policies)
 
 	router := api.NewRouter(api.Deps{
 		Upload:        uploadSvc,
@@ -119,6 +151,7 @@ func run() error {
 		Admin:         adminSvc,
 		Albums:        albumSvc,
 		Storage:       storageSvc,
+		Policies:      policies,
 		Authenticator: auth.NewAuthenticator(repo, issuer),
 		UploadLimiter: &auth.UploadLimiter{
 			User:  auth.NewRateLimiter(cfg.Limits.UploadPerMinute, cfg.Limits.UploadBurst),

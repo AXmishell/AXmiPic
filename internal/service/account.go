@@ -46,13 +46,15 @@ var dummyPasswordHash = func() string {
 
 // UserDTO 是账户在 API 中的表示形式。
 type UserDTO struct {
-	ID         string    `json:"id"`
-	Username   string    `json:"username"`
-	Role       string    `json:"role"`
-	Disabled   bool      `json:"disabled"`
-	UsedBytes  int64     `json:"used_bytes"`
-	QuotaBytes int64     `json:"quota_bytes"`
-	CreatedAt  time.Time `json:"created_at"`
+	ID         string `json:"id"`
+	Username   string `json:"username"`
+	Role       string `json:"role"`
+	Disabled   bool   `json:"disabled"`
+	UsedBytes  int64  `json:"used_bytes"`
+	QuotaBytes int64  `json:"quota_bytes"`
+	// RoleGroupID 是普通用户所属的角色组；管理员与未分配用户为空。
+	RoleGroupID string    `json:"role_group_id,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 // SessionDTO 由登录操作返回。
@@ -79,6 +81,7 @@ type AccountService struct {
 	issuer            *auth.SessionIssuer
 	allowRegistration bool
 	defaultQuotaBytes int64
+	policies          *PolicyService
 }
 
 // NewAccountService 构造一个 AccountService。
@@ -89,6 +92,28 @@ func NewAccountService(repo *store.Repository, issuer *auth.SessionIssuer, allow
 		allowRegistration: allowRegistration,
 		defaultQuotaBytes: defaultQuotaBytes,
 	}
+}
+
+// SetPolicyService 安装角色组/策略服务，使注册与账户视图能够使用策略。
+func (s *AccountService) SetPolicyService(policies *PolicyService) {
+	s.policies = policies
+}
+
+// registrationPolicy 解析新注册用户应加入的角色组及其配额。未配置策略服务
+// 或解析失败时回退到配置的默认配额。
+func (s *AccountService) registrationPolicy(ctx context.Context) (*string, int64) {
+	if s.policies == nil {
+		return nil, s.defaultQuotaBytes
+	}
+	effective, err := s.policies.ResolveDefault(ctx)
+	if err != nil {
+		return nil, s.defaultQuotaBytes
+	}
+	if effective.RoleGroupID == "" {
+		return nil, effective.QuotaBytes
+	}
+	id := effective.RoleGroupID
+	return &id, effective.QuotaBytes
 }
 
 // RegisterCustomer 创建一个新的普通（客户）账户。
@@ -110,11 +135,13 @@ func (s *AccountService) RegisterCustomer(ctx context.Context, username, passwor
 	if err != nil {
 		return nil, err
 	}
+	roleGroupID, quotaBytes := s.registrationPolicy(ctx)
 	customer := &store.Customer{
 		ID:           uuid.NewString(),
 		Username:     username,
 		PasswordHash: hash,
-		QuotaBytes:   s.defaultQuotaBytes,
+		QuotaBytes:   quotaBytes,
+		RoleGroupID:  roleGroupID,
 	}
 	if err := s.repo.CreateCustomer(ctx, customer); err != nil {
 		// 并发的注册可能已经先插入了相同的用户名。
@@ -326,6 +353,7 @@ func accountFromCustomer(customer *store.Customer) *store.Account {
 		Disabled:     customer.Disabled,
 		UsedBytes:    customer.UsedBytes,
 		QuotaBytes:   customer.QuotaBytes,
+		RoleGroupID:  customer.RoleGroupID,
 		CreatedAt:    customer.CreatedAt,
 		UpdatedAt:    customer.UpdatedAt,
 	}
@@ -333,13 +361,14 @@ func accountFromCustomer(customer *store.Customer) *store.Account {
 
 func toUserDTO(account *store.Account) *UserDTO {
 	return &UserDTO{
-		ID:         account.ID,
-		Username:   account.Username,
-		Role:       string(account.Role),
-		Disabled:   account.Disabled,
-		UsedBytes:  account.UsedBytes,
-		QuotaBytes: account.QuotaBytes,
-		CreatedAt:  account.CreatedAt,
+		ID:          account.ID,
+		Username:    account.Username,
+		Role:        string(account.Role),
+		Disabled:    account.Disabled,
+		UsedBytes:   account.UsedBytes,
+		QuotaBytes:  account.QuotaBytes,
+		RoleGroupID: storageIDValue(account.RoleGroupID),
+		CreatedAt:   account.CreatedAt,
 	}
 }
 

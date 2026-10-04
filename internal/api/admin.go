@@ -59,7 +59,8 @@ func (h *Handler) adminCreateAdmin(w http.ResponseWriter, r *http.Request) {
 }
 
 type updateUserRequest struct {
-	Disabled *bool `json:"disabled"`
+	Disabled    *bool   `json:"disabled"`
+	RoleGroupID *string `json:"role_group_id"`
 }
 
 // updateFunc 对指定角色的账户应用禁用/启用更改。
@@ -81,7 +82,10 @@ func (h *Handler) adminUpdateAccount(w http.ResponseWriter, r *http.Request, upd
 		writeError(w, http.StatusBadRequest, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	user, err := update(r.Context(), principalOf(r).UserID, chi.URLParam(r, "id"), service.UpdateUserInput{Disabled: body.Disabled})
+	user, err := update(r.Context(), principalOf(r).UserID, chi.URLParam(r, "id"), service.UpdateUserInput{
+		Disabled:    body.Disabled,
+		RoleGroupID: body.RoleGroupID,
+	})
 	if err != nil {
 		h.fail(w, r, err)
 		return

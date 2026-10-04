@@ -18,6 +18,7 @@ export interface User {
   role: UserRole
   used_bytes: number
   quota_bytes: number
+  role_group_id?: string
   created_at: string
   disabled?: boolean
 }
@@ -92,6 +93,71 @@ export interface Credentials {
 
 export interface UserUpdate {
   disabled?: boolean
+  /** 客户所属角色组；空字符串表示回退默认组。 */
+  role_group_id?: string
+}
+
+/** 策略类型：分别控制配额、上传、速率、图片处理与功能开关。 */
+export type PolicyType = 'quota' | 'upload' | 'rate' | 'processing' | 'feature'
+
+export interface Policy {
+  id: string
+  name: string
+  type: PolicyType
+  description: string
+  enabled: boolean
+  settings: Record<string, unknown>
+  created_at: string
+  updated_at: string
+}
+
+export interface PolicyInput {
+  name: string
+  type: PolicyType
+  description: string
+  enabled: boolean
+  settings: Record<string, unknown>
+}
+
+export interface RoleGroup {
+  id: string
+  name: string
+  description: string
+  is_default: boolean
+  customer_count: number
+  policy_count: number
+  policies: Policy[]
+  created_at: string
+  updated_at: string
+}
+
+export interface RoleGroupInput {
+  name: string
+  description: string
+  is_default: boolean
+}
+
+/** 某个账户最终生效的策略集合。 */
+export interface EffectivePolicies {
+  role_group_id?: string
+  role_group_name?: string
+  quota_bytes: number
+  upload_max_bytes: number
+  allowed_mime_types: string[]
+  rate: {
+    upload_per_minute: number
+    upload_burst: number
+    image_per_minute: number
+    image_burst: number
+  }
+  processing: {
+    enabled: boolean
+    max_width: number
+    max_height: number
+    default_quality: number
+    allowed_formats: string[]
+  }
+  features: string[]
 }
 
 export type StorageDriver = 'local' | 's3' | 'qiniu'

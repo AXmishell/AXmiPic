@@ -27,8 +27,10 @@ type Account struct {
 	Disabled     bool
 	UsedBytes    int64
 	QuotaBytes   int64
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	// RoleGroupID 仅对客户有意义，指向其所属角色组。
+	RoleGroupID *string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
 // table 返回支撑给定角色的 gorm 模型。
@@ -156,10 +158,26 @@ func (r *Repository) CountCustomers(ctx context.Context) (int64, error) {
 	return count, nil
 }
 
-// UpdateCustomer 更新客户的禁用标志并返回结果。
+// UpdateCustomer 更新客户的禁用标志与角色组并返回结果。
 func (r *Repository) UpdateCustomer(ctx context.Context, id string, update UserUpdate) (*Account, error) {
-	if err := r.db.WithContext(ctx).Model(&Customer{}).Where("id = ?", id).Updates(update).Error; err != nil {
-		return nil, fmt.Errorf("store: update customer %q: %w", id, err)
+	fields := map[string]any{}
+	if update.Disabled != nil {
+		fields["disabled"] = *update.Disabled
+	}
+	if update.RoleGroupID != nil {
+		if *update.RoleGroupID == "" {
+			fields["role_group_id"] = nil
+		} else {
+			fields["role_group_id"] = *update.RoleGroupID
+		}
+	}
+	if update.QuotaBytes != nil {
+		fields["quota_bytes"] = *update.QuotaBytes
+	}
+	if len(fields) > 0 {
+		if err := r.db.WithContext(ctx).Model(&Customer{}).Where("id = ?", id).Updates(fields).Error; err != nil {
+			return nil, fmt.Errorf("store: update customer %q: %w", id, err)
+		}
 	}
 	return r.GetAccountByID(ctx, RoleCustomer, id)
 }
@@ -227,6 +245,7 @@ func accountFromCustomer(customer *Customer) *Account {
 		Disabled:     customer.Disabled,
 		UsedBytes:    customer.UsedBytes,
 		QuotaBytes:   customer.QuotaBytes,
+		RoleGroupID:  customer.RoleGroupID,
 		CreatedAt:    customer.CreatedAt,
 		UpdatedAt:    customer.UpdatedAt,
 	}

@@ -22,6 +22,7 @@ type Deps struct {
 	Admin         *service.AdminService
 	Albums        *service.AlbumService
 	Storage       *service.StorageService
+	Policies      *service.PolicyService
 	Authenticator *auth.Authenticator
 	UploadLimiter *auth.UploadLimiter
 	// ImageLimiter 按 IP 对公开图片服务和转换进行限流。
@@ -43,6 +44,7 @@ type Handler struct {
 	admin          *service.AdminService
 	albums         *service.AlbumService
 	storageSvc     *service.StorageService
+	policies       *service.PolicyService
 	maxUploadBytes int64
 	logger         *slog.Logger
 }
@@ -56,6 +58,7 @@ func NewRouter(d Deps) http.Handler {
 		admin:          d.Admin,
 		albums:         d.Albums,
 		storageSvc:     d.Storage,
+		policies:       d.Policies,
 		maxUploadBytes: int64(d.MaxUploadMB) << 20,
 		logger:         d.Logger,
 	}
@@ -114,6 +117,7 @@ func NewRouter(d Deps) http.Handler {
 				r.Patch("/albums/{id}", h.updateAlbum)
 				r.Delete("/albums/{id}", h.deleteAlbum)
 				r.Get("/plaza", h.listPlaza)
+				r.Get("/auth/policies", h.authPolicies)
 			})
 
 			r.Group(func(r chi.Router) {
@@ -132,6 +136,20 @@ func NewRouter(d Deps) http.Handler {
 				r.Put("/admin/storage/{id}", h.storageUpdate)
 				r.Delete("/admin/storage/{id}", h.storageDelete)
 				r.Post("/admin/storage/{id}/activate", h.storageActivate)
+
+				r.Get("/admin/role-groups", h.adminListRoleGroups)
+				r.Post("/admin/role-groups", h.adminCreateRoleGroup)
+				r.Get("/admin/role-groups/{id}", h.adminGetRoleGroup)
+				r.Put("/admin/role-groups/{id}", h.adminUpdateRoleGroup)
+				r.Delete("/admin/role-groups/{id}", h.adminDeleteRoleGroup)
+				r.Post("/admin/role-groups/{id}/policies", h.adminAttachPolicy)
+				r.Delete("/admin/role-groups/{id}/policies/{policyID}", h.adminDetachPolicy)
+
+				r.Get("/admin/policies", h.adminListPolicies)
+				r.Post("/admin/policies", h.adminCreatePolicy)
+				r.Get("/admin/policies/{id}", h.adminGetPolicy)
+				r.Put("/admin/policies/{id}", h.adminUpdatePolicy)
+				r.Delete("/admin/policies/{id}", h.adminDeletePolicy)
 			})
 		})
 	})

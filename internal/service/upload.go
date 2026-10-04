@@ -82,6 +82,18 @@ type UploadPolicy struct {
 	PresignExpiry    time.Duration
 }
 
+// UploadLimits 是解析后的、针对某个调用方生效的上传限制。
+type UploadLimits struct {
+	MaxSizeBytes     int64
+	AllowedMIMETypes []string
+}
+
+// UploadPolicyResolver 按调用方解析生效的上传限制（例如角色组策略）。
+// 解析失败时调用方会拒绝上传，避免悄然放宽限制。
+type UploadPolicyResolver interface {
+	UploadLimitsFor(ctx context.Context, principal *auth.Principal) (UploadLimits, error)
+}
+
 // UploadInput 是一个已准备好被持久化的上传请求。
 type UploadInput struct {
 	Data     []byte
@@ -151,19 +163,42 @@ type ListResult struct {
 
 // UploadService 协调校验、去重、存储和元数据。
 type UploadService struct {
-	repo    *store.Repository
-	manager *storage.Manager
-	policy  UploadPolicy
-	allowed map[string]struct{}
+	repo     *store.Repository
+	manager  *storage.Manager
+	policy   UploadPolicy
+	resolver UploadPolicyResolver
 }
 
 // NewUploadService 构造一个 UploadService。
 func NewUploadService(repo *store.Repository, manager *storage.Manager, policy UploadPolicy) *UploadService {
+	return &UploadService{repo: repo, manager: manager, policy: policy}
+}
+
+// SetPolicyResolver 安装一个按调用方解析上传限制的解析器（例如角色组策略）。
+func (s *UploadService) SetPolicyResolver(resolver UploadPolicyResolver) {
+	s.resolver = resolver
+}
+
+// policyFor 解析某个主体生效上传策略，并返回其允许的媒体类型集合。
+func (s *UploadService) policyFor(ctx context.Context, principal *auth.Principal) (UploadPolicy, map[string]struct{}, error) {
+	policy := s.policy
+	if s.resolver != nil {
+		limits, err := s.resolver.UploadLimitsFor(ctx, principal)
+		if err != nil {
+			return UploadPolicy{}, nil, fmt.Errorf("resolve upload policy: %w", err)
+		}
+		if limits.MaxSizeBytes > 0 {
+			policy.MaxSizeBytes = limits.MaxSizeBytes
+		}
+		if len(limits.AllowedMIMETypes) > 0 {
+			policy.AllowedMIMETypes = limits.AllowedMIMETypes
+		}
+	}
 	allowed := make(map[string]struct{}, len(policy.AllowedMIMETypes))
 	for _, mimeType := range policy.AllowedMIMETypes {
 		allowed[mimeType] = struct{}{}
 	}
-	return &UploadService{repo: repo, manager: manager, policy: policy, allowed: allowed}
+	return policy, allowed, nil
 }
 
 // backendFor 返回某张图片所在的存储后端：优先按记录的 storage_id 解析，
@@ -199,11 +234,15 @@ func (s *UploadService) BackendForKey(ctx context.Context, key string) (storage.
 // Upload 校验、存储并记录一张归 principal 所有的图片。相同内容会按其
 // 内容寻址键进行去重。
 func (s *UploadService) Upload(ctx context.Context, principal *auth.Principal, in UploadInput) (*ImageDTO, error) {
-	size := int64(len(in.Data))
-	if size > s.policy.MaxSizeBytes {
-		return nil, fmt.Errorf("%w: %d bytes exceeds %d bytes", ErrFileTooLarge, size, s.policy.MaxSizeBytes)
+	policy, allowed, err := s.policyFor(ctx, principal)
+	if err != nil {
+		return nil, err
 	}
-	if _, ok := s.allowed[in.MimeType]; !ok {
+	size := int64(len(in.Data))
+	if size > policy.MaxSizeBytes {
+		return nil, fmt.Errorf("%w: %d bytes exceeds %d bytes", ErrFileTooLarge, size, policy.MaxSizeBytes)
+	}
+	if _, ok := allowed[in.MimeType]; !ok {
 		return nil, fmt.Errorf("%w: %q", ErrUnsupportedType, in.MimeType)
 	}
 
@@ -286,23 +325,27 @@ func (s *UploadService) Presign(ctx context.Context, principal *auth.Principal, 
 	if presigner == nil {
 		return nil, ErrPresignUnsupported
 	}
-	if _, ok := s.allowed[in.MimeType]; !ok {
+	policy, allowed, err := s.policyFor(ctx, principal)
+	if err != nil {
+		return nil, err
+	}
+	if _, ok := allowed[in.MimeType]; !ok {
 		return nil, fmt.Errorf("%w: %q", ErrUnsupportedType, in.MimeType)
 	}
 	if in.Size <= 0 {
 		return nil, fmt.Errorf("%w: size must be positive", ErrInvalidInput)
 	}
-	if in.Size > s.policy.MaxSizeBytes {
-		return nil, fmt.Errorf("%w: %d bytes exceeds %d bytes", ErrFileTooLarge, in.Size, s.policy.MaxSizeBytes)
+	if in.Size > policy.MaxSizeBytes {
+		return nil, fmt.Errorf("%w: %d bytes exceeds %d bytes", ErrFileTooLarge, in.Size, policy.MaxSizeBytes)
 	}
 
 	backend := s.manager.Current()
 	key := directKey(in.MimeType)
 	req, err := presigner.PresignPut(ctx, key, storage.PresignOptions{
 		ContentType:         in.MimeType,
-		AllowedContentTypes: s.policy.AllowedMIMETypes,
-		MaxSize:             s.policy.MaxSizeBytes,
-		Expires:             s.policy.PresignExpiry,
+		AllowedContentTypes: policy.AllowedMIMETypes,
+		MaxSize:             policy.MaxSizeBytes,
+		Expires:             policy.PresignExpiry,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("presign: %w", err)
@@ -313,7 +356,7 @@ func (s *UploadService) Presign(ctx context.Context, principal *auth.Principal, 
 		UserID:    ownerIDOf(principal),
 		StorageID: storageIDPtr(s.manager.CurrentID()),
 		MimeType:  in.MimeType,
-		MaxSize:   s.policy.MaxSizeBytes,
+		MaxSize:   policy.MaxSizeBytes,
 		ExpiresAt: req.ExpiresAt,
 	}
 	if err := s.repo.CreatePendingUpload(ctx, pending); err != nil {
@@ -343,6 +386,11 @@ func (s *UploadService) Confirm(ctx context.Context, principal *auth.Principal, 
 		return nil, fmt.Errorf("confirm: lookup existing image: %w", err)
 	}
 
+	policy, allowed, err := s.policyFor(ctx, principal)
+	if err != nil {
+		return nil, err
+	}
+
 	pending, err := s.repo.GetPendingUpload(ctx, key)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
@@ -366,12 +414,12 @@ func (s *UploadService) Confirm(ctx context.Context, principal *auth.Principal, 
 		}
 		return nil, fmt.Errorf("confirm: stat object: %w", err)
 	}
-	if info.Size > s.policy.MaxSizeBytes {
+	if info.Size > policy.MaxSizeBytes {
 		_ = backend.Delete(ctx, key)
 		_ = s.repo.DeletePendingUpload(ctx, key)
 		return nil, fmt.Errorf("%w: object is %d bytes", ErrFileTooLarge, info.Size)
 	}
-	if _, ok := s.allowed[info.ContentType]; !ok {
+	if _, ok := allowed[info.ContentType]; !ok {
 		_ = backend.Delete(ctx, key)
 		_ = s.repo.DeletePendingUpload(ctx, key)
 		return nil, fmt.Errorf("%w: %q", ErrUnsupportedType, info.ContentType)
@@ -379,7 +427,7 @@ func (s *UploadService) Confirm(ctx context.Context, principal *auth.Principal, 
 	// 验证对象实际上看起来像一张被允许的图片，而不是仅凭客户端声明的
 	// 内容类型来信任。
 	detected, width, height := s.probeObject(ctx, backend, key)
-	if _, ok := s.allowed[detected]; !ok {
+	if _, ok := allowed[detected]; !ok {
 		_ = backend.Delete(ctx, key)
 		_ = s.repo.DeletePendingUpload(ctx, key)
 		return nil, fmt.Errorf("%w: object content is %q", ErrUnsupportedType, detected)

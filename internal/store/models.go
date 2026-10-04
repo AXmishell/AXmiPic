@@ -96,8 +96,10 @@ type Customer struct {
 	Disabled     bool   `gorm:"not null;default:false"`
 	UsedBytes    int64  `gorm:"not null;default:0"`
 	QuotaBytes   int64  `gorm:"not null;default:0"` // 0 表示不限额
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	// RoleGroupID 指向用户所属的角色组；为空表示使用默认角色组。
+	RoleGroupID *string `gorm:"index;size:36"`
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
 // TableName 返回存储 Customer 的表名。
@@ -105,9 +107,12 @@ func (Customer) TableName() string {
 	return "customers"
 }
 
-// UserUpdate 携带可选的账户字段更改。Nil 字段将被忽略。
+// UserUpdate 携带可选的账户字段更改。Nil 字段将被忽略。RoleGroupID 仅对
+// 客户有意义：非 nil 时字符串值指向新角色组，空字符串表示清空（回退默认组）。
 type UserUpdate struct {
-	Disabled *bool
+	Disabled    *bool
+	RoleGroupID *string
+	QuotaBytes  *int64
 }
 
 // ImageStats 汇总图像数量和总字节数。
@@ -149,4 +154,64 @@ type StorageBackend struct {
 // TableName 返回存储 StorageBackend 的表名。
 func (StorageBackend) TableName() string {
 	return "storage_backends"
+}
+
+// RoleGroup 是管理员定义的一组权限与策略集合，可分配给普通用户，从而
+// 实现按角色分级的资源与功能控制。
+type RoleGroup struct {
+	ID          string `gorm:"primaryKey;size:36"`
+	Name        string `gorm:"uniqueIndex;size:64;not null"`
+	Description string `gorm:"size:255;not null;default:''"`
+	// IsDefault 标记新注册用户默认加入的角色组；全库至多一个。
+	IsDefault bool `gorm:"not null;default:false"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// TableName 返回存储 RoleGroup 的表名。
+func (RoleGroup) TableName() string {
+	return "role_groups"
+}
+
+// 策略类型。一个角色组可绑定多个不同类型的策略，按类型合并为最终生效值。
+const (
+	// PolicyTypeQuota 控制存储配额。
+	PolicyTypeQuota = "quota"
+	// PolicyTypeUpload 控制上传大小与允许的媒体类型。
+	PolicyTypeUpload = "upload"
+	// PolicyTypeRate 控制各类接口的速率限制。
+	PolicyTypeRate = "rate"
+	// PolicyTypeProcessing 控制图片处理能力。
+	PolicyTypeProcessing = "processing"
+	// PolicyTypeFeature 控制功能开关与权限点。
+	PolicyTypeFeature = "feature"
+)
+
+// Policy 是一个可复用的、带类型的策略定义。多个角色组可以引用同一策略。
+type Policy struct {
+	ID          string `gorm:"primaryKey;size:36"`
+	Name        string `gorm:"uniqueIndex;size:64;not null"`
+	Type        string `gorm:"size:32;not null"`
+	Description string `gorm:"size:255;not null;default:''"`
+	Enabled     bool   `gorm:"not null;default:true"`
+	// Settings 为类型相关的 JSON 配置。
+	Settings  string `gorm:"type:text;not null;default:'{}'"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// TableName 返回存储 Policy 的表名。
+func (Policy) TableName() string {
+	return "policies"
+}
+
+// RoleGroupPolicy 关联角色组与策略。
+type RoleGroupPolicy struct {
+	RoleGroupID string `gorm:"primaryKey;size:36"`
+	PolicyID    string `gorm:"primaryKey;size:36"`
+}
+
+// TableName 返回存储 RoleGroupPolicy 的表名。
+func (RoleGroupPolicy) TableName() string {
+	return "role_group_policies"
 }

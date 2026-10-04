@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/AXmishell/axmipic/internal/imaging"
 	"github.com/AXmishell/axmipic/internal/store"
@@ -23,6 +24,8 @@ type StatsDTO struct {
 // UpdateUserInput 携带可选的账户变更。
 type UpdateUserInput struct {
 	Disabled *bool
+	// RoleGroupID 非 nil 时把客户转移到该角色组；空字符串表示回退默认组。
+	RoleGroupID *string
 }
 
 // AdminService 针对两张账户表提供管理操作。
@@ -30,11 +33,17 @@ type AdminService struct {
 	repo          *store.Repository
 	storageDriver string
 	processor     imaging.Processor
+	policies      *PolicyService
 }
 
 // NewAdminService 构造一个 AdminService。
 func NewAdminService(repo *store.Repository, storageDriver string, processor imaging.Processor) *AdminService {
 	return &AdminService{repo: repo, storageDriver: storageDriver, processor: processor}
+}
+
+// SetPolicyService 安装角色组/策略服务，使管理员能为客户分配角色组。
+func (s *AdminService) SetPolicyService(policies *PolicyService) {
+	s.policies = policies
 }
 
 // Stats 返回聚合的实例指标。
@@ -96,9 +105,33 @@ func (s *AdminService) RegisterAdmin(ctx context.Context, accounts *AccountServi
 	return accounts.RegisterAdmin(ctx, username, password)
 }
 
-// UpdateCustomer 对某个客户账户应用可选变更。
+// UpdateCustomer 对某个客户账户应用可选变更。当角色组发生变化时，会依据
+// 新角色组的配额策略同步该客户的存储配额。
 func (s *AdminService) UpdateCustomer(ctx context.Context, id string, in UpdateUserInput) (*UserDTO, error) {
-	account, err := s.repo.UpdateCustomer(ctx, id, store.UserUpdate{Disabled: in.Disabled})
+	update := store.UserUpdate{Disabled: in.Disabled}
+	if in.RoleGroupID != nil {
+		groupID := strings.TrimSpace(*in.RoleGroupID)
+		if groupID == "" {
+			// 清空角色组：回退默认组，并同步其配额。
+			update.RoleGroupID = &groupID
+			if s.policies != nil {
+				if effective, err := s.policies.ResolveDefault(ctx); err == nil {
+					update.QuotaBytes = &effective.QuotaBytes
+				}
+			}
+		} else {
+			if s.policies == nil {
+				return nil, fmt.Errorf("%w: role groups are not available", ErrInvalidInput)
+			}
+			effective, err := s.policies.ResolveForRoleGroupID(ctx, groupID)
+			if err != nil {
+				return nil, err
+			}
+			update.RoleGroupID = &groupID
+			update.QuotaBytes = &effective.QuotaBytes
+		}
+	}
+	account, err := s.repo.UpdateCustomer(ctx, id, update)
 	if err != nil {
 		return nil, fmt.Errorf("update customer: %w", err)
 	}
