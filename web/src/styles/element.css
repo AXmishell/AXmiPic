@@ -195,6 +195,35 @@ html.theme-light {
   box-shadow: var(--ax-shadow-lg);
 }
 
+/* 对话框可能包含较多表单项；限制其高度并让内容区滚动，避免在小屏或
+   窗口较矮时底部按钮被挤出可视区域。 */
+.el-dialog {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 2 * var(--ax-space-10));
+  margin-top: var(--ax-space-10);
+  margin-bottom: var(--ax-space-10);
+  overflow: hidden;
+}
+
+.el-dialog__header,
+.el-dialog__footer {
+  flex: none;
+}
+
+.el-dialog__body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+}
+
+@media (max-height: 640px) {
+  .el-dialog {
+    max-height: calc(100vh - 2 * var(--ax-space-4));
+    margin-top: var(--ax-space-4);
+    margin-bottom: var(--ax-space-4);
+  }
+}
+
 .el-dialog__title,
 .el-message-box__title {
   color: var(--ax-text);
