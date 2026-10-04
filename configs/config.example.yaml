@@ -127,5 +127,28 @@ payment:
     # APIv3 密钥（32 字节），用于解密回调。
     api_v3_key: ""
 
+security:
+  # Upload content scanner: none | builtin
+  scanner: "builtin"
+  # Image cloud processor: local (uses the built-in imaging pipeline)
+  cloud_processor: "local"
+
+sms:
+  # Enable a generic HTTP SMS gateway. Params are not templated here; the
+  # gateway is contacted with to/body placeholders when enabled in code.
+  enabled: false
+  provider: ""
+  endpoint: ""
+  method: "POST"
+
+email:
+  enabled: false
+  host: ""
+  port: 587
+  username: ""
+  password: ""
+  from: ""
+  use_tls: false
+
 logging:
   level: "info"

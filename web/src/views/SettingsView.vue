@@ -6,6 +6,7 @@ import { Key, Refresh, SwitchButton } from '@element-plus/icons-vue'
 
 import { fetchStats } from '@/api/admin'
 import { toApiError } from '@/api/client'
+import { getNotifyChannels, getSecurityInfo, sendTestNotify } from '@/api/billing'
 import type { AdminStats } from '@/api/types'
 import ErrorState from '@/components/ErrorState.vue'
 import PageHeader from '@/components/PageHeader.vue'
@@ -42,11 +43,51 @@ async function load(): Promise<void> {
     await auth.refreshUser()
     if (auth.isAdmin) {
       stats.value = await fetchStats()
+      await loadIntegrations()
     }
   } catch (error) {
     errorMessage.value = toApiError(error).message
   } finally {
     loading.value = false
+  }
+}
+
+// 系统集成：通知渠道与安全扫描器。
+const channels = ref<{ sms: string; email: string }>({ sms: '', email: '' })
+const scannerName = ref('')
+const testChannel = ref<'sms' | 'email'>('sms')
+const testTo = ref('')
+const testBody = ref('')
+const testing = ref(false)
+
+async function loadIntegrations(): Promise<void> {
+  try {
+    const [ch, sec] = await Promise.all([getNotifyChannels(), getSecurityInfo()])
+    channels.value = ch ?? { sms: '', email: '' }
+    scannerName.value = sec?.scanner ?? ''
+  } catch {
+    // 集成信息加载失败不影响其他设置项。
+  }
+}
+
+async function sendTest(): Promise<void> {
+  if (!testTo.value.trim() || !testBody.value.trim()) {
+    ElMessage.warning('请填写接收方与内容')
+    return
+  }
+  testing.value = true
+  try {
+    await sendTestNotify({
+      channel: testChannel.value,
+      to: testTo.value.trim(),
+      subject: testChannel.value === 'email' ? 'AXmiPic 测试邮件' : undefined,
+      body: testBody.value.trim(),
+    })
+    ElMessage.success('测试通知已发送（未配置服务商时会记录到日志）')
+  } catch (error) {
+    ElMessage.error(toApiError(error).message)
+  } finally {
+    testing.value = false
   }
 }
 
@@ -210,6 +251,44 @@ onMounted(load)
           </el-button>
         </div>
       </article>
+
+      <article v-if="isAdmin" class="ax-card settings-block">
+        <header class="ax-card__head">
+          <h2 class="ax-card__title">系统集成</h2>
+        </header>
+        <div class="ax-card__body integration">
+          <dl class="info-list">
+            <div class="info-list__row">
+              <dt>短信渠道</dt>
+              <dd>{{ channels.sms || '未配置' }}</dd>
+            </div>
+            <div class="info-list__row">
+              <dt>邮件渠道</dt>
+              <dd>{{ channels.email || '未配置' }}</dd>
+            </div>
+            <div class="info-list__row">
+              <dt>内容扫描器</dt>
+              <dd>{{ scannerName || '未配置' }}</dd>
+            </div>
+          </dl>
+          <el-divider content-position="left">发送测试通知</el-divider>
+          <div class="integration__form">
+            <el-radio-group v-model="testChannel">
+              <el-radio-button value="sms">短信</el-radio-button>
+              <el-radio-button value="email">邮件</el-radio-button>
+            </el-radio-group>
+            <el-input
+              v-model="testTo"
+              :placeholder="testChannel === 'sms' ? '手机号' : '邮箱地址'"
+            />
+            <el-input v-model="testBody" type="textarea" :rows="2" placeholder="通知内容" />
+            <el-button type="primary" :loading="testing" @click="sendTest">发送测试</el-button>
+          </div>
+          <p class="integration__hint">
+            未配置真实服务商时，通知会回退到日志渠道并记录到服务端日志。
+          </p>
+        </div>
+      </article>
     </template>
   </div>
 </template>
@@ -224,6 +303,24 @@ onMounted(load)
 
 .settings-block {
   margin-top: var(--ax-space-4);
+}
+
+.integration {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ax-space-3);
+}
+
+.integration__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ax-space-2);
+}
+
+.integration__hint {
+  margin: 0;
+  color: var(--ax-text-4);
+  font-size: var(--ax-text-xs);
 }
 
 .settings-profile {

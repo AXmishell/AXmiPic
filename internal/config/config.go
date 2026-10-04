@@ -84,6 +84,19 @@ var envPaths = map[string]string{
 	"payment_wechat_serial_no":    "payment.wechat.serial_no",
 	"payment_wechat_private_key":  "payment.wechat.private_key",
 	"payment_wechat_api_v3_key":   "payment.wechat.api_v3_key",
+	"security_scanner":            "security.scanner",
+	"security_cloud_processor":    "security.cloud_processor",
+	"sms_enabled":                 "sms.enabled",
+	"sms_provider":                "sms.provider",
+	"sms_endpoint":                "sms.endpoint",
+	"sms_method":                  "sms.method",
+	"email_enabled":               "email.enabled",
+	"email_host":                  "email.host",
+	"email_port":                  "email.port",
+	"email_username":              "email.username",
+	"email_password":              "email.password",
+	"email_from":                  "email.from",
+	"email_use_tls":               "email.use_tls",
 	"logging_level":               "logging.level",
 }
 
@@ -97,6 +110,9 @@ type Config struct {
 	Auth       AuthConfig       `koanf:"auth"`
 	Limits     LimitsConfig     `koanf:"limits"`
 	Payment    PaymentConfig    `koanf:"payment"`
+	Security   SecurityConfig   `koanf:"security"`
+	SMS        SMSConfig        `koanf:"sms"`
+	Email      EmailConfig      `koanf:"email"`
 	Logging    LoggingConfig    `koanf:"logging"`
 }
 
@@ -210,6 +226,35 @@ type LoggingConfig struct {
 	Level string `koanf:"level"`
 }
 
+// SecurityConfig 配置上传内容安全扫描与云处理。
+type SecurityConfig struct {
+	// Scanner 选择扫描器：none（默认，放行）、builtin（白名单+魔数检测）。
+	Scanner string `koanf:"scanner"`
+	// CloudProcessor 选择云处理器：local（默认，使用本地成像）。
+	CloudProcessor string `koanf:"cloud_processor"`
+}
+
+// SMSConfig 配置短信渠道。
+type SMSConfig struct {
+	Enabled  bool   `koanf:"enabled"`
+	Provider string `koanf:"provider"`
+	// Endpoint 为通用 HTTP 短信网关地址。
+	Endpoint string `koanf:"endpoint"`
+	// Method 为 GET 或 POST。
+	Method string `koanf:"method"`
+}
+
+// EmailConfig 配置邮件渠道。
+type EmailConfig struct {
+	Enabled  bool   `koanf:"enabled"`
+	Host     string `koanf:"host"`
+	Port     int    `koanf:"port"`
+	Username string `koanf:"username"`
+	Password string `koanf:"password"`
+	From     string `koanf:"from"`
+	UseTLS   bool   `koanf:"use_tls"`
+}
+
 // PaymentConfig 配置支付渠道。默认渠道需在已注册的渠道（manual、mock、
 // alipay、wechat）中选择。
 type PaymentConfig struct {
@@ -293,8 +338,11 @@ func defaultConfig() Config {
 			ImagePerMinute:  600,
 			ImageBurst:      120,
 		},
-		Payment: PaymentConfig{DefaultGateway: "manual"},
-		Logging: LoggingConfig{Level: "info"},
+		Payment:  PaymentConfig{DefaultGateway: "manual"},
+		Security: SecurityConfig{Scanner: "builtin", CloudProcessor: "local"},
+		SMS:      SMSConfig{Method: "POST"},
+		Email:    EmailConfig{Port: 587},
+		Logging:  LoggingConfig{Level: "info"},
 	}
 }
 
@@ -411,6 +459,22 @@ func (c Config) validate() error {
 	case "", "manual", "mock", "alipay", "wechat":
 	default:
 		return fmt.Errorf("config: payment.default_gateway %q is not supported", c.Payment.DefaultGateway)
+	}
+	switch c.Security.Scanner {
+	case "", "none", "builtin":
+	default:
+		return fmt.Errorf("config: security.scanner %q is not supported", c.Security.Scanner)
+	}
+	switch c.Security.CloudProcessor {
+	case "", "local":
+	default:
+		return fmt.Errorf("config: security.cloud_processor %q is not supported", c.Security.CloudProcessor)
+	}
+	if c.Email.Enabled && strings.TrimSpace(c.Email.Host) == "" {
+		return fmt.Errorf("config: email.host must not be empty when email is enabled")
+	}
+	if c.SMS.Enabled && strings.TrimSpace(c.SMS.Endpoint) == "" {
+		return fmt.Errorf("config: sms.endpoint must not be empty when sms is enabled")
 	}
 	return nil
 }

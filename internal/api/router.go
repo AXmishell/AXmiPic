@@ -26,6 +26,7 @@ type Deps struct {
 	Shares        *service.ShareService
 	Site          *service.SiteService
 	Billing       *service.BillingService
+	Notify        *service.NotifyService
 	Authenticator *auth.Authenticator
 	UploadLimiter *auth.UploadLimiter
 	// ImageLimiter 按 IP 对公开图片服务和转换进行限流。
@@ -51,6 +52,7 @@ type Handler struct {
 	shares         *service.ShareService
 	site           *service.SiteService
 	billing        *service.BillingService
+	notify         *service.NotifyService
 	maxUploadBytes int64
 	logger         *slog.Logger
 }
@@ -68,6 +70,7 @@ func NewRouter(d Deps) http.Handler {
 		shares:         d.Shares,
 		site:           d.Site,
 		billing:        d.Billing,
+		notify:         d.Notify,
 		maxUploadBytes: int64(d.MaxUploadMB) << 20,
 		logger:         d.Logger,
 	}
@@ -212,6 +215,10 @@ func NewRouter(d Deps) http.Handler {
 				r.Get("/admin/tickets/{id}", h.getTicket)
 				r.Patch("/admin/tickets/{id}", h.adminSetTicketStatus)
 				r.Post("/admin/tickets/{id}/reply", h.replyTicket)
+
+				r.Get("/admin/notify/channels", h.adminNotifyChannels)
+				r.Post("/admin/notify/test", h.adminTestNotify)
+				r.Get("/admin/security", h.adminSecurityInfo)
 			})
 		})
 	})

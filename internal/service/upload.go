@@ -25,6 +25,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/AXmishell/axmipic/internal/auth"
+	"github.com/AXmishell/axmipic/internal/security"
 	"github.com/AXmishell/axmipic/internal/storage"
 	"github.com/AXmishell/axmipic/internal/store"
 )
@@ -46,6 +47,9 @@ var ErrQuotaExceeded = errors.New("service: storage quota exceeded")
 
 // ErrForbidden 在调用者无权访问某个资源时返回。
 var ErrForbidden = errors.New("service: forbidden")
+
+// ErrContentBlocked 在上传内容未通过安全扫描时返回。
+var ErrContentBlocked = errors.New("service: content rejected by security scan")
 
 // ErrNotFound 在请求的图片不存在时返回。
 var ErrNotFound = store.ErrNotFound
@@ -171,6 +175,7 @@ type UploadService struct {
 	manager  *storage.Manager
 	policy   UploadPolicy
 	resolver UploadPolicyResolver
+	scanner  security.Scanner
 }
 
 // NewUploadService 构造一个 UploadService。
@@ -181,6 +186,34 @@ func NewUploadService(repo *store.Repository, manager *storage.Manager, policy U
 // SetPolicyResolver 安装一个按调用方解析上传限制的解析器（例如角色组策略）。
 func (s *UploadService) SetPolicyResolver(resolver UploadPolicyResolver) {
 	s.resolver = resolver
+}
+
+// SetScanner 安装一个上传内容安全扫描器。
+func (s *UploadService) SetScanner(scanner security.Scanner) {
+	s.scanner = scanner
+}
+
+// ScannerName 返回当前扫描器名称；未配置时返回 "none"。
+func (s *UploadService) ScannerName() string {
+	if s.scanner == nil {
+		return "none"
+	}
+	return s.scanner.Name()
+}
+
+// scanContent 对上传内容执行安全扫描；未配置扫描器时直接放行。
+func (s *UploadService) scanContent(ctx context.Context, data []byte, mimeType string) error {
+	if s.scanner == nil {
+		return nil
+	}
+	result, err := s.scanner.Scan(ctx, data, mimeType)
+	if err != nil {
+		return fmt.Errorf("upload: security scan: %w", err)
+	}
+	if result.IsBlocked() {
+		return fmt.Errorf("%w: %s", ErrContentBlocked, result.Reason)
+	}
+	return nil
 }
 
 // policyFor 解析某个主体生效上传策略，并返回其允许的媒体类型集合。
@@ -249,8 +282,9 @@ func (s *UploadService) Upload(ctx context.Context, principal *auth.Principal, i
 	if _, ok := allowed[in.MimeType]; !ok {
 		return nil, fmt.Errorf("%w: %q", ErrUnsupportedType, in.MimeType)
 	}
-
-	// 计算内容哈希，并据此生成「重命名」后的存储文件名与键。
+	if err := s.scanContent(ctx, in.Data, in.MimeType); err != nil {
+		return nil, err
+	}
 	hash := contentHash(in.Data)
 	key := hashKey(hash, in.MimeType)
 	filename := path.Base(key)
@@ -435,6 +469,23 @@ func (s *UploadService) Confirm(ctx context.Context, principal *auth.Principal, 
 		_ = backend.Delete(ctx, key)
 		_ = s.repo.DeletePendingUpload(ctx, key)
 		return nil, fmt.Errorf("%w: object content is %q", ErrUnsupportedType, detected)
+	}
+	// 对直传对象做安全扫描；命中则删除对象并拒绝。
+	if s.scanner != nil {
+		object, getErr := backend.Get(ctx, key)
+		if getErr != nil {
+			return nil, fmt.Errorf("confirm: security scan read: %w", getErr)
+		}
+		probe, readErr := io.ReadAll(io.LimitReader(object, dimensionProbeLimit))
+		_ = object.Close()
+		if readErr != nil {
+			return nil, fmt.Errorf("confirm: security scan: %w", readErr)
+		}
+		if scanErr := s.scanContent(ctx, probe, detected); scanErr != nil {
+			_ = backend.Delete(ctx, key)
+			_ = s.repo.DeletePendingUpload(ctx, key)
+			return nil, scanErr
+		}
 	}
 
 	ownerID := pending.UserID

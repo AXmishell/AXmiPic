@@ -98,3 +98,22 @@ export function deleteCoupon(id: string): Promise<void> {
 export function setTicketStatus(id: string, status: TicketStatus): Promise<Ticket> {
   return request<Ticket>({ method: 'PATCH', url: `/admin/tickets/${id}`, data: { status } })
 }
+
+/** 管理端：通知渠道与测试。 */
+export function getNotifyChannels(): Promise<{ sms: string; email: string }> {
+  return request<{ sms: string; email: string }>({ method: 'GET', url: '/admin/notify/channels' })
+}
+
+export function sendTestNotify(payload: {
+  channel: 'sms' | 'email'
+  to: string
+  subject?: string
+  body: string
+}): Promise<{ status: string }> {
+  return request<{ status: string }>({ method: 'POST', url: '/admin/notify/test', data: payload })
+}
+
+/** 管理端：安全扫描器信息。 */
+export function getSecurityInfo(): Promise<{ scanner?: string }> {
+  return request<{ scanner?: string }>({ method: 'GET', url: '/admin/security' })
+}

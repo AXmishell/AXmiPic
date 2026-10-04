@@ -98,6 +98,10 @@ func (h *Handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, http.StatusNotFound, http.StatusNotFound, "report not found")
 	case errors.Is(err, service.ErrPageNotFound):
 		writeError(w, http.StatusNotFound, http.StatusNotFound, "page not found")
+	case errors.Is(err, service.ErrContentBlocked):
+		writeError(w, http.StatusUnprocessableEntity, http.StatusUnprocessableEntity, err.Error())
+	case errors.Is(err, service.ErrNotifyFailed):
+		writeError(w, http.StatusBadGateway, http.StatusBadGateway, err.Error())
 	case errors.Is(err, service.ErrPlanNotFound):
 		writeError(w, http.StatusNotFound, http.StatusNotFound, "plan not found")
 	case errors.Is(err, service.ErrOrderNotFound):

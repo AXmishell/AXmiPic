@@ -20,8 +20,10 @@ import (
 	"github.com/AXmishell/axmipic/internal/auth"
 	"github.com/AXmishell/axmipic/internal/config"
 	"github.com/AXmishell/axmipic/internal/imaging"
+	"github.com/AXmishell/axmipic/internal/notify"
 	"github.com/AXmishell/axmipic/internal/payment"
 	"github.com/AXmishell/axmipic/internal/secret"
+	"github.com/AXmishell/axmipic/internal/security"
 	"github.com/AXmishell/axmipic/internal/server"
 	"github.com/AXmishell/axmipic/internal/service"
 	"github.com/AXmishell/axmipic/internal/storage"
@@ -148,6 +150,44 @@ func run() error {
 	uploadSvc.SetPolicyResolver(policies)
 	accounts.SetPolicyService(policies)
 	adminSvc.SetPolicyService(policies)
+	switch cfg.Security.Scanner {
+	case "builtin":
+		uploadSvc.SetScanner(security.NewBlockingScanner(cfg.Upload.AllowedMIMETypes))
+	default:
+		// none：不安装扫描器，直接放行。
+	}
+
+	// 通知渠道：短信与邮件。未配置服务商时回退到日志渠道。
+	var smsSender notify.Sender = notify.NewLogSender("sms", logger)
+	if cfg.SMS.Enabled {
+		httpSender, err := notify.NewHTTPSSender(notify.HTTPOptions{
+			Name:     cfg.SMS.Provider,
+			Endpoint: cfg.SMS.Endpoint,
+			Method:   cfg.SMS.Method,
+		})
+		if err != nil {
+			return fmt.Errorf("main: sms sender: %w", err)
+		}
+		smsSender = httpSender
+		logger.Info("sms notification channel enabled")
+	}
+	var emailSender notify.Sender = notify.NewLogSender("email", logger)
+	if cfg.Email.Enabled {
+		smtpSender, err := notify.NewSMTPSender(notify.SMTPOptions{
+			Host:     cfg.Email.Host,
+			Port:     cfg.Email.Port,
+			Username: cfg.Email.Username,
+			Password: cfg.Email.Password,
+			From:     cfg.Email.From,
+			UseTLS:   cfg.Email.UseTLS,
+		})
+		if err != nil {
+			return fmt.Errorf("main: email sender: %w", err)
+		}
+		emailSender = smtpSender
+		logger.Info("email notification channel enabled")
+	}
+	notifySvc := service.NewNotifyService(smsSender, emailSender)
 	shareSvc := service.NewShareService(repo, cfg.Server.BaseURL)
 	siteSvc := service.NewSiteService(repo)
 
@@ -193,6 +233,7 @@ func run() error {
 		Shares:        shareSvc,
 		Site:          siteSvc,
 		Billing:       billingSvc,
+		Notify:        notifySvc,
 		Authenticator: auth.NewAuthenticator(repo, issuer),
 		UploadLimiter: &auth.UploadLimiter{
 			User:  auth.NewRateLimiter(cfg.Limits.UploadPerMinute, cfg.Limits.UploadBurst),

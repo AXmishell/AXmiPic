@@ -11,6 +11,8 @@
 - **举报管理**：用户举报图片，管理员在后台处理或驳回
 - **套餐与计费**：套餐（价格、有效期、配额、角色组）与优惠券（固定/百分比、门槛、限次、时效），下单、订单管理与可插拔支付渠道
 - **官方支付适配**：支付宝当面付（RSA2 签名/验签）与微信支付 v3（SHA256-RSA 签名、AES-GCM 回调解密），以及人工/模拟渠道
+- **图片安全**：上传内容扫描器（可插拔），内置白名单 + 危险魔数检测，拒绝伪装成图片的可执行内容
+- **通知系统**：可插拔的短信（通用 HTTP 网关）与邮件（SMTP/STARTTLS）渠道，支持后台发送测试
 - **工单系统**：用户提交工单并对接客服，管理员回复与关闭
 - **内容寻址与去重**：按内容 `sha256` 生成存储文件名并入库，相同内容自动去重
 - **保留原始文件名**：存储层使用重命名（哈希命名）后的文件，数据库中单独记录原文件名、存储文件名与哈希值
@@ -398,6 +400,27 @@ curl -X POST http://localhost:8080/api/v1/upload \
 `payment.default_gateway` 选择默认渠道。支付宝在 `payment.alipay` 配置 `app_id`、`private_key`（应用私钥）、`public_key`（支付宝公钥）；微信在 `payment.wechat` 配置 `app_id`、`mch_id`、`serial_no`（商户证书序列号）、`private_key`（商户 API 私钥）、`api_v3_key`（32 字节）。凭据齐备并置 `enabled: true` 后渠道会在启动时注册。
 
 下单请求体的 `provider` 字段选择渠道；支付结果回调地址为 `POST /api/v1/payments/{provider}/callback`（支付宝返回纯文本 `success`，微信返回 200）。`GET /api/v1/payment-gateways` 返回已注册渠道列表。
+
+### 图片安全、云处理、短信与邮件
+
+这些能力都通过可插拔接口实现，未配置服务商时回退到安全的默认实现。
+
+| 配置 | 说明 |
+|------|------|
+| `security.scanner` | 上传内容扫描器：`none`（放行）或 `builtin`（白名单 + 危险魔数检测，拒绝伪装成图片的可执行内容） |
+| `security.cloud_processor` | 云处理器：`local`（使用内置成像流程）；接入外部云服务时实现 `security.CloudProcessor` |
+| `sms.*` | 通用 HTTP 短信网关：`enabled`、`provider`、`endpoint`、`method`；未启用时记录到日志 |
+| `email.*` | SMTP 邮件：`host`、`port`、`username`、`password`、`from`、`use_tls`；未启用时记录到日志 |
+
+管理接口：
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/admin/security` | 当前启用的扫描器 |
+| GET | `/admin/notify/channels` | 已配置的短信与邮件渠道 |
+| POST | `/admin/notify/test` | 发送测试通知（`{"channel":"sms","to":"…","body":"…"}`） |
+
+扫描器在 `multipart` 上传与预签名直传确认两个入口都会执行；命中危险内容时返回 HTTP 422 并拒绝入库。通知渠道的兜底实现会把消息写入服务端日志，便于开发调试。管理端「账号设置 → 系统集成」提供渠道查看与发送测试。
 
 ### 角色组与策略
 
