@@ -66,6 +66,18 @@ func run() error {
 		}
 	}()
 
+	// 既有部署升级：数据库已有管理员但缺少锁文件时，自动写入锁文件。
+	if !installed {
+		if count, countErr := repo.CountAdmins(context.Background()); countErr == nil {
+			if adopted, adoptErr := installSvc.AdoptExisting(count); adoptErr != nil {
+				logger.Warn("failed to adopt existing installation", slog.Any("error", adoptErr))
+			} else if adopted {
+				logger.Info("detected an existing deployment; wrote install lock automatically")
+				installed = true
+			}
+		}
+	}
+
 	jwtKey, err := sessionSecret(cfg, logger)
 	if err != nil {
 		return err

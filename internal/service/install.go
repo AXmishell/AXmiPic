@@ -89,6 +89,25 @@ func (s *InstallService) IsInstalled() bool {
 	return s.Status().Installed
 }
 
+// AdoptExisting 在未检测到锁文件、但数据库中已存在管理员时，写入锁文件，从而
+// 让升级到本版本的既有部署无需重新安装。它返回是否写入了锁文件。
+func (s *InstallService) AdoptExisting(adminCount int64) (bool, error) {
+	if s.disabled || s.lockFile == "" || adminCount <= 0 {
+		return false, nil
+	}
+	if s.IsInstalled() {
+		return false, nil
+	}
+	if err := os.MkdirAll(filepath.Dir(s.lockFile), 0o755); err != nil {
+		return false, fmt.Errorf("install: create lock directory: %w", err)
+	}
+	contents := fmt.Sprintf("installed_at=%s\nadopted_from=existing-database\n", time.Now().Format(time.RFC3339))
+	if err := os.WriteFile(s.lockFile, []byte(contents), 0o644); err != nil {
+		return false, fmt.Errorf("install: write lock file: %w", err)
+	}
+	return true, nil
+}
+
 // Install 执行初始化：校验输入、写入配置、连接并迁移数据库、创建管理员、
 // 播种角色组（默认组与 Guest 组）、创建 Guest 账户，最后写入锁文件。
 //
