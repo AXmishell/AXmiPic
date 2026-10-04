@@ -43,14 +43,31 @@ func (r *Repository) GetByKey(ctx context.Context, key string) (*Image, error) {
 	return &image, nil
 }
 
-// List 返回按创建时间排序的一页图像（最新的在前）以及记录总数。
-// 当 userID 非空时，仅返回该用户拥有的图像。
-func (r *Repository) List(ctx context.Context, userID string, offset, limit int) ([]Image, int64, error) {
+// ImageListOptions 约束图片列表查询。
+type ImageListOptions struct {
+	// UserID 非空时仅返回该用户拥有的图片。
+	UserID string
+	Offset int
+	Limit  int
+	// Order 为排序方式：newest（默认，最新在前）、earliest、largest、smallest。
+	Order string
+	// Keyword 非空时按原文件名、存储文件名或键进行模糊匹配。
+	Keyword string
+}
+
+// ListImages 返回一页图片以及记录总数。排序与关键字由 opts 控制。
+func (r *Repository) ListImages(ctx context.Context, opts ImageListOptions) ([]Image, int64, error) {
 	countQuery := r.db.WithContext(ctx).Model(&Image{})
 	listQuery := r.db.WithContext(ctx).Model(&Image{})
-	if userID != "" {
-		countQuery = countQuery.Where("user_id = ?", userID)
-		listQuery = listQuery.Where("user_id = ?", userID)
+	if opts.UserID != "" {
+		countQuery = countQuery.Where("user_id = ?", opts.UserID)
+		listQuery = listQuery.Where("user_id = ?", opts.UserID)
+	}
+	if opts.Keyword != "" {
+		like := "%" + opts.Keyword + "%"
+		cond := "original_name LIKE ? OR filename LIKE ? OR key LIKE ?"
+		countQuery = countQuery.Where(cond, like, like, like)
+		listQuery = listQuery.Where(cond, like, like, like)
 	}
 
 	var total int64
@@ -59,13 +76,40 @@ func (r *Repository) List(ctx context.Context, userID string, offset, limit int)
 	}
 	var images []Image
 	if err := listQuery.
-		Order("created_at DESC").
-		Offset(offset).
-		Limit(limit).
+		Order(orderClause(opts.Order)).
+		Offset(opts.Offset).
+		Limit(opts.Limit).
 		Find(&images).Error; err != nil {
 		return nil, 0, fmt.Errorf("store: list images: %w", err)
 	}
 	return images, total, nil
+}
+
+// orderClause 将排序标识映射为安全的 SQL 排序子句（白名单，避免注入）。
+func orderClause(order string) string {
+	switch order {
+	case "earliest":
+		return "created_at ASC"
+	case "largest":
+		return "size DESC"
+	case "smallest":
+		return "size ASC"
+	default:
+		return "created_at DESC"
+	}
+}
+
+// RenameImage 更新图片的原文件名并返回更新后的记录；name 由调用方负责校验。
+func (r *Repository) RenameImage(ctx context.Context, id, name string) (*Image, error) {
+	result := r.db.WithContext(ctx).Model(&Image{}).Where("id = ?", id).
+		UpdateColumn("original_name", name)
+	if result.Error != nil {
+		return nil, fmt.Errorf("store: rename image %q: %w", id, result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return nil, fmt.Errorf("store: image %q: %w", id, ErrNotFound)
+	}
+	return r.GetByID(ctx, id)
 }
 
 // Delete 移除具有给定 id 的图像，或返回 ErrNotFound。

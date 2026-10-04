@@ -441,8 +441,9 @@ func (s *UploadService) CleanupExpired(ctx context.Context, now time.Time) (int,
 }
 
 // List 返回对 principal 可见的一页图片：管理员可见全部图片，其余人仅可见
-// 自己拥有的图片。
-func (s *UploadService) List(ctx context.Context, principal *auth.Principal, page, pageSize int) (*ListResult, error) {
+// 自己拥有的图片。order 控制排序（newest/earliest/largest/smallest），
+// keyword 用于按文件名模糊搜索。
+func (s *UploadService) List(ctx context.Context, principal *auth.Principal, page, pageSize int, order, keyword string) (*ListResult, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -464,7 +465,13 @@ func (s *UploadService) List(ctx context.Context, principal *auth.Principal, pag
 		filter = principal.UserID
 	}
 
-	images, total, err := s.repo.List(ctx, filter, (page-1)*pageSize, pageSize)
+	images, total, err := s.repo.ListImages(ctx, store.ImageListOptions{
+		UserID:  filter,
+		Offset:  (page - 1) * pageSize,
+		Limit:   pageSize,
+		Order:   order,
+		Keyword: strings.TrimSpace(keyword),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("list images: %w", err)
 	}
@@ -473,6 +480,27 @@ func (s *UploadService) List(ctx context.Context, principal *auth.Principal, pag
 		items = append(items, *toDTO(&images[i]))
 	}
 	return &ListResult{Items: items, Total: total, Page: page, PageSize: pageSize}, nil
+}
+
+// Rename 修改一张图片的原文件名（展示名），保留其存储键、存储文件名与哈希
+// 不变。所有权校验与直传、删除逻辑一致。
+func (s *UploadService) Rename(ctx context.Context, principal *auth.Principal, id, name string) (*ImageDTO, error) {
+	image, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("rename image: %w", err)
+	}
+	if !canAccess(principal, image.UserID) {
+		return nil, ErrForbidden
+	}
+	clean := sanitizeOriginalName(name)
+	if clean == "" {
+		return nil, fmt.Errorf("%w: name must not be empty", ErrInvalidInput)
+	}
+	updated, err := s.repo.RenameImage(ctx, id, clean)
+	if err != nil {
+		return nil, fmt.Errorf("rename image: %w", err)
+	}
+	return toDTO(updated), nil
 }
 
 // Get 按 id 返回单张图片，并强制校验所有权。

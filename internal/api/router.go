@@ -102,6 +102,7 @@ func NewRouter(d Deps) http.Handler {
 				r.Delete("/tokens/{id}", h.deleteToken)
 				r.Get("/images", h.listImages)
 				r.Get("/images/{id}", h.getImage)
+				r.Patch("/images/{id}", h.renameImage)
 				r.Delete("/images/{id}", h.deleteImage)
 			})
 

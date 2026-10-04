@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/AXmishell/axmipic/internal/auth"
 	"github.com/AXmishell/axmipic/internal/service"
 	"github.com/AXmishell/axmipic/internal/storage"
 	"github.com/AXmishell/axmipic/internal/store"
@@ -225,6 +226,76 @@ func TestSanitizeOriginalNameStripsPaths(t *testing.T) {
 		if dto.OriginalName != tc.want {
 			t.Fatalf("sanitize(%q) = %q, want %q", tc.in, dto.OriginalName, tc.want)
 		}
+	}
+}
+
+func TestRenameUpdatesOriginalNameOnly(t *testing.T) {
+	repo := newRepo(t)
+	svc := service.NewUploadService(repo, managerWithFallback(t, newFakeStorage()), pngPolicy())
+	ctx := context.Background()
+
+	dto, err := svc.Upload(ctx, nil, service.UploadInput{
+		Data:         testPNG(t),
+		MimeType:     "image/png",
+		OriginalName: "before.png",
+	})
+	if err != nil {
+		t.Fatalf("Upload: %v", err)
+	}
+
+	renamed, err := svc.Rename(ctx, nil, dto.ID, "重命名后.png")
+	if err != nil {
+		t.Fatalf("Rename: %v", err)
+	}
+	if renamed.OriginalName != "重命名后.png" {
+		t.Fatalf("original_name = %q", renamed.OriginalName)
+	}
+	// 存储键、存储文件名与哈希必须保持不变。
+	if renamed.Key != dto.Key || renamed.Filename != dto.Filename || renamed.Hash != dto.Hash {
+		t.Fatalf("storage identity changed: %+v vs %+v", renamed, dto)
+	}
+
+	if _, err := svc.Rename(ctx, nil, dto.ID, "   "); !errors.Is(err, service.ErrInvalidInput) {
+		t.Fatalf("empty name error = %v, want ErrInvalidInput", err)
+	}
+}
+
+func TestListOrderAndKeyword(t *testing.T) {
+	repo := newRepo(t)
+	svc := service.NewUploadService(repo, managerWithFallback(t, newFakeStorage()), pngPolicy())
+	ctx := context.Background()
+
+	small, err := svc.Upload(ctx, nil, service.UploadInput{Data: testPNGSize(t, 8), MimeType: "image/png", OriginalName: "small.png"})
+	if err != nil {
+		t.Fatalf("upload small: %v", err)
+	}
+	large, err := svc.Upload(ctx, nil, service.UploadInput{Data: testPNGSize(t, 32), MimeType: "image/png", OriginalName: "large.png"})
+	if err != nil {
+		t.Fatalf("upload large: %v", err)
+	}
+
+	largest, err := svc.List(ctx, &auth.Principal{Role: auth.RoleAdmin}, 1, 20, "largest", "")
+	if err != nil {
+		t.Fatalf("List largest: %v", err)
+	}
+	if len(largest.Items) != 2 || largest.Items[0].ID != large.ID {
+		t.Fatalf("largest order wrong: %+v", largest.Items)
+	}
+
+	smallest, err := svc.List(ctx, &auth.Principal{Role: auth.RoleAdmin}, 1, 20, "smallest", "")
+	if err != nil {
+		t.Fatalf("List smallest: %v", err)
+	}
+	if smallest.Items[0].ID != small.ID {
+		t.Fatalf("smallest order wrong")
+	}
+
+	found, err := svc.List(ctx, &auth.Principal{Role: auth.RoleAdmin}, 1, 20, "", "large")
+	if err != nil {
+		t.Fatalf("List keyword: %v", err)
+	}
+	if found.Total != 1 || found.Items[0].ID != large.ID {
+		t.Fatalf("keyword search wrong: total=%d", found.Total)
 	}
 }
 

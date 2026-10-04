@@ -2,6 +2,7 @@ package api
 
 import (
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -23,7 +24,14 @@ func (h *Handler) health(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) listImages(w http.ResponseWriter, r *http.Request) {
-	result, err := h.svc.List(r.Context(), principalOf(r), queryInt(r, "page"), queryInt(r, "page_size"))
+	result, err := h.svc.List(
+		r.Context(),
+		principalOf(r),
+		queryInt(r, "page"),
+		queryInt(r, "page_size"),
+		r.URL.Query().Get("order"),
+		r.URL.Query().Get("keyword"),
+	)
 	if err != nil {
 		h.fail(w, r, err)
 		return
@@ -33,6 +41,25 @@ func (h *Handler) listImages(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) getImage(w http.ResponseWriter, r *http.Request) {
 	dto, err := h.svc.Get(r.Context(), principalOf(r), chi.URLParam(r, "id"))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeOK(w, dto)
+}
+
+// renameImageRequest 是 PATCH /api/v1/images/{id} 的 JSON 请求体。
+type renameImageRequest struct {
+	Name string `json:"name"`
+}
+
+func (h *Handler) renameImage(w http.ResponseWriter, r *http.Request) {
+	var body renameImageRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxJSONBody)).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	dto, err := h.svc.Rename(r.Context(), principalOf(r), chi.URLParam(r, "id"), body.Name)
 	if err != nil {
 		h.fail(w, r, err)
 		return

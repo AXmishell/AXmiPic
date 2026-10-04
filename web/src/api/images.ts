@@ -1,11 +1,19 @@
 import { request } from './client'
 import type { ImageItem, PageData } from './types'
 
-export function listImages(page: number, pageSize: number): Promise<PageData<ImageItem>> {
+/** 图片列表排序方式。 */
+export type ImageOrder = 'newest' | 'earliest' | 'largest' | 'smallest'
+
+export function listImages(
+  page: number,
+  pageSize: number,
+  order: ImageOrder = 'newest',
+  keyword = '',
+): Promise<PageData<ImageItem>> {
   return request<PageData<ImageItem>>({
     method: 'GET',
     url: '/images',
-    params: { page, page_size: pageSize },
+    params: { page, page_size: pageSize, order, keyword: keyword || undefined },
   })
 }
 
@@ -19,6 +27,11 @@ export function uploadImage(file: File): Promise<ImageItem> {
     data: form,
     headers: { 'Content-Type': 'multipart/form-data' },
   })
+}
+
+/** 重命名图片（修改展示用的原文件名）。 */
+export function renameImage(id: string, name: string): Promise<ImageItem> {
+  return request<ImageItem>({ method: 'PATCH', url: `/images/${id}`, data: { name } })
 }
 
 export function deleteImage(id: string): Promise<void> {
