@@ -106,17 +106,19 @@ onMounted(load)
           <el-table-column label="创建时间" min-width="170">
             <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
           </el-table-column>
-          <el-table-column label="操作" width="100" align="right">
+          <el-table-column label="操作" width="120" align="right">
             <template #default="{ row }">
-              <el-button
-                link
-                type="danger"
-                :icon="Delete"
-                :loading="pendingId === row.id"
-                @click="remove(row)"
-              >
-                撤销
-              </el-button>
+              <div class="ax-row-actions">
+                <el-button
+                  link
+                  type="danger"
+                  :icon="Delete"
+                  :loading="pendingId === row.id"
+                  @click="remove(row)"
+                >
+                  撤销
+                </el-button>
+              </div>
             </template>
           </el-table-column>
         </el-table>

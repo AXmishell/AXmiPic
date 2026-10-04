@@ -2,7 +2,7 @@
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
-import { Plus, Refresh } from '@element-plus/icons-vue'
+import { Close, Delete, EditPen, Plus, Refresh } from '@element-plus/icons-vue'
 
 import {
   adminListCoupons,
@@ -297,10 +297,12 @@ onMounted(load)
                   </el-tag>
                 </template>
               </el-table-column>
-              <el-table-column label="操作" width="150" align="right">
+              <el-table-column label="操作" width="170" align="right">
                 <template #default="{ row }">
-                  <el-button link type="primary" @click="openEditPlan(row)">编辑</el-button>
-                  <el-button link type="danger" @click="removePlan(row)">删除</el-button>
+                  <div class="ax-row-actions">
+                    <el-button link type="primary" :icon="EditPen" @click="openEditPlan(row)">编辑</el-button>
+                    <el-button link type="danger" :icon="Delete" @click="removePlan(row)">删除</el-button>
+                  </div>
                 </template>
               </el-table-column>
             </el-table>
@@ -329,10 +331,12 @@ onMounted(load)
                   </el-tag>
                 </template>
               </el-table-column>
-              <el-table-column label="操作" width="150" align="right">
+              <el-table-column label="操作" width="170" align="right">
                 <template #default="{ row }">
-                  <el-button link type="primary" @click="openEditCoupon(row)">编辑</el-button>
-                  <el-button link type="danger" @click="removeCoupon(row)">删除</el-button>
+                  <div class="ax-row-actions">
+                    <el-button link type="primary" :icon="EditPen" @click="openEditCoupon(row)">编辑</el-button>
+                    <el-button link type="danger" :icon="Delete" @click="removeCoupon(row)">删除</el-button>
+                  </div>
                 </template>
               </el-table-column>
             </el-table>
@@ -386,9 +390,11 @@ onMounted(load)
               <el-table-column label="更新时间" min-width="170">
                 <template #default="{ row }">{{ formatDateTime(row.updated_at) }}</template>
               </el-table-column>
-              <el-table-column label="操作" width="100" align="right">
+              <el-table-column label="操作" width="130" align="right">
                 <template #default="{ row }">
-                  <el-button link type="info" :disabled="row.status === 'closed'" @click="closeTicket(row)">关闭</el-button>
+                  <div class="ax-row-actions">
+                    <el-button link type="info" :icon="Close" :disabled="row.status === 'closed'" @click="closeTicket(row)">关闭</el-button>
+                  </div>
                 </template>
               </el-table-column>
             </el-table>

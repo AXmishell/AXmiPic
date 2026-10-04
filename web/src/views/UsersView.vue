@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
-import { Plus, Refresh, Search } from '@element-plus/icons-vue'
+import { Delete, Plus, Refresh, Search } from '@element-plus/icons-vue'
 
 import {
   createAdmin,
@@ -305,16 +305,19 @@ onMounted(load)
               <el-table-column label="注册时间" min-width="170">
                 <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
               </el-table-column>
-              <el-table-column label="操作" width="100" align="right">
+              <el-table-column label="操作" width="120" align="right">
                 <template #default="{ row }">
-                  <el-button
-                    link
-                    type="danger"
-                    :loading="pendingIds.has(row.id)"
-                    @click="removeUser(row, false)"
-                  >
-                    删除
-                  </el-button>
+                  <div class="ax-row-actions">
+                    <el-button
+                      link
+                      type="danger"
+                      :icon="Delete"
+                      :loading="pendingIds.has(row.id)"
+                      @click="removeUser(row, false)"
+                    >
+                      删除
+                    </el-button>
+                  </div>
                 </template>
               </el-table-column>
             </el-table>
@@ -366,17 +369,20 @@ onMounted(load)
               <el-table-column label="创建时间" min-width="170">
                 <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
               </el-table-column>
-              <el-table-column label="操作" width="100" align="right">
+              <el-table-column label="操作" width="120" align="right">
                 <template #default="{ row }">
-                  <el-button
-                    link
-                    type="danger"
-                    :disabled="isSelf(row)"
-                    :loading="pendingIds.has(row.id)"
-                    @click="removeUser(row, true)"
-                  >
-                    删除
-                  </el-button>
+                  <div class="ax-row-actions">
+                    <el-button
+                      link
+                      type="danger"
+                      :icon="Delete"
+                      :disabled="isSelf(row)"
+                      :loading="pendingIds.has(row.id)"
+                      @click="removeUser(row, true)"
+                    >
+                      删除
+                    </el-button>
+                  </div>
                 </template>
               </el-table-column>
             </el-table>

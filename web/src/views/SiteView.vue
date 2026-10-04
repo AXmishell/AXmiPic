@@ -2,7 +2,7 @@
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
-import { Plus, Refresh } from '@element-plus/icons-vue'
+import { Check, Close, Delete, EditPen, Plus, Refresh } from '@element-plus/icons-vue'
 
 import { toApiError } from '@/api/client'
 import {
@@ -300,10 +300,12 @@ onMounted(load)
               <el-table-column label="更新时间" min-width="170">
                 <template #default="{ row }">{{ formatDateTime(row.updated_at) }}</template>
               </el-table-column>
-              <el-table-column label="操作" width="150" align="right">
+              <el-table-column label="操作" width="170" align="right">
                 <template #default="{ row }">
-                  <el-button link type="primary" @click="openEditAnnouncement(row)">编辑</el-button>
-                  <el-button link type="danger" @click="removeAnnouncement(row)">删除</el-button>
+                  <div class="ax-row-actions">
+                    <el-button link type="primary" :icon="EditPen" @click="openEditAnnouncement(row)">编辑</el-button>
+                    <el-button link type="danger" :icon="Delete" @click="removeAnnouncement(row)">删除</el-button>
+                  </div>
                 </template>
               </el-table-column>
             </el-table>
@@ -348,14 +350,16 @@ onMounted(load)
               <el-table-column label="提交时间" min-width="170">
                 <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
               </el-table-column>
-              <el-table-column label="操作" width="170" align="right">
+              <el-table-column label="操作" width="190" align="right">
                 <template #default="{ row }">
-                  <el-button link type="primary" :disabled="row.status === 'resolved'" @click="handleReport(row, 'resolved')">
-                    处理
-                  </el-button>
-                  <el-button link type="info" :disabled="row.status === 'rejected'" @click="handleReport(row, 'rejected')">
-                    驳回
-                  </el-button>
+                  <div class="ax-row-actions">
+                    <el-button link type="primary" :icon="Check" :disabled="row.status === 'resolved'" @click="handleReport(row, 'resolved')">
+                      处理
+                    </el-button>
+                    <el-button link type="info" :icon="Close" :disabled="row.status === 'rejected'" @click="handleReport(row, 'rejected')">
+                      驳回
+                    </el-button>
+                  </div>
                 </template>
               </el-table-column>
             </el-table>
@@ -384,10 +388,12 @@ onMounted(load)
               <el-table-column label="更新时间" min-width="170">
                 <template #default="{ row }">{{ formatDateTime(row.updated_at) }}</template>
               </el-table-column>
-              <el-table-column label="操作" width="150" align="right">
+              <el-table-column label="操作" width="170" align="right">
                 <template #default="{ row }">
-                  <el-button link type="primary" @click="openEditPage(row)">编辑</el-button>
-                  <el-button link type="danger" @click="removePage(row)">删除</el-button>
+                  <div class="ax-row-actions">
+                    <el-button link type="primary" :icon="EditPen" @click="openEditPage(row)">编辑</el-button>
+                    <el-button link type="danger" :icon="Delete" @click="removePage(row)">删除</el-button>
+                  </div>
                 </template>
               </el-table-column>
             </el-table>

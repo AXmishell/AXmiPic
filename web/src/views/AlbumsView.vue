@@ -198,27 +198,30 @@ onMounted(load)
           <el-table-column label="创建时间" min-width="170">
             <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
           </el-table-column>
-          <el-table-column label="操作" width="230" align="right">
+          <el-table-column label="操作" width="270" align="right">
             <template #default="{ row }">
-              <el-button link :icon="Picture" @click="viewImages(row)">查看图片</el-button>
-              <el-button
-                v-if="auth.hasFeature('share')"
-                link
-                :icon="Share"
-                @click="openShare(row)"
-              >
-                分享
-              </el-button>
-              <el-button link :icon="EditPen" @click="openEdit(row)">编辑</el-button>
-              <el-button
-                link
-                type="danger"
-                :icon="Delete"
-                :loading="removingId === row.id"
-                @click="remove(row)"
-              >
-                删除
-              </el-button>
+              <div class="ax-row-actions">
+                <el-button link type="primary" :icon="Picture" @click="viewImages(row)">查看图片</el-button>
+                <el-button
+                  v-if="auth.hasFeature('share')"
+                  link
+                  type="primary"
+                  :icon="Share"
+                  @click="openShare(row)"
+                >
+                  分享
+                </el-button>
+                <el-button link type="primary" :icon="EditPen" @click="openEdit(row)">编辑</el-button>
+                <el-button
+                  link
+                  type="danger"
+                  :icon="Delete"
+                  :loading="removingId === row.id"
+                  @click="remove(row)"
+                >
+                  删除
+                </el-button>
+              </div>
             </template>
           </el-table-column>
         </el-table>

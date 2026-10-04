@@ -186,6 +186,98 @@ html.theme-light {
   padding: 10px 0;
 }
 
+/* ---- 表格行内操作按钮 ---- */
+/* 将「编辑 / 删除 / 查看」等 link 按钮美化为紧凑的幽灵胶囊按钮：
+   默认低对比，悬停时出现语义色背景与描边，便于在密集表格中快速定位。 */
+.el-table .el-button.is-link {
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: var(--ax-radius-full);
+  font-weight: var(--ax-weight-medium);
+  line-height: 1;
+}
+
+.el-table .el-button.is-link + .el-button.is-link {
+  margin-left: 2px;
+}
+
+/* 中性的「编辑 / 查看 / 绑定」等主色操作 */
+.el-table .el-button.is-link.el-button--primary {
+  color: var(--ax-text-3);
+}
+
+.el-table .el-button.is-link.el-button--primary:not(.is-disabled):hover,
+.el-table .el-button.is-link.el-button--primary:not(.is-disabled):focus-visible {
+  color: var(--ax-accent-hover);
+  background: var(--ax-accent-soft);
+  border-color: var(--ax-accent-ring);
+}
+
+/* 危险操作 */
+.el-table .el-button.is-link.el-button--danger {
+  color: var(--ax-text-3);
+}
+
+.el-table .el-button.is-link.el-button--danger:not(.is-disabled):hover,
+.el-table .el-button.is-link.el-button--danger:not(.is-disabled):focus-visible {
+  color: var(--ax-danger);
+  background: var(--ax-danger-soft);
+  border-color: rgba(229, 83, 75, 0.32);
+}
+
+/* 其它语义色（info 等） */
+.el-table .el-button.is-link.el-button--info:not(.is-disabled):hover,
+.el-table .el-button.is-link.el-button--info:not(.is-disabled):focus-visible {
+  color: var(--ax-text);
+  background: var(--ax-tint-strong);
+  border-color: var(--ax-border-strong);
+}
+
+/* 默认（无 type）的 link 按钮，作为中性操作 */
+.el-table .el-button.is-link:not(.el-button--primary):not(.el-button--danger):not(.el-button--info):not(.el-button--success):not(.el-button--warning) {
+  color: var(--ax-text-3);
+}
+
+.el-table .el-button.is-link:not(.el-button--primary):not(.el-button--danger):not(.el-button--info):not(.el-button--success):not(.el-button--warning):not(.is-disabled):hover,
+.el-table .el-button.is-link:not(.el-button--primary):not(.el-button--danger):not(.el-button--info):not(.el-button--success):not(.el-button--warning):not(.is-disabled):focus-visible {
+  color: var(--ax-text);
+  background: var(--ax-tint-strong);
+  border-color: var(--ax-border-strong);
+}
+
+/* 禁用态收敛为更淡的前景色 */
+.el-table .el-button.is-link.is-disabled {
+  color: var(--ax-text-disabled);
+  opacity: 0.7;
+}
+
+/* 操作列内若包裹在 .ax-row-actions 中，则统一对齐与间隔。 */
+.ax-row-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+}
+
+/* 卡片操作区（例如图片卡片）中的「删除」按钮：悬停时强化危险色。 */
+.image-card__actions .el-button--danger.is-plain:not(.is-disabled):hover,
+.image-card__actions .el-button--danger.is-plain:not(.is-disabled):focus {
+  color: #fff;
+  background: var(--ax-danger);
+  border-color: var(--ax-danger);
+}
+
+/* 卡片操作按钮统一为紧凑的胶囊形状与纵向对齐。 */
+.image-card__actions .el-button {
+  border-radius: var(--ax-radius-full);
+}
+
+/* 表格内带图标的 link 按钮：图标与文字间距更紧凑 */
+.el-table .el-button.is-link .el-icon + span {
+  margin-left: 4px;
+}
+
 /* ---- 对话框、消息框、下拉菜单、气泡提示 ---- */
 .el-dialog,
 .el-message-box {

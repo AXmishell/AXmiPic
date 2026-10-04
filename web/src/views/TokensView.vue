@@ -2,7 +2,7 @@
 import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
-import { Key, Plus, Refresh } from '@element-plus/icons-vue'
+import { Delete, Key, Plus, Refresh } from '@element-plus/icons-vue'
 
 import { toApiError } from '@/api/client'
 import { createToken, listTokens, revokeToken } from '@/api/tokens'
@@ -158,16 +158,19 @@ onMounted(load)
               <span v-else class="ax-muted">从未使用</span>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="110" align="right">
+          <el-table-column label="操作" width="130" align="right">
             <template #default="{ row }">
-              <el-button
-                link
-                type="danger"
-                :loading="revokingId === row.id"
-                @click="revoke(row)"
-              >
-                撤销
-              </el-button>
+              <div class="ax-row-actions">
+                <el-button
+                  link
+                  type="danger"
+                  :icon="Delete"
+                  :loading="revokingId === row.id"
+                  @click="revoke(row)"
+                >
+                  撤销
+                </el-button>
+              </div>
             </template>
           </el-table-column>
         </el-table>

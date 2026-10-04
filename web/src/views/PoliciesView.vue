@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
-import { Plus, Refresh } from '@element-plus/icons-vue'
+import { Delete, EditPen, Link, Plus, Refresh } from '@element-plus/icons-vue'
 
 import {
   attachPolicy,
@@ -408,11 +408,13 @@ onMounted(load)
               <el-table-column label="更新时间" min-width="170">
                 <template #default="{ row }">{{ formatDateTime(row.updated_at) }}</template>
               </el-table-column>
-              <el-table-column label="操作" width="230" align="right">
+              <el-table-column label="操作" width="280" align="right">
                 <template #default="{ row }">
-                  <el-button link type="primary" @click="openBind(row)">绑定策略</el-button>
-                  <el-button link type="primary" @click="openEditGroup(row)">编辑</el-button>
-                  <el-button link type="danger" @click="removeGroup(row)">删除</el-button>
+                  <div class="ax-row-actions">
+                    <el-button link type="primary" :icon="Link" @click="openBind(row)">绑定策略</el-button>
+                    <el-button link type="primary" :icon="EditPen" @click="openEditGroup(row)">编辑</el-button>
+                    <el-button link type="danger" :icon="Delete" @click="removeGroup(row)">删除</el-button>
+                  </div>
                 </template>
               </el-table-column>
             </el-table>
@@ -457,10 +459,12 @@ onMounted(load)
               <el-table-column label="更新时间" min-width="170">
                 <template #default="{ row }">{{ formatDateTime(row.updated_at) }}</template>
               </el-table-column>
-              <el-table-column label="操作" width="150" align="right">
+              <el-table-column label="操作" width="170" align="right">
                 <template #default="{ row }">
-                  <el-button link type="primary" @click="openEditPolicy(row)">编辑</el-button>
-                  <el-button link type="danger" @click="removePolicy(row)">删除</el-button>
+                  <div class="ax-row-actions">
+                    <el-button link type="primary" :icon="EditPen" @click="openEditPolicy(row)">编辑</el-button>
+                    <el-button link type="danger" :icon="Delete" @click="removePolicy(row)">删除</el-button>
+                  </div>
                 </template>
               </el-table-column>
             </el-table>

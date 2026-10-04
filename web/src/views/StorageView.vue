@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
-import { FolderOpened, Plus, Refresh } from '@element-plus/icons-vue'
+import { Delete, EditPen, FolderOpened, Plus, Refresh, Star } from '@element-plus/icons-vue'
 
 import {
   activateStorage,
@@ -299,27 +299,31 @@ onMounted(load)
           <el-table-column label="创建时间" min-width="170">
             <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
           </el-table-column>
-          <el-table-column label="操作" width="240" align="right">
+          <el-table-column label="操作" width="290" align="right">
             <template #default="{ row }">
-              <el-button
-                link
-                type="primary"
-                :disabled="row.is_current"
-                :loading="pendingId === row.id"
-                @click="activate(row)"
-              >
-                设为默认
-              </el-button>
-              <el-button link @click="openEdit(row)">编辑</el-button>
-              <el-button
-                link
-                type="danger"
-                :disabled="row.is_current"
-                :loading="pendingId === row.id"
-                @click="remove(row)"
-              >
-                删除
-              </el-button>
+              <div class="ax-row-actions">
+                <el-button
+                  link
+                  type="primary"
+                  :icon="Star"
+                  :disabled="row.is_current"
+                  :loading="pendingId === row.id"
+                  @click="activate(row)"
+                >
+                  设为默认
+                </el-button>
+                <el-button link type="primary" :icon="EditPen" @click="openEdit(row)">编辑</el-button>
+                <el-button
+                  link
+                  type="danger"
+                  :icon="Delete"
+                  :disabled="row.is_current"
+                  :loading="pendingId === row.id"
+                  @click="remove(row)"
+                >
+                  删除
+                </el-button>
+              </div>
             </template>
           </el-table-column>
         </el-table>

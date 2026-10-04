@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
-import { Plus, Refresh } from '@element-plus/icons-vue'
+import { Plus, Refresh, View } from '@element-plus/icons-vue'
 
 import { createTicket, getTicket, listTickets, replyTicket } from '@/api/billing'
 import { toApiError } from '@/api/client'
@@ -159,9 +159,11 @@ onMounted(load)
           <el-table-column label="更新时间" min-width="170">
             <template #default="{ row }">{{ formatDateTime(row.updated_at) }}</template>
           </el-table-column>
-          <el-table-column label="操作" width="100" align="right">
+          <el-table-column label="操作" width="120" align="right">
             <template #default="{ row }">
-              <el-button link type="primary" @click="openDetail(row)">查看</el-button>
+              <div class="ax-row-actions">
+                <el-button link type="primary" :icon="View" @click="openDetail(row)">查看</el-button>
+              </div>
             </template>
           </el-table-column>
         </el-table>
