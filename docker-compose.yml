@@ -13,3 +13,11 @@ services:
 volumes:
   axmipic-data:
   axmipic-config:
+
+#1panel网络支持，如果你在1panel中使用axmipic，请确保1panel-network网络存在。
+#需要和数据库容器在同一网络中才能使用数据库容器名连接到数据库容器
+
+#networks:
+#  1panel-network:
+#    external: true
+#    name: 1panel-network
