@@ -86,20 +86,110 @@ const featureOptions = [
   { value: 'share_password', label: '密码分享' },
 ]
 
-function selectedFeature(): Record<string, unknown> {
+const mimeOptions = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif', 'image/bmp', 'image/tiff']
+const formatOptions = ['jpeg', 'png', 'gif', 'webp', 'avif', 'bmp', 'tiff']
+
+/** 常用预设：一键填入某类型的整套设置，仍可在表单中继续微调。 */
+const policyPresets: Record<PolicyType, { label: string; settings: Record<string, unknown> }[]> = {
+  quota: [
+    { label: '不限', settings: { quota_mb: 0 } },
+    { label: '基础 1 GiB', settings: { quota_mb: 1024 } },
+    { label: '进阶 10 GiB', settings: { quota_mb: 10240 } },
+  ],
+  upload: [
+    {
+      label: '严格 2 MiB',
+      settings: { max_size_mb: 2, allowed_mime_types: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'] },
+    },
+    {
+      label: '标准 20 MiB',
+      settings: { max_size_mb: 20, allowed_mime_types: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'] },
+    },
+    {
+      label: '宽松 100 MiB',
+      settings: { max_size_mb: 100, allowed_mime_types: ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif'] },
+    },
+  ],
+  rate: [
+    { label: '严格', settings: { upload_per_minute: 10, upload_burst: 2, image_per_minute: 120, image_burst: 30 } },
+    { label: '标准', settings: { upload_per_minute: 30, upload_burst: 5, image_per_minute: 600, image_burst: 120 } },
+    { label: '宽松', settings: { upload_per_minute: 120, upload_burst: 20, image_per_minute: 3000, image_burst: 600 } },
+  ],
+  processing: [
+    {
+      label: '省资源',
+      settings: { enabled: true, max_width: 2048, max_height: 2048, default_quality: 75, allowed_formats: ['jpeg', 'png', 'gif', 'webp'] },
+    },
+    {
+      label: '标准',
+      settings: { enabled: true, max_width: 4096, max_height: 4096, default_quality: 82, allowed_formats: ['jpeg', 'png', 'gif', 'webp', 'avif'] },
+    },
+    {
+      label: '高质量',
+      settings: { enabled: true, max_width: 8192, max_height: 8192, default_quality: 92, allowed_formats: ['jpeg', 'png', 'gif', 'webp', 'avif'] },
+    },
+  ],
+  feature: [
+    { label: '极简', settings: { features: ['share'] } },
+    { label: '基础', settings: { features: ['plaza', 'albums', 'api_tokens', 'batch_upload', 'paste_upload', 'share'] } },
+    { label: '完整', settings: { features: featureOptions.map((f) => f.value) } },
+  ],
+}
+
+// ---- 设置 JSON 与结构化表单的双向绑定 ----
+
+/** 读取当前 JSON 设置为对象；解析失败时返回空对象。 */
+function readSettings(): Record<string, unknown> {
   try {
     const parsed: unknown = JSON.parse(policyForm.settingsText || '{}')
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
       return parsed as Record<string, unknown>
     }
   } catch {
-    // 忽略解析错误；复选框在 JSON 无效时不显示选中态。
+    // 忽略解析错误；结构化控件在 JSON 无效时显示回退值。
   }
   return {}
 }
 
+/** 写入单个字段；值为空时删除该字段，从而回退到配置默认值。 */
+function writeSetting(key: string, value: unknown): void {
+  const settings = readSettings()
+  if (value === undefined || value === null || value === '') {
+    delete settings[key]
+  } else {
+    settings[key] = value
+  }
+  policyForm.settingsText = JSON.stringify(settings, null, 2)
+}
+
+/** 生成与某个数值/布尔字段双向绑定的计算属性。 */
+function settingModel<T>(key: string, fallback: T) {
+  return computed<T>({
+    get: () => {
+      const value = readSettings()[key]
+      return value === undefined || value === null ? fallback : (value as T)
+    },
+    set: (value) => writeSetting(key, value),
+  })
+}
+
+/** 生成与某个字符串数组字段双向绑定的计算属性。 */
+function listModel(key: string, fallback: string[]) {
+  return computed<string[]>({
+    get: () => {
+      const value = readSettings()[key]
+      return Array.isArray(value) ? value.map(String) : fallback
+    },
+    set: (value) => writeSetting(key, value.length > 0 ? value : undefined),
+  })
+}
+
+function selectedFeature(): Record<string, unknown> {
+  return readSettings()
+}
+
 function toggleFeature(name: string, enabled: boolean): void {
-  const settings = { ...selectedFeature() }
+  const settings = readSettings()
   const current = Array.isArray(settings.features) ? (settings.features as unknown[]).map(String) : []
   const next = enabled ? Array.from(new Set([...current, name])) : current.filter((f) => f !== name)
   settings.features = next
@@ -136,6 +226,23 @@ const policyForm = reactive<{ name: string; type: PolicyType; description: strin
   enabled: true,
   settingsText: '{}',
 })
+
+/** 配置编辑模式：结构化表单或原始 JSON。 */
+const settingsMode = ref<'form' | 'json'>('form')
+
+// 结构化字段与 settingsText 双向绑定（读取时回退到模板默认值）。
+const quotaMB = settingModel<number>('quota_mb', 1024)
+const maxSizeMB = settingModel<number>('max_size_mb', 20)
+const allowedMimeTypes = listModel('allowed_mime_types', ['image/jpeg', 'image/png', 'image/gif', 'image/webp'])
+const uploadPerMinute = settingModel<number>('upload_per_minute', 30)
+const uploadBurst = settingModel<number>('upload_burst', 5)
+const imagePerMinute = settingModel<number>('image_per_minute', 600)
+const imageBurst = settingModel<number>('image_burst', 120)
+const processingEnabled = settingModel<boolean>('enabled', true)
+const maxWidth = settingModel<number>('max_width', 4096)
+const maxHeight = settingModel<number>('max_height', 4096)
+const defaultQuality = settingModel<number>('default_quality', 82)
+const allowedFormats = listModel('allowed_formats', ['jpeg', 'png', 'gif', 'webp', 'avif'])
 const policyRules: FormRules = {
   name: [
     { required: true, message: '请输入策略名称', trigger: 'blur' },
@@ -239,12 +346,17 @@ function applyTemplate(type: PolicyType): void {
   policyForm.settingsText = JSON.stringify(typeMeta(type).template, null, 2)
 }
 
+function applyPreset(settings: Record<string, unknown>): void {
+  policyForm.settingsText = JSON.stringify(settings, null, 2)
+}
+
 function openCreatePolicy(): void {
   editingPolicyId.value = ''
   policyForm.name = ''
   policyForm.type = 'quota'
   policyForm.description = ''
   policyForm.enabled = true
+  settingsMode.value = 'form'
   applyTemplate('quota')
   policyOpen.value = true
 }
@@ -255,6 +367,7 @@ function openEditPolicy(policy: Policy): void {
   policyForm.type = policy.type
   policyForm.description = policy.description
   policyForm.enabled = policy.enabled
+  settingsMode.value = 'form'
   policyForm.settingsText = JSON.stringify(policy.settings ?? {}, null, 2)
   policyOpen.value = true
 }
@@ -524,23 +637,109 @@ onMounted(load)
         <el-form-item label="启用">
           <el-switch v-model="policyForm.enabled" />
         </el-form-item>
-        <el-form-item label="设置（JSON）">
-          <el-input v-model="policyForm.settingsText" type="textarea" :rows="8" spellcheck="false" class="settings-input" />
+
+        <el-form-item label="快速预设">
+          <div class="preset-row">
+            <el-button
+              v-for="preset in policyPresets[policyForm.type]"
+              :key="preset.label"
+              size="small"
+              @click="applyPreset(preset.settings)"
+            >
+              {{ preset.label }}
+            </el-button>
+          </div>
+          <div class="form-hint">一键套用常用参数，可在下方继续微调。</div>
+        </el-form-item>
+
+        <el-form-item label="配置方式">
+          <el-radio-group v-model="settingsMode">
+            <el-radio-button value="form">表单</el-radio-button>
+            <el-radio-button value="json">高级 JSON</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+
+        <template v-if="settingsMode === 'form'">
+          <div class="form-hint settings-hint">初始值来自系统默认策略；仅调整需要覆盖的字段即可，保存后未修改的字段保持默认。</div>
+
+          <!-- 配额 -->
+          <el-form-item v-if="policyForm.type === 'quota'" label="存储配额">
+            <el-input-number v-model="quotaMB" :min="0" :step="128" controls-position="right" style="width: 200px" />
+            <span class="form-hint form-hint--inline">单位 MiB，0 表示不限</span>
+          </el-form-item>
+
+          <!-- 上传 -->
+          <template v-else-if="policyForm.type === 'upload'">
+            <el-form-item label="单文件上限">
+              <el-input-number v-model="maxSizeMB" :min="0" :step="1" controls-position="right" style="width: 200px" />
+              <span class="form-hint form-hint--inline">单位 MiB，0 表示不限</span>
+            </el-form-item>
+            <el-form-item label="允许的媒体类型">
+              <el-select v-model="allowedMimeTypes" multiple filterable allow-create default-first-option style="width: 100%">
+                <el-option v-for="mime in mimeOptions" :key="mime" :label="mime" :value="mime" />
+              </el-select>
+            </el-form-item>
+          </template>
+
+          <!-- 速率 -->
+          <div v-else-if="policyForm.type === 'rate'" class="field-grid">
+            <el-form-item label="上传 / 分钟">
+              <el-input-number v-model="uploadPerMinute" :min="0" controls-position="right" style="width: 100%" />
+            </el-form-item>
+            <el-form-item label="上传突发">
+              <el-input-number v-model="uploadBurst" :min="0" controls-position="right" style="width: 100%" />
+            </el-form-item>
+            <el-form-item label="图片 / 分钟">
+              <el-input-number v-model="imagePerMinute" :min="0" controls-position="right" style="width: 100%" />
+            </el-form-item>
+            <el-form-item label="图片突发">
+              <el-input-number v-model="imageBurst" :min="0" controls-position="right" style="width: 100%" />
+            </el-form-item>
+          </div>
+
+          <!-- 图片处理 -->
+          <template v-else-if="policyForm.type === 'processing'">
+            <el-form-item label="启用图片处理">
+              <el-switch v-model="processingEnabled" />
+            </el-form-item>
+            <div class="field-grid">
+              <el-form-item label="最大宽度">
+                <el-input-number v-model="maxWidth" :min="1" :step="256" controls-position="right" style="width: 100%" />
+              </el-form-item>
+              <el-form-item label="最大高度">
+                <el-input-number v-model="maxHeight" :min="1" :step="256" controls-position="right" style="width: 100%" />
+              </el-form-item>
+              <el-form-item label="默认质量">
+                <el-input-number v-model="defaultQuality" :min="1" :max="100" controls-position="right" style="width: 100%" />
+              </el-form-item>
+            </div>
+            <el-form-item label="允许的输出格式">
+              <el-select v-model="allowedFormats" multiple filterable allow-create default-first-option style="width: 100%">
+                <el-option v-for="format in formatOptions" :key="format" :label="format" :value="format" />
+              </el-select>
+            </el-form-item>
+          </template>
+
+          <!-- 功能开关 -->
+          <el-form-item v-else-if="policyForm.type === 'feature'" label="功能开关">
+            <div class="feature-grid">
+              <el-checkbox
+                v-for="f in featureOptions"
+                :key="f.value"
+                :model-value="selectedFeatures.includes(f.value)"
+                @change="(value: boolean | string | number) => toggleFeature(f.value, value === true)"
+              >
+                {{ f.label }}
+              </el-checkbox>
+            </div>
+          </el-form-item>
+        </template>
+
+        <el-form-item v-else label="设置（JSON）">
+          <el-input v-model="policyForm.settingsText" type="textarea" :rows="10" spellcheck="false" class="settings-input" />
           <div class="form-hint">
             {{ typeMeta(policyForm.type).hint }}
             <el-button link type="primary" @click="applyTemplate(policyForm.type)">填入默认模板</el-button>
-          </div>
-        </el-form-item>
-        <el-form-item v-if="policyForm.type === 'feature'" label="功能开关">
-          <div class="feature-grid">
-            <el-checkbox
-              v-for="f in featureOptions"
-              :key="f.value"
-              :model-value="selectedFeatures.includes(f.value)"
-              @change="(value: boolean | string | number) => toggleFeature(f.value, value === true)"
-            >
-              {{ f.label }}
-            </el-checkbox>
           </div>
         </el-form-item>
       </el-form>
@@ -654,5 +853,25 @@ onMounted(load)
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: var(--ax-space-2);
   width: 100%;
+}
+
+.preset-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ax-space-2);
+}
+
+.field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: var(--ax-space-4);
+}
+
+.form-hint--inline {
+  margin-left: var(--ax-space-2);
+}
+
+.settings-hint {
+  margin-bottom: var(--ax-space-3);
 }
 </style>
