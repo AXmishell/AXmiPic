@@ -1,0 +1,68 @@
+name: Docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - '.github/workflows/docs.yml'
+      - 'README.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 只保留最新一次部署，避免并发发布互相覆盖。
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: 构建文档站
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: docs/pnpm-lock.yaml
+
+      - name: 安装依赖
+        working-directory: docs
+        run: pnpm install --frozen-lockfile
+
+      - name: 构建文档站
+        working-directory: docs
+        run: pnpm build
+
+      - name: 配置 Pages
+        uses: actions/configure-pages@v5
+
+      - name: 上传产物
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/.vitepress/dist
+
+  deploy:
+    name: 发布到 GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: 部署
+        id: deployment
+        uses: actions/deploy-pages@v4

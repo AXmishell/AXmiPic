@@ -6,6 +6,11 @@
 *.db
 .env
 
+# Docs site (VitePress) build output
+docs/node_modules/
+docs/.vitepress/dist/
+docs/.vitepress/cache/
+
 # Local configuration may contain secrets (DB password, jwt_secret).
 configs/config.yaml
 

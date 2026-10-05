@@ -1,8 +1,6 @@
-# AXmiPic
+# 项目简介
 
 轻量、可靠的自托管图床服务。提供图片上传、即时处理、多存储后端与后台管理，后端为单个 Go 二进制，前端为内嵌的单页应用。
-
-> 📖 完整文档见 **[在线文档站](https://axmishell.github.io/AXmiPic/)**。
 
 ## 特性
 
@@ -40,85 +38,3 @@
 | 对象存储 | 本地 / S3 兼容（minio-go） / 七牛云 SDK |
 | 支付 | 微信支付官方 SDK（`wechatpay-apiv3/wechatpay-go`）、支付宝 RSA2（原生）、易支付（原生） |
 | 前端 | Vue 3、Pinia、Vue Router、Element Plus、TypeScript、Vite |
-
-## 快速开始
-
-### 环境要求
-
-- Go 1.26 或更高版本
-- （可选，仅重新构建前端时需要）Node.js 22+ 与 pnpm 9
-
-前端产物已内嵌进 `internal/webui/dist`，仅构建后端时无需 Node 环境。
-
-### 构建与运行
-
-```bash
-# 构建后端二进制（前端已内嵌）
-make build          # 产物位于 bin/axmipic
-
-# 使用示例配置运行
-cp configs/config.example.yaml configs/config.yaml
-./bin/axmipic -config configs/config.yaml
-```
-
-或直接运行：
-
-```bash
-make run            # 等价于 go run ./cmd/axmipic -config configs/config.example.yaml
-```
-
-默认监听 `0.0.0.0:8080`，访问 `http://localhost:8080` 打开控制台。
-
-### 创建管理员
-
-有两种方式：
-
-1. **配置文件播种**（推荐）：在 `configs/config.yaml` 中设置 `auth.bootstrap_admin: "用户名:密码"`，仅当 admins 表为空时生效：
-
-   ```yaml
-   auth:
-     bootstrap_admin: "admin:你的强密码"
-   ```
-
-2. **后台创建**：以已有管理员登录后，在「用户管理 → 管理员」标签页新建管理员。
-
-> 首次部署建议先配置 `auth.bootstrap_admin` 再启动，避免无管理员可用。注册入口只创建普通用户。
-
-## 文档
-
-完整文档已迁移至在线文档站（VitePress 构建，源码位于 [`docs/`](docs/)）：
-
-| 文档 | 内容 |
-|------|------|
-| [快速开始](https://axmishell.github.io/AXmiPic/guide/getting-started) | 环境要求、构建运行、创建管理员 |
-| [配置说明](https://axmishell.github.io/AXmiPic/guide/configuration) | 服务器、数据库、存储、上传、认证与限流 |
-| [图片处理](https://axmishell.github.io/AXmiPic/guide/image-processing) | URL 处理参数、libvips 与处理驱动 |
-| [界面与路由](https://axmishell.github.io/AXmiPic/guide/ui-and-routes) | 用户中心 / 管理台路由、Guest 访客、安装向导 |
-| [Docker 部署](https://axmishell.github.io/AXmiPic/guide/deployment) | 镜像构建、GHCR、Docker Compose |
-| [API 参考](https://axmishell.github.io/AXmiPic/api/) | 全部 `/api/v1` 接口 |
-| [开发指南](https://axmishell.github.io/AXmiPic/dev/) | 本地开发、SDK、持续集成、目录结构 |
-
-本地预览文档站：
-
-```bash
-cd docs
-pnpm install
-pnpm dev        # http://localhost:5173/AXmiPic/
-```
-
-## Docker 快速运行
-
-```bash
-docker run -d --name axmipic \
-  -p 8080:8080 \
-  -v axmipic-data:/app/data \
-  -e AXMIPIC_SERVER_BASE_URL=http://localhost:8080 \
-  -e AXMIPIC_AUTH_BOOTSTRAP_ADMIN="admin:你的强密码" \
-  ghcr.io/axmishell/axmipic:latest
-```
-
-完整说明（镜像构建、GHCR、Docker Compose、安装向导）见 [Docker 部署](https://axmishell.github.io/AXmiPic/guide/deployment)。
-
-## 许可证
-
-本项目基于 [MIT 许可证](LICENSE) 开源。

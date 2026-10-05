@@ -1,4 +1,4 @@
-.PHONY: build run vet tidy test test-sdk sdk clean
+.PHONY: build run vet tidy test test-sdk sdk clean docs docs-serve
 
 BINARY := bin/axmipic
 
@@ -24,6 +24,14 @@ test-sdk:
 # 构建并测试全部 SDK。
 sdk: test-sdk
 	cd sdk/typescript && pnpm install && pnpm typecheck && pnpm build && pnpm test
+
+# 构建文档站（产物位于 docs/.vitepress/dist）。
+docs:
+	cd docs && pnpm install && pnpm build
+
+# 本地预览文档站（热更新）。
+docs-serve:
+	cd docs && pnpm install && pnpm dev
 
 clean:
 	go clean
