@@ -242,8 +242,13 @@ function albumName(id?: string): string {
 async function applyPermission(ids: string[], permission: ImagePermission): Promise<void> {
   if (ids.length === 0) return
   try {
-    await batchUpdateImages({ ids, permission })
-    ElMessage.success(permission === 'public' ? '已设为公开' : '已设为私有')
+    const result = await batchUpdateImages({ ids, permission })
+    const blocked = result.blocked?.length ?? 0
+    if (permission === 'public' && blocked > 0) {
+      ElMessage.warning(`${blocked} 张图片未通过内容审核，已保持私有；其余 ${result.published ?? 0} 张已公开`)
+    } else {
+      ElMessage.success(permission === 'public' ? '已设为公开' : '已设为私有')
+    }
     await load()
   } catch (error) {
     ElMessage.error(toApiError(error).message)

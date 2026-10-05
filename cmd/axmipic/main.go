@@ -21,6 +21,7 @@ import (
 	"github.com/AXmishell/axmipic/internal/auth"
 	"github.com/AXmishell/axmipic/internal/config"
 	"github.com/AXmishell/axmipic/internal/imaging"
+	"github.com/AXmishell/axmipic/internal/moderation"
 	"github.com/AXmishell/axmipic/internal/notify"
 	"github.com/AXmishell/axmipic/internal/secret"
 	"github.com/AXmishell/axmipic/internal/security"
@@ -269,8 +270,31 @@ func run() error {
 		RequireAuth:       cfg.Auth.RequireAuth,
 		AllowGuestUpload:  cfg.Auth.AllowGuestUpload,
 	})
+	// 图片广场 AI 审查：以配置文件为兜底，运行值来自数据库，支持后台在线维护。
+	settingsSvc.SetModerationDefaults(cfg.Moderation)
+	settingsSvc.SetModerationApplier(func(mc config.ModerationConfig) error {
+		if !mc.Enabled {
+			uploadSvc.SetModerator(nil, 0)
+			return nil
+		}
+		uploadSvc.SetModerator(moderation.NewOpenAI(moderation.OpenAIConfig{
+			BaseURL: mc.BaseURL,
+			APIKey:  mc.APIKey,
+			Model:   mc.Model,
+			Prompt:  mc.Prompt,
+			Timeout: time.Duration(mc.TimeoutSec) * time.Second,
+		}), int64(mc.MaxImageMB)<<20)
+		logger.Info("image plaza moderation enabled",
+			slog.String("base_url", mc.BaseURL),
+			slog.String("model", mc.Model),
+		)
+		return nil
+	})
 	settingsCtx, cancelSettings := context.WithTimeout(context.Background(), 10*time.Second)
 	err = settingsSvc.Bootstrap(settingsCtx)
+	if err == nil {
+		err = settingsSvc.BootstrapModeration(settingsCtx)
+	}
 	cancelSettings()
 	if err != nil {
 		return err

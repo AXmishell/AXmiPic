@@ -106,6 +106,13 @@ var envPaths = map[string]string{
 	"payment_epay_pay_type":              "payment.epay.pay_type",
 	"security_scanner":                   "security.scanner",
 	"security_cloud_processor":           "security.cloud_processor",
+	"moderation_enabled":                 "moderation.enabled",
+	"moderation_base_url":                "moderation.base_url",
+	"moderation_api_key":                 "moderation.api_key",
+	"moderation_model":                   "moderation.model",
+	"moderation_timeout_sec":             "moderation.timeout_sec",
+	"moderation_prompt":                  "moderation.prompt",
+	"moderation_max_image_mb":            "moderation.max_image_mb",
 	"sms_enabled":                        "sms.enabled",
 	"sms_provider":                       "sms.provider",
 	"sms_endpoint":                       "sms.endpoint",
@@ -131,6 +138,7 @@ type Config struct {
 	Limits     LimitsConfig     `koanf:"limits"`
 	Payment    PaymentConfig    `koanf:"payment"`
 	Security   SecurityConfig   `koanf:"security"`
+	Moderation ModerationConfig `koanf:"moderation"`
 	SMS        SMSConfig        `koanf:"sms"`
 	Email      EmailConfig      `koanf:"email"`
 	Install    InstallConfig    `koanf:"install"`
@@ -283,6 +291,25 @@ type SecurityConfig struct {
 	CloudProcessor string `koanf:"cloud_processor"`
 }
 
+// ModerationConfig 配置基于标准 OpenAI 兼容接口的图片内容审查。它仅作用于
+// 「开放到图片广场」的图片：审查不通过时图片保持私有。
+type ModerationConfig struct {
+	// Enabled 是否启用图片广场 AI 审查。
+	Enabled bool `koanf:"enabled"`
+	// BaseURL 为 OpenAI 兼容接口根地址（例如 https://api.openai.com/v1）。
+	BaseURL string `koanf:"base_url"`
+	// APIKey 为接口密钥。
+	APIKey string `koanf:"api_key"`
+	// Model 为视觉模型名（例如 gpt-4o-mini）。
+	Model string `koanf:"model"`
+	// TimeoutSec 为单次审查请求超时（秒）。
+	TimeoutSec int `koanf:"timeout_sec"`
+	// Prompt 覆盖默认审查提示词。
+	Prompt string `koanf:"prompt"`
+	// MaxImageMB 限制送审图片的最大体积（MiB）；超过时按审查不通过处理。
+	MaxImageMB int `koanf:"max_image_mb"`
+}
+
 // SMSConfig 配置短信渠道。
 type SMSConfig struct {
 	Enabled  bool   `koanf:"enabled"`
@@ -416,10 +443,16 @@ func defaultConfig() Config {
 		},
 		Payment:  PaymentConfig{DefaultGateway: "manual"},
 		Security: SecurityConfig{Scanner: "builtin", CloudProcessor: "local"},
-		SMS:      SMSConfig{Method: "POST"},
-		Email:    EmailConfig{Port: 587},
-		Install:  InstallConfig{LockFile: "./data/install.lock", ConfigPath: "./configs/config.yaml"},
-		Logging:  LoggingConfig{Level: "info"},
+		Moderation: ModerationConfig{
+			BaseURL:    "https://api.openai.com/v1",
+			Model:      "gpt-4o-mini",
+			TimeoutSec: 30,
+			MaxImageMB: 10,
+		},
+		SMS:     SMSConfig{Method: "POST"},
+		Email:   EmailConfig{Port: 587},
+		Install: InstallConfig{LockFile: "./data/install.lock", ConfigPath: "./configs/config.yaml"},
+		Logging: LoggingConfig{Level: "info"},
 	}
 }
 

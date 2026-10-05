@@ -94,7 +94,7 @@ func TestImagePermissionAndAlbumAssignment(t *testing.T) {
 		t.Fatalf("default permission = %q, want private", img.Permission)
 	}
 
-	if err := upload.SetPermission(ctx, u1, []string{img.ID}, store.PermissionPublic); err != nil {
+	if _, err := upload.SetPermission(ctx, u1, []string{img.ID}, store.PermissionPublic); err != nil {
 		t.Fatalf("SetPermission: %v", err)
 	}
 	got, err := upload.Get(ctx, u1, img.ID)
@@ -102,10 +102,10 @@ func TestImagePermissionAndAlbumAssignment(t *testing.T) {
 		t.Fatalf("permission = %q, err = %v", got.Permission, err)
 	}
 
-	if err := upload.SetPermission(ctx, u1, []string{img.ID}, "hidden"); !errors.Is(err, service.ErrInvalidInput) {
+	if _, err := upload.SetPermission(ctx, u1, []string{img.ID}, "hidden"); !errors.Is(err, service.ErrInvalidInput) {
 		t.Fatalf("bad permission err = %v, want ErrInvalidInput", err)
 	}
-	if err := upload.SetPermission(ctx, u2, []string{img.ID}, store.PermissionPrivate); !errors.Is(err, service.ErrForbidden) {
+	if _, err := upload.SetPermission(ctx, u2, []string{img.ID}, store.PermissionPrivate); !errors.Is(err, service.ErrForbidden) {
 		t.Fatalf("cross-user SetPermission err = %v, want ErrForbidden", err)
 	}
 
@@ -153,7 +153,7 @@ func TestListPlazaOnlyPublic(t *testing.T) {
 	if _, err := upload.Upload(ctx, u1, service.UploadInput{Data: testPNGSize(t, 16), MimeType: "image/png"}); err != nil {
 		t.Fatalf("Upload private: %v", err)
 	}
-	if err := upload.SetPermission(ctx, u1, []string{public.ID}, store.PermissionPublic); err != nil {
+	if _, err := upload.SetPermission(ctx, u1, []string{public.ID}, store.PermissionPublic); err != nil {
 		t.Fatalf("SetPermission: %v", err)
 	}
 
@@ -230,10 +230,10 @@ func TestPlazaOwnerAndUserFilter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Upload u2: %v", err)
 	}
-	if err := upload.SetPermission(ctx, u1, []string{img1.ID}, store.PermissionPublic); err != nil {
+	if _, err := upload.SetPermission(ctx, u1, []string{img1.ID}, store.PermissionPublic); err != nil {
 		t.Fatalf("SetPermission u1: %v", err)
 	}
-	if err := upload.SetPermission(ctx, u2, []string{img2.ID}, store.PermissionPublic); err != nil {
+	if _, err := upload.SetPermission(ctx, u2, []string{img2.ID}, store.PermissionPublic); err != nil {
 		t.Fatalf("SetPermission u2: %v", err)
 	}
 

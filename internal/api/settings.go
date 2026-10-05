@@ -72,6 +72,34 @@ func (h *Handler) adminUpdateAuth(w http.ResponseWriter, r *http.Request) {
 	writeOK(w, cfg)
 }
 
+// adminGetModeration 返回图片广场 AI 审查设置（密钥仅返回是否已设置）。
+func (h *Handler) adminGetModeration(w http.ResponseWriter, r *http.Request) {
+	if h.settings == nil {
+		writeOK(w, service.ModerationSettingsDTO{})
+		return
+	}
+	writeOK(w, h.settings.Moderation())
+}
+
+// adminUpdateModeration 更新图片广场 AI 审查设置并即时生效（无需重启）。
+func (h *Handler) adminUpdateModeration(w http.ResponseWriter, r *http.Request) {
+	var body service.ModerationSettingsInput
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxJSONBody)).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if h.settings == nil {
+		writeError(w, http.StatusServiceUnavailable, http.StatusServiceUnavailable, "settings service is unavailable")
+		return
+	}
+	cfg, err := h.settings.UpdateModeration(r.Context(), body)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeOK(w, cfg)
+}
+
 // adminUpdatePayment 更新支付设置并即时生效（无需重启）。
 func (h *Handler) adminUpdatePayment(w http.ResponseWriter, r *http.Request) {
 	var body service.PaymentSettingsInput

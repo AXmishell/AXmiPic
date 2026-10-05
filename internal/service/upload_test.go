@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/AXmishell/axmipic/internal/auth"
+	"github.com/AXmishell/axmipic/internal/moderation"
 	"github.com/AXmishell/axmipic/internal/service"
 	"github.com/AXmishell/axmipic/internal/storage"
 	"github.com/AXmishell/axmipic/internal/store"
@@ -489,5 +490,96 @@ func TestUploadGuestIPQuota(t *testing.T) {
 	user := &auth.Principal{Role: auth.RoleUser}
 	if _, err := svc.Upload(ipA, user, service.UploadInput{Data: other, MimeType: "image/png"}); err != nil {
 		t.Fatalf("non-guest upload: %v", err)
+	}
+}
+
+// stubModerator 是测试用的审查器，按回调返回结论。
+type stubModerator struct {
+	fn func(data []byte) (moderation.Decision, error)
+}
+
+func (s stubModerator) Review(_ context.Context, data []byte, _ string) (moderation.Decision, error) {
+	return s.fn(data)
+}
+
+// TestSetPermissionModeration 验证设为公开时逐张审查：不通过的保持私有，通过的
+// 才公开。
+func TestSetPermissionModeration(t *testing.T) {
+	repo := newRepo(t)
+	svc := service.NewUploadService(repo, managerWithFallback(t, newFakeStorage()), pngPolicy())
+	ctx := context.Background()
+	newCustomer(t, repo, "u1")
+	u1 := &auth.Principal{UserID: "u1", Username: "u1", Role: auth.RoleUser}
+
+	good := testPNGSize(t, 8)
+	bad := testPNGSize(t, 9)
+	g1, err := svc.Upload(ctx, u1, service.UploadInput{Data: good, MimeType: "image/png"})
+	if err != nil {
+		t.Fatalf("upload good: %v", err)
+	}
+	b1, err := svc.Upload(ctx, u1, service.UploadInput{Data: bad, MimeType: "image/png"})
+	if err != nil {
+		t.Fatalf("upload bad: %v", err)
+	}
+
+	svc.SetModerator(stubModerator{fn: func(data []byte) (moderation.Decision, error) {
+		if len(data) == len(bad) {
+			return moderation.Decision{Allowed: false, Reason: "违规"}, nil
+		}
+		return moderation.Decision{Allowed: true, Reason: "SAFE"}, nil
+	}}, 0)
+
+	res, err := svc.SetPermission(ctx, u1, []string{g1.ID, b1.ID}, store.PermissionPublic)
+	if err != nil {
+		t.Fatalf("SetPermission: %v", err)
+	}
+	if res.Published != 1 || len(res.Blocked) != 1 || res.Blocked[0] != b1.ID {
+		t.Fatalf("result = %+v, want published 1 and blocked %s", res, b1.ID)
+	}
+
+	images, err := repo.ListImagesByIDs(ctx, []string{g1.ID, b1.ID})
+	if err != nil {
+		t.Fatalf("ListImagesByIDs: %v", err)
+	}
+	for i := range images {
+		want := store.PermissionPrivate
+		if images[i].ID == g1.ID {
+			want = store.PermissionPublic
+		}
+		if images[i].Permission != want {
+			t.Fatalf("image %s permission = %q, want %q", images[i].ID, images[i].Permission, want)
+		}
+	}
+}
+
+// TestSetPermissionModerationFailClosed 验证审查调用失败（无返回）时按违规处理。
+func TestSetPermissionModerationFailClosed(t *testing.T) {
+	repo := newRepo(t)
+	svc := service.NewUploadService(repo, managerWithFallback(t, newFakeStorage()), pngPolicy())
+	ctx := context.Background()
+	newCustomer(t, repo, "u1")
+	u1 := &auth.Principal{UserID: "u1", Username: "u1", Role: auth.RoleUser}
+
+	dto, err := svc.Upload(ctx, u1, service.UploadInput{Data: testPNGSize(t, 8), MimeType: "image/png"})
+	if err != nil {
+		t.Fatalf("upload: %v", err)
+	}
+	svc.SetModerator(stubModerator{fn: func([]byte) (moderation.Decision, error) {
+		return moderation.Decision{}, errors.New("boom")
+	}}, 0)
+
+	res, err := svc.SetPermission(ctx, u1, []string{dto.ID}, store.PermissionPublic)
+	if err != nil {
+		t.Fatalf("SetPermission: %v", err)
+	}
+	if res.Published != 0 || len(res.Blocked) != 1 {
+		t.Fatalf("result = %+v, want blocked", res)
+	}
+	img, err := repo.GetByKey(ctx, dto.Key)
+	if err != nil {
+		t.Fatalf("GetByKey: %v", err)
+	}
+	if img.Permission != store.PermissionPrivate {
+		t.Fatalf("permission = %q, want private (fail-closed)", img.Permission)
 	}
 }

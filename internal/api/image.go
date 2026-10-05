@@ -130,11 +130,14 @@ func (h *Handler) batchImages(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
+	var permission *service.PermissionResult
 	if body.Permission != nil {
-		if err := h.svc.SetPermission(r.Context(), principal, body.IDs, *body.Permission); err != nil {
+		result, err := h.svc.SetPermission(r.Context(), principal, body.IDs, *body.Permission)
+		if err != nil {
 			h.fail(w, r, err)
 			return
 		}
+		permission = result
 	}
 	if body.AlbumID != nil || body.ClearAlbum {
 		var albumID *string
@@ -146,7 +149,15 @@ func (h *Handler) batchImages(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	writeOK(w, map[string]int{"updated": len(body.IDs)})
+	// 返回审查结果：blocked 为因 AI 审查未通过而保持私有的图片（仅公开操作时）。
+	response := map[string]any{"updated": len(body.IDs)}
+	if permission != nil {
+		response["published"] = permission.Published
+		if len(permission.Blocked) > 0 {
+			response["blocked"] = permission.Blocked
+		}
+	}
+	writeOK(w, response)
 }
 
 // serveImage 按以斜杠分隔的键流式传输已存储的对象，当查询参数要求时

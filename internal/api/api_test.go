@@ -634,3 +634,43 @@ func TestAlbumPlazaAndBatchFlow(t *testing.T) {
 		t.Fatalf("image gone after album delete: %d (%s)", status, body)
 	}
 }
+
+func TestAdminModerationSettings(t *testing.T) {
+	env := newTestEnv(t, false, 1<<20)
+	adminToken, _ := env.adminToken(t, "root")
+	userToken := env.token(t, "normal")
+
+	// 默认未启用。
+	status, body := do(t, env.router, http.MethodGet, "/api/v1/admin/moderation", "", adminToken)
+	if status != http.StatusOK {
+		t.Fatalf("get moderation status = %d (%s)", status, body)
+	}
+	var got struct {
+		Data struct {
+			Enabled   bool `json:"enabled"`
+			APIKeySet bool `json:"api_key_set"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &got); err != nil || got.Data.Enabled {
+		t.Fatalf("initial moderation = %s", body)
+	}
+
+	// 保存一份配置。
+	status, body = do(t, env.router, http.MethodPut, "/api/v1/admin/moderation",
+		`{"enabled":true,"base_url":"https://api.openai.com/v1","api_key":"sk-secret","model":"gpt-4o-mini","timeout_sec":30,"max_image_mb":10}`,
+		adminToken)
+	if status != http.StatusOK {
+		t.Fatalf("put moderation status = %d (%s)", status, body)
+	}
+	if err := json.Unmarshal(body, &got); err != nil || !got.Data.Enabled || !got.Data.APIKeySet {
+		t.Fatalf("updated moderation = %s", body)
+	}
+	if bytes.Contains(body, []byte("sk-secret")) {
+		t.Fatalf("moderation response leaks api key: %s", body)
+	}
+
+	// 普通用户无权访问。
+	if status, _ := do(t, env.router, http.MethodGet, "/api/v1/admin/moderation", "", userToken); status != http.StatusForbidden {
+		t.Fatalf("non-admin get moderation status = %d, want 403", status)
+	}
+}

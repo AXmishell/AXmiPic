@@ -267,3 +267,72 @@ func TestAuthBootstrapMergesLegacyRecord(t *testing.T) {
 		t.Fatalf("normalized record missing allow_guest_upload: %s", raw)
 	}
 }
+
+func TestModerationUpdateAndHotReload(t *testing.T) {
+	repo := newRepo(t)
+	cipher, err := secret.New([]byte("test-encryption-key"))
+	if err != nil {
+		t.Fatalf("secret.New: %v", err)
+	}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	ctx := context.Background()
+
+	svc := service.NewSettingsService(repo, cipher, service.NewNotifyService(nil, nil), logger, service.SMTPConfig{})
+	var applied []config.ModerationConfig
+	svc.SetModerationDefaults(config.ModerationConfig{
+		Enabled: true, BaseURL: "https://api.openai.com/v1", APIKey: "sk-default",
+		Model: "gpt-4o-mini", TimeoutSec: 30, MaxImageMB: 10,
+	})
+	svc.SetModerationApplier(func(cfg config.ModerationConfig) error {
+		applied = append(applied, cfg)
+		return nil
+	})
+
+	if err := svc.BootstrapModeration(ctx); err != nil {
+		t.Fatalf("BootstrapModeration: %v", err)
+	}
+	if got := svc.Moderation(); !got.Enabled || !got.APIKeySet {
+		t.Fatalf("after bootstrap = %+v", got)
+	}
+
+	// 更新时留空密钥应沿用原值。
+	updated, err := svc.UpdateModeration(ctx, service.ModerationSettingsInput{
+		Enabled: false, BaseURL: "http://localhost:11434/v1", Model: "llava", TimeoutSec: 20, MaxImageMB: 5,
+	})
+	if err != nil {
+		t.Fatalf("UpdateModeration: %v", err)
+	}
+	if updated.Enabled || !updated.APIKeySet {
+		t.Fatalf("updated = %+v, want disabled with preserved key", updated)
+	}
+	if len(applied) == 0 || applied[len(applied)-1].APIKey != "sk-default" {
+		t.Fatalf("applier did not preserve key: %+v", applied)
+	}
+
+	// 提供新密钥。
+	if _, err := svc.UpdateModeration(ctx, service.ModerationSettingsInput{
+		Enabled: true, BaseURL: "http://example/v1", APIKey: "sk-new", Model: "m", TimeoutSec: 30, MaxImageMB: 10,
+	}); err != nil {
+		t.Fatalf("UpdateModeration new key: %v", err)
+	}
+
+	// 落库记录不得包含明文密钥。
+	raw, err := repo.GetSetting(ctx, "moderation")
+	if err != nil {
+		t.Fatalf("GetSetting: %v", err)
+	}
+	if strings.Contains(raw, "sk-new") {
+		t.Fatalf("stored moderation leaks api key: %s", raw)
+	}
+
+	// 新实例应从数据库恢复。
+	reloaded := service.NewSettingsService(repo, cipher, service.NewNotifyService(nil, nil), logger, service.SMTPConfig{})
+	reloaded.SetModerationDefaults(config.ModerationConfig{})
+	if err := reloaded.BootstrapModeration(ctx); err != nil {
+		t.Fatalf("BootstrapModeration reload: %v", err)
+	}
+	got := reloaded.Moderation()
+	if !got.Enabled || got.Model != "m" || got.BaseURL != "http://example/v1" || !got.APIKeySet {
+		t.Fatalf("reloaded = %+v", got)
+	}
+}

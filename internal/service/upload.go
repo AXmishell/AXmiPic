@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"path"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -26,6 +27,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/AXmishell/axmipic/internal/auth"
+	"github.com/AXmishell/axmipic/internal/moderation"
 	"github.com/AXmishell/axmipic/internal/security"
 	"github.com/AXmishell/axmipic/internal/storage"
 	"github.com/AXmishell/axmipic/internal/store"
@@ -185,6 +187,11 @@ type UploadService struct {
 	// guestIPQuotaBytes<=0 表示不限。
 	guestIPQuotaBytes  int64
 	guestIPQuotaWindow time.Duration
+
+	// moderator 为图片广场的 AI 审查器；非 nil 时，图片在设为公开前先审查。
+	// moderationMaxBytes>0 时，超过该体积的图片按审查不通过处理。
+	moderator          moderation.Moderator
+	moderationMaxBytes int64
 }
 
 // NewUploadService 构造一个 UploadService。
@@ -200,6 +207,18 @@ func (s *UploadService) SetPolicyResolver(resolver UploadPolicyResolver) {
 // SetScanner 安装一个上传内容安全扫描器。
 func (s *UploadService) SetScanner(scanner security.Scanner) {
 	s.scanner = scanner
+}
+
+// SetModerator 安装图片广场的 AI 审查器。maxReviewBytes>0 时，体积超过该值的
+// 图片被视为审查不通过。传 nil 可关闭审查。
+func (s *UploadService) SetModerator(m moderation.Moderator, maxReviewBytes int64) {
+	s.moderator = m
+	s.moderationMaxBytes = maxReviewBytes
+}
+
+// ModerationEnabled 报告图片广场 AI 审查是否已启用。
+func (s *UploadService) ModerationEnabled() bool {
+	return s.moderator != nil
 }
 
 // SetGuestIPQuota 配置匿名访客按客户端 IP 的累计上传配额（固定窗口内）。
@@ -791,23 +810,121 @@ func (s *UploadService) GetByKey(ctx context.Context, key string) (*ImageDTO, er
 	return toDTO(image), nil
 }
 
+// PermissionResult 描述一次批量可见性变更的结果。
+type PermissionResult struct {
+	// Published 为实际设为目标可见性（公开）的图片数量。
+	Published int `json:"published"`
+	// Blocked 为被 AI 审查拦下、保持私有的图片 id。
+	Blocked []string `json:"blocked,omitempty"`
+	// Reasons 记录被拦图片的判定原因（图片 id -> 原因）。
+	Reasons map[string]string `json:"reasons,omitempty"`
+}
+
 // SetPermission 批量设置图片的可见性。会先校验全部图片都归 principal 所有，
-// 避免越权修改他人图片。
-func (s *UploadService) SetPermission(ctx context.Context, principal *auth.Principal, ids []string, permission string) error {
+// 避免越权修改他人图片。当目标为公开且启用了 AI 审查时，每张图片会先经视觉
+// 模型审查：不通过（含模型无返回、调用失败）的图片保持私有，其余公开。
+func (s *UploadService) SetPermission(ctx context.Context, principal *auth.Principal, ids []string, permission string) (*PermissionResult, error) {
 	if permission != store.PermissionPublic && permission != store.PermissionPrivate {
-		return fmt.Errorf("%w: unknown permission %q", ErrInvalidInput, permission)
+		return nil, fmt.Errorf("%w: unknown permission %q", ErrInvalidInput, permission)
 	}
-	owned, err := s.ownedImageIDs(ctx, principal, ids)
+	images, err := s.ownedImages(ctx, principal, ids)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if len(owned) == 0 {
-		return nil
+	if len(images) == 0 {
+		return &PermissionResult{}, nil
 	}
-	if err := s.repo.SetImagePermission(ctx, owned, permission); err != nil {
-		return fmt.Errorf("set permission: %w", err)
+
+	if permission == store.PermissionPrivate || s.moderator == nil {
+		all := make([]string, 0, len(images))
+		for i := range images {
+			all = append(all, images[i].ID)
+		}
+		if err := s.repo.SetImagePermission(ctx, all, permission); err != nil {
+			return nil, fmt.Errorf("set permission: %w", err)
+		}
+		return &PermissionResult{Published: len(all)}, nil
 	}
-	return nil
+
+	outcome := s.moderateForPublic(ctx, images)
+	if len(outcome.publish) > 0 {
+		if err := s.repo.SetImagePermission(ctx, outcome.publish, store.PermissionPublic); err != nil {
+			return nil, fmt.Errorf("set permission: %w", err)
+		}
+	}
+	if len(outcome.blocked) > 0 {
+		if err := s.repo.SetImagePermission(ctx, outcome.blocked, store.PermissionPrivate); err != nil {
+			return nil, fmt.Errorf("set permission: %w", err)
+		}
+	}
+	return &PermissionResult{Published: len(outcome.publish), Blocked: outcome.blocked, Reasons: outcome.reasons}, nil
+}
+
+// moderationOutcome 汇总一次批量公开审查的结果。
+type moderationOutcome struct {
+	publish []string
+	blocked []string
+	reasons map[string]string
+}
+
+// moderateForPublic 对一批待公开图片并发执行 AI 审查，返回可公开与被拦下的 id。
+// 已经是公开的图片不重复审查。
+func (s *UploadService) moderateForPublic(ctx context.Context, images []store.Image) moderationOutcome {
+	outcome := moderationOutcome{reasons: make(map[string]string)}
+	sem := make(chan struct{}, moderationConcurrency)
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	for i := range images {
+		image := images[i]
+		if image.Permission == store.PermissionPublic {
+			outcome.publish = append(outcome.publish, image.ID)
+			continue
+		}
+		wg.Add(1)
+		sem <- struct{}{}
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+			decision, err := s.reviewImage(ctx, &image)
+			mu.Lock()
+			defer mu.Unlock()
+			switch {
+			case err != nil:
+				outcome.blocked = append(outcome.blocked, image.ID)
+				outcome.reasons[image.ID] = "审查服务不可用：" + err.Error()
+			case !decision.Allowed:
+				outcome.blocked = append(outcome.blocked, image.ID)
+				outcome.reasons[image.ID] = decision.Reason
+			default:
+				outcome.publish = append(outcome.publish, image.ID)
+			}
+		}()
+	}
+	wg.Wait()
+	return outcome
+}
+
+// reviewImage 读取图片内容并调用审查器。读取或审查失败均返回 error，调用方按
+// 「不通过」处理（保守拒绝公开）。
+func (s *UploadService) reviewImage(ctx context.Context, image *store.Image) (moderation.Decision, error) {
+	if s.moderationMaxBytes > 0 && image.Size > s.moderationMaxBytes {
+		return moderation.Decision{Allowed: false, Reason: "图片体积超过审查上限"}, nil
+	}
+	backend := s.backendFor(image)
+	object, err := backend.Get(ctx, image.Key)
+	if err != nil {
+		return moderation.Decision{}, fmt.Errorf("read object: %w", err)
+	}
+	defer func() { _ = object.Close() }()
+	var reader io.Reader = object
+	if s.moderationMaxBytes > 0 {
+		reader = io.LimitReader(object, s.moderationMaxBytes+1)
+	}
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return moderation.Decision{}, fmt.Errorf("read object: %w", err)
+	}
+	return s.moderator.Review(ctx, data, image.MimeType)
 }
 
 // SetAlbum 批量把图片移动到某个相册（albumID 为 nil 表示移出相册）。目标
@@ -838,9 +955,9 @@ func (s *UploadService) SetAlbum(ctx context.Context, principal *auth.Principal,
 	return nil
 }
 
-// ownedImageIDs 校验 ids 中的每一张图片都归 principal 所有，并返回实际存在的
-// 图片 id。请求中的未知 id 会被忽略。
-func (s *UploadService) ownedImageIDs(ctx context.Context, principal *auth.Principal, ids []string) ([]string, error) {
+// ownedImages 校验 ids 中的每一张图片都归 principal 所有，并返回实际存在的记录。
+// 请求中的未知 id 会被忽略。
+func (s *UploadService) ownedImages(ctx context.Context, principal *auth.Principal, ids []string) ([]store.Image, error) {
 	if len(ids) == 0 {
 		return nil, fmt.Errorf("%w: no image ids provided", ErrInvalidInput)
 	}
@@ -851,11 +968,22 @@ func (s *UploadService) ownedImageIDs(ctx context.Context, principal *auth.Princ
 	if err != nil {
 		return nil, fmt.Errorf("update images: %w", err)
 	}
-	owned := make([]string, 0, len(images))
 	for i := range images {
 		if !canAccess(principal, images[i].UserID) {
 			return nil, ErrForbidden
 		}
+	}
+	return images, nil
+}
+
+// ownedImageIDs 返回归 principal 所有的图片 id。
+func (s *UploadService) ownedImageIDs(ctx context.Context, principal *auth.Principal, ids []string) ([]string, error) {
+	images, err := s.ownedImages(ctx, principal, ids)
+	if err != nil {
+		return nil, err
+	}
+	owned := make([]string, 0, len(images))
+	for i := range images {
 		owned = append(owned, images[i].ID)
 	}
 	return owned, nil
@@ -863,6 +991,9 @@ func (s *UploadService) ownedImageIDs(ctx context.Context, principal *auth.Princ
 
 // maxBatchImages 限制单次批量操作涉及的图片数量。
 const maxBatchImages = 200
+
+// moderationConcurrency 限制批量审查时的并发请求数，避免对视觉接口造成冲击。
+const moderationConcurrency = 4
 
 // Delete 移除一张图片对象及其元数据，强制校验所有权并释放所有者的配额。
 func (s *UploadService) Delete(ctx context.Context, principal *auth.Principal, id string) error {

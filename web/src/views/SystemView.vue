@@ -7,6 +7,7 @@ import { fetchStats } from '@/api/admin'
 import {
   getAuthSettings,
   getImagingDrivers,
+  getModerationSettings,
   getNotifyChannels,
   getPaymentSettings,
   getProcessInfo,
@@ -16,9 +17,11 @@ import {
   listPaymentGateways,
   sendTestNotify,
   updateAuthSettings,
+  updateModerationSettings,
   updatePaymentSettings,
   updateSMTPConfig,
   type AuthConfig,
+  type ModerationSettings,
   type PaymentSettings,
   type PaymentSettingsInput,
   type ProcessInfo,
@@ -162,6 +165,52 @@ async function saveSMTP(): Promise<void> {
   } finally {
     smtpSaving.value = false
   }
+}
+
+// ---- 图片广场 AI 审查设置 ----
+const moderationSaving = ref(false)
+const moderationMeta = ref<ModerationSettings | null>(null)
+const moderationForm = reactive({
+  enabled: false,
+  base_url: '',
+  api_key: '',
+  model: '',
+  timeout_sec: 30,
+  prompt: '',
+  max_image_mb: 10,
+})
+
+/** 用服务端返回的配置填充表单，清空密钥输入框。 */
+function fillModeration(cfg: ModerationSettings): void {
+  moderationForm.enabled = cfg.enabled
+  moderationForm.base_url = cfg.base_url
+  moderationForm.model = cfg.model
+  moderationForm.timeout_sec = cfg.timeout_sec || 30
+  moderationForm.prompt = cfg.prompt
+  moderationForm.max_image_mb = cfg.max_image_mb || 10
+  moderationForm.api_key = ''
+}
+
+async function saveModeration(): Promise<void> {
+  if (moderationForm.enabled && !moderationForm.base_url.trim()) {
+    ElMessage.warning('请填写接口地址')
+    return
+  }
+  moderationSaving.value = true
+  try {
+    const updated = await updateModerationSettings({ ...moderationForm })
+    moderationMeta.value = updated
+    fillModeration(updated)
+    ElMessage.success('AI 审查设置已保存并即时生效')
+  } catch (error) {
+    ElMessage.error(toApiError(error).message)
+  } finally {
+    moderationSaving.value = false
+  }
+}
+
+function resetModeration(): void {
+  if (moderationMeta.value) fillModeration(moderationMeta.value)
 }
 
 // ---- 支付设置 ----
@@ -340,7 +389,7 @@ async function load(): Promise<void> {
   loading.value = true
   errorMessage.value = ''
   try {
-    const [statsData, runtimeData, processData, smtpData, ch, sec, drv, paymentData, gatewayList, authData] = await Promise.all([
+    const [statsData, runtimeData, processData, smtpData, ch, sec, drv, paymentData, gatewayList, authData, moderationData] = await Promise.all([
       fetchStats(),
       getRuntimeInfo(),
       getProcessInfo(),
@@ -351,6 +400,7 @@ async function load(): Promise<void> {
       getPaymentSettings().catch(() => null),
       listPaymentGateways().catch(() => []),
       getAuthSettings().catch(() => null),
+      getModerationSettings().catch(() => null),
     ])
     stats.value = statsData
     runtime.value = runtimeData
@@ -373,6 +423,10 @@ async function load(): Promise<void> {
     if (paymentData) {
       paymentMeta.value = paymentData
       fillPayment(paymentData)
+    }
+    if (moderationData) {
+      moderationMeta.value = moderationData
+      fillModeration(moderationData)
     }
   } catch (error) {
     errorMessage.value = toApiError(error).message
@@ -830,6 +884,63 @@ onBeforeUnmount(() => {
             </div>
           </article>
         </section>
+      </el-tab-pane>
+
+      <!-- AI 审查 -->
+      <el-tab-pane label="AI 审查" name="moderation">
+        <article class="ax-card">
+          <header class="ax-card__head">
+            <h2 class="ax-card__title">图片广场 AI 审查</h2>
+            <el-tag v-if="moderationMeta?.enabled" size="small" type="success" effect="plain">已启用</el-tag>
+            <el-tag v-else size="small" type="info" effect="plain">未启用</el-tag>
+          </header>
+          <div class="ax-card__body">
+            <el-form :model="moderationForm" label-position="top" class="smtp-form" @submit.prevent>
+              <div class="smtp-grid">
+                <el-form-item label="启用 AI 审查">
+                  <el-switch v-model="moderationForm.enabled" />
+                </el-form-item>
+                <el-form-item label="接口地址" class="smtp-grid__wide">
+                  <el-input v-model="moderationForm.base_url" placeholder="https://api.openai.com/v1" />
+                </el-form-item>
+                <el-form-item label="模型">
+                  <el-input v-model="moderationForm.model" placeholder="gpt-4o-mini" />
+                </el-form-item>
+                <el-form-item label="API 密钥">
+                  <el-input
+                    v-model="moderationForm.api_key"
+                    type="password"
+                    show-password
+                    autocomplete="new-password"
+                    :placeholder="moderationMeta?.api_key_set ? '已设置，留空保持不变' : '请输入 API 密钥'"
+                  />
+                </el-form-item>
+                <el-form-item label="超时（秒）">
+                  <el-input-number v-model="moderationForm.timeout_sec" :min="1" :max="300" controls-position="right" />
+                </el-form-item>
+                <el-form-item label="送审体积上限 (MiB)">
+                  <el-input-number v-model="moderationForm.max_image_mb" :min="1" :max="100" controls-position="right" />
+                </el-form-item>
+                <el-form-item label="审查提示词" class="smtp-grid__wide">
+                  <el-input
+                    v-model="moderationForm.prompt"
+                    type="textarea"
+                    :rows="3"
+                    placeholder="留空使用默认提示词（要求模型只回答 SAFE 或 UNSAFE）"
+                  />
+                </el-form-item>
+              </div>
+              <p class="smtp-form__hint">
+                仅作用于图片广场：图片「设为公开」时调用标准 OpenAI 兼容视觉接口审查，
+                未通过（含模型无返回、调用失败）则保持私有。保存后即时生效，无需重启。
+              </p>
+              <div class="smtp-actions">
+                <el-button type="primary" :loading="moderationSaving" @click="saveModeration">保存并应用</el-button>
+                <el-button :disabled="moderationSaving || !moderationMeta" @click="resetModeration">重置</el-button>
+              </div>
+            </el-form>
+          </div>
+        </article>
       </el-tab-pane>
 
       <!-- 系统集成 -->

@@ -95,6 +95,10 @@ type SettingsService struct {
 	authDefaults AuthConfig
 	currentAuth  AuthConfig
 	authApplier  func(AuthConfig)
+	// 图片广场 AI 审查：默认值来自配置文件，运行值来自数据库，可热替换。
+	moderationDefaults config.ModerationConfig
+	currentModeration  config.ModerationConfig
+	moderationApplier  func(config.ModerationConfig) error
 }
 
 // NewSettingsService 构建设置服务。fallback 为配置文件中的 SMTP 配置，在数据库

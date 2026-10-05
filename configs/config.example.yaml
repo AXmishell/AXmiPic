@@ -180,6 +180,22 @@ security:
   # Image cloud processor: local (uses the built-in imaging pipeline)
   cloud_processor: "local"
 
+moderation:
+  # 图片广场 AI 审查：仅在图片「设为公开」时调用视觉模型；审查不通过（含模型
+  # 无返回、调用失败）的图片保持私有，不进入图片广场。
+  enabled: false
+  # 标准 OpenAI 兼容接口根地址（可指向兼容服务，如 OneAPI/Ollama 等）。
+  base_url: "https://api.openai.com/v1"
+  api_key: ""
+  # 视觉模型名。
+  model: "gpt-4o-mini"
+  # 单次审查请求超时（秒）。
+  timeout_sec: 30
+  # 覆盖默认审查提示词（要求模型只回答 SAFE 或 UNSAFE）。
+  prompt: ""
+  # 送审图片体积上限（MiB）；超过则按审查不通过处理。
+  max_image_mb: 10
+
 sms:
   # Enable a generic HTTP SMS gateway. Params are not templated here; the
   # gateway is contacted with to/body placeholders when enabled in code.

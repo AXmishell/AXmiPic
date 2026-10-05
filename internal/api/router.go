@@ -293,6 +293,8 @@ func NewRouter(d Deps) http.Handler {
 				r.Put("/admin/notify/smtp", h.adminUpdateSMTP)
 				r.Get("/admin/auth", h.adminGetAuth)
 				r.Put("/admin/auth", h.adminUpdateAuth)
+				r.Get("/admin/moderation", h.adminGetModeration)
+				r.Put("/admin/moderation", h.adminUpdateModeration)
 				r.Get("/admin/payment", h.adminGetPayment)
 				r.Put("/admin/payment", h.adminUpdatePayment)
 				r.Get("/admin/security", h.adminSecurityInfo)

@@ -326,3 +326,35 @@ export function getAuthSettings(): Promise<AuthConfig> {
 export function updateAuthSettings(payload: AuthConfig): Promise<AuthConfig> {
   return request<AuthConfig>({ method: 'PUT', url: '/admin/auth', data: payload })
 }
+
+/** 图片广场 AI 审查设置（密钥仅返回是否已设置）。 */
+export interface ModerationSettings {
+  enabled: boolean
+  base_url: string
+  model: string
+  timeout_sec: number
+  prompt: string
+  max_image_mb: number
+  api_key_set: boolean
+}
+
+/** 保存 AI 审查设置的输入；api_key 为空表示保持原密钥。 */
+export interface ModerationSettingsInput {
+  enabled: boolean
+  base_url: string
+  api_key: string
+  model: string
+  timeout_sec: number
+  prompt: string
+  max_image_mb: number
+}
+
+/** 管理端：读取 AI 审查设置。 */
+export function getModerationSettings(): Promise<ModerationSettings> {
+  return request<ModerationSettings>({ method: 'GET', url: '/admin/moderation' })
+}
+
+/** 管理端：保存 AI 审查设置并即时生效。 */
+export function updateModerationSettings(payload: ModerationSettingsInput): Promise<ModerationSettings> {
+  return request<ModerationSettings>({ method: 'PUT', url: '/admin/moderation', data: payload })
+}

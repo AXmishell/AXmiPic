@@ -124,8 +124,8 @@ export interface BatchImageUpdate {
   clearAlbum?: boolean
 }
 
-export function batchUpdateImages(update: BatchImageUpdate): Promise<{ updated: number }> {
-  return request<{ updated: number }>({
+export function batchUpdateImages(update: BatchImageUpdate): Promise<BatchImageResult> {
+  return request<BatchImageResult>({
     method: 'POST',
     url: '/images/batch',
     data: {
@@ -135,4 +135,11 @@ export function batchUpdateImages(update: BatchImageUpdate): Promise<{ updated: 
       clear_album: update.clearAlbum || undefined,
     },
   })
+}
+
+/** 批量更新的结果；public 操作时 blocked 为因 AI 审核未通过而保持私有的图片 id。 */
+export interface BatchImageResult {
+  updated: number
+  published?: number
+  blocked?: string[]
 }
