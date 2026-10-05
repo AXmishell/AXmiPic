@@ -55,6 +55,24 @@ func TestRegisterLoginMe(t *testing.T) {
 	}
 }
 
+func TestUsernameAllowsEmailStyle(t *testing.T) {
+	svc, _ := newAccountService(t, true, 1<<20)
+	ctx := context.Background()
+
+	// 允许邮箱形式与 "+" 别名（会被规范化为小写）。
+	user, err := svc.RegisterCustomer(ctx, "User.Name+tag@example.com", "password123")
+	if err != nil {
+		t.Fatalf("email-style username rejected: %v", err)
+	}
+	if user.Username != "user.name+tag@example.com" {
+		t.Fatalf("username = %q", user.Username)
+	}
+	// 其它非法字符仍被拒绝。
+	if _, err := svc.RegisterCustomer(ctx, "bad#name", "password123"); !errors.Is(err, service.ErrInvalidInput) {
+		t.Fatalf("invalid char error = %v, want ErrInvalidInput", err)
+	}
+}
+
 func TestRegistrationDisabled(t *testing.T) {
 	svc, _ := newAccountService(t, false, 0)
 	if _, err := svc.RegisterCustomer(context.Background(), "bob", "password123"); !errors.Is(err, service.ErrRegistrationDisabled) {

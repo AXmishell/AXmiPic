@@ -9,6 +9,7 @@ import { ApiError } from '@/api/client'
 import { fetchInstallStatus, runInstall, type InstallInput } from '@/api/auth'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
+import { usernameRules } from '@/utils/validate'
 
 const router = useRouter()
 const app = useAppStore()
@@ -35,10 +36,7 @@ const form = reactive<InstallInput>({
 const rules: FormRules = {
   base_url: [{ required: true, message: '请输入站点地址', trigger: 'blur' }],
   database_dsn: [{ required: true, message: '请输入数据库连接串', trigger: 'blur' }],
-  admin_username: [
-    { required: true, message: '请输入管理员用户名', trigger: 'blur' },
-    { min: 3, max: 64, message: '用户名长度为 3 到 64 个字符', trigger: 'blur' },
-  ],
+  admin_username: usernameRules('请输入管理员用户名'),
   admin_password: [
     { required: true, message: '请输入管理员密码', trigger: 'blur' },
     { min: 8, max: 72, message: '密码长度为 8 到 72 个字符', trigger: 'blur' },
@@ -304,6 +302,7 @@ onMounted(async () => {
 
             <el-form-item label="管理员用户名" prop="admin_username">
               <el-input v-model="form.admin_username" :prefix-icon="User" placeholder="admin" />
+              <div class="install__hint">可包含字母、数字与 "."、"_"、"-"、"+"、"@"（3-64 位），支持邮箱形式。</div>
             </el-form-item>
             <el-form-item label="管理员密码" prop="admin_password">
               <el-input

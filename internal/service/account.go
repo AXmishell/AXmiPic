@@ -807,7 +807,7 @@ func validateCredentials(username, password string) error {
 	}
 	for _, r := range username {
 		if !isUsernameRune(r) {
-			return fmt.Errorf("%w: username may only contain letters, digits, '.', '_' and '-'", ErrInvalidInput)
+			return fmt.Errorf("%w: username may only contain letters, digits, '.', '_', '-', '+' and '@'", ErrInvalidInput)
 		}
 	}
 	if len(password) < minPasswordLength {
@@ -823,7 +823,7 @@ func isUsernameRune(r rune) bool {
 	switch {
 	case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
 		return true
-	case r == '.', r == '_', r == '-':
+	case r == '.', r == '_', r == '-', r == '+', r == '@':
 		return true
 	default:
 		return false

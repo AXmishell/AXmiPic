@@ -8,6 +8,7 @@ import { Box, DataLine, Lock, Moon, Sunny, UploadFilled, User } from '@element-p
 import { ApiError } from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
+import { usernameRules } from '@/utils/validate'
 
 const auth = useAuthStore()
 const theme = useThemeStore()
@@ -25,10 +26,7 @@ const totpCode = ref('')
 const totpLoading = ref(false)
 
 const rules: FormRules = {
-  username: [
-    { required: true, message: '请输入用户名', trigger: 'blur' },
-    { min: 3, max: 64, message: '用户名长度为 3 到 64 个字符', trigger: 'blur' },
-  ],
+  username: usernameRules('请输入用户名'),
   password: [
     { required: true, message: '请输入密码', trigger: 'blur' },
     { min: 8, max: 72, message: '密码长度为 8 到 72 个字符', trigger: 'blur' },

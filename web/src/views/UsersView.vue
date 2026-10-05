@@ -22,6 +22,7 @@ import PageHeader from '@/components/PageHeader.vue'
 import UserAvatar from '@/components/UserAvatar.vue'
 import { useAuthStore } from '@/stores/auth'
 import { formatBytes, formatDateTime, usagePercent } from '@/utils/format'
+import { usernameRules } from '@/utils/validate'
 
 const auth = useAuthStore()
 
@@ -42,10 +43,7 @@ const creating = ref(false)
 const createFormRef = ref<FormInstance>()
 const createForm = ref({ username: '', password: '' })
 const createRules: FormRules = {
-  username: [
-    { required: true, message: '请输入用户名', trigger: 'blur' },
-    { min: 3, max: 64, message: '用户名长度为 3 到 64 个字符', trigger: 'blur' },
-  ],
+  username: usernameRules('请输入用户名'),
   password: [
     { required: true, message: '请输入密码', trigger: 'blur' },
     { min: 8, max: 72, message: '密码长度为 8 到 72 个字符', trigger: 'blur' },
