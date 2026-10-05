@@ -7,42 +7,30 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "要发布的标签（例如 v1.0.0）"
+        description: "要发布的标签（例如 v1.0.0，需已存在）"
         required: true
 
+# 默认只读；仅创建 Release 的任务需要写权限（最小权限原则）。
 permissions:
-  contents: write
+  contents: read
+
+# 同一标签的重复推送 / 手动触发只保留一个，避免并发创建同一 Release。
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  release:
-    name: 构建并发布发行版
+  build-web:
+    name: 构建前端
     runs-on: ubuntu-latest
     env:
       NODE_VERSION: "22"
-      GO_VERSION: "1.26.x"
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - goos: linux
-            goarch: amd64
-          - goos: linux
-            goarch: arm64
-          - goos: darwin
-            goarch: amd64
-          - goos: darwin
-            goarch: arm64
-          - goos: windows
-            goarch: amd64
     steps:
       - name: 检出代码
         uses: actions/checkout@v4
-
-      - name: 安装 Go
-        uses: actions/setup-go@v5
         with:
-          go-version: ${{ env.GO_VERSION }}
-          cache: true
+          # 手动触发时必须构建 inputs.tag 指向的代码，而不是触发分支的 HEAD。
+          ref: ${{ github.event.inputs.tag || github.ref }}
 
       - name: 安装 pnpm
         uses: pnpm/action-setup@v4
@@ -62,16 +50,68 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm build
 
+      - name: 上传前端产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: webui-dist
+          path: internal/webui/dist
+          if-no-files-found: error
+
+  release:
+    name: 构建发行二进制
+    runs-on: ubuntu-latest
+    needs: [build-web]
+    env:
+      GO_VERSION: "1.26.x"
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: 安装 Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      # 先清掉仓库里已提交的旧产物，避免与新构建的资源哈希文件混在一起。
+      - name: 清理已提交的前端产物
+        run: rm -rf internal/webui/dist
+
+      # 前端只构建一次，各平台任务复用同一份产物。
+      - name: 下载前端产物
+        uses: actions/download-artifact@v4
+        with:
+          name: webui-dist
+          path: internal/webui/dist
+
       - name: 编译二进制
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: "0"
+          VERSION: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
+          set -euo pipefail
           ext=""
           if [ "$GOOS" = "windows" ]; then ext=".exe"; fi
           out="axmipic-${GOOS}-${GOARCH}${ext}"
-          go build -trimpath -ldflags "-s -w" -o "$out" ./cmd/axmipic
+          go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o "$out" ./cmd/axmipic
           echo "BINARY=$out" >> "$GITHUB_ENV"
 
       - name: 上传产物
@@ -85,6 +125,8 @@ jobs:
     name: 创建 GitHub Release
     runs-on: ubuntu-latest
     needs: [release]
+    permissions:
+      contents: write
     steps:
       - name: 检出代码与标签
         uses: actions/checkout@v4
@@ -94,22 +136,49 @@ jobs:
           fetch-tags: true
           ref: ${{ github.event.inputs.tag || github.ref }}
 
-      - name: 下载全部产物
+      - name: 确定并校验标签
+        env:
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          tag="$INPUT_TAG"
+          if [ -z "$tag" ]; then tag="$REF_NAME"; fi
+          case "$tag" in
+            v[0-9]*) ;;
+            *)
+              echo "::error::发布标签必须以 v 开头（例如 v1.0.0），当前为：$tag"
+              exit 1
+              ;;
+          esac
+          echo "TAG=$tag" >> "$GITHUB_ENV"
+          echo "已确定发布标签：$tag"
+
+      - name: 下载全部二进制产物
         uses: actions/download-artifact@v4
         with:
           path: dist
+          # 只取各平台二进制，排除 webui-dist，避免把前端产物混进发行附件。
+          pattern: axmipic-*
           merge-multiple: true
 
-      - name: 生成发行说明（取自提交信息）
-        id: notes
+      - name: 生成校验和
         run: |
           set -euo pipefail
-          tag="${{ github.event.inputs.tag }}"
-          if [ -z "$tag" ]; then tag="${{ github.ref_name }}"; fi
-          echo "TAG=$tag" >> "$GITHUB_ENV"
+          (cd dist && sha256sum axmipic-* > SHA256SUMS.txt)
+          cat dist/SHA256SUMS.txt
 
-          # 找到从当前提交可达的最近旧标签；没有则只输出当前提交的信息。
-          prev="$(git describe --tags --abbrev=0 "${tag}^" 2>/dev/null || true)"
+      - name: 生成发行说明（取自提交信息）
+        env:
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          tag="$INPUT_TAG"
+          if [ -z "$tag" ]; then tag="$REF_NAME"; fi
+
+          # 只把 v* 发行标签视为上一版本，避免被临时标签干扰。
+          prev="$(git describe --tags --abbrev=0 --match 'v*' "${tag}^" 2>/dev/null || true)"
           if [ -n "$prev" ]; then
             header="本次发布（${prev} → ${tag}）包含以下提交："
           else
@@ -125,6 +194,11 @@ jobs:
               git log --no-merges -1 --pretty=format:'- **%s** (`%h`)%n%n%b' "${tag}"
             fi
             echo
+            echo "## 校验和"
+            echo
+            echo '```'
+            cat dist/SHA256SUMS.txt
+            echo '```'
           } > release_notes.md
 
           echo "----- release_notes.md -----"
@@ -133,9 +207,31 @@ jobs:
       - name: 发布
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
         run: |
-          gh release create "$TAG" \
-            --repo "${{ github.repository }}" \
-            --title "$TAG" \
-            --notes-file release_notes.md \
-            dist/*
+          set -euo pipefail
+
+          # 预发布标签（如 v1.0.0-rc1）自动标记为 prerelease。
+          prerelease=()
+          case "$TAG" in
+            *-*) prerelease=(--prerelease) ;;
+          esac
+
+          # 幂等：已存在则更新说明并覆盖附件，否则新建。
+          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            gh release edit "$TAG" \
+              --repo "$REPO" \
+              --title "$TAG" \
+              --notes-file release_notes.md \
+              "${prerelease[@]}"
+            gh release upload "$TAG" dist/* \
+              --repo "$REPO" \
+              --clobber
+          else
+            gh release create "$TAG" \
+              --repo "$REPO" \
+              --title "$TAG" \
+              --notes-file release_notes.md \
+              "${prerelease[@]}" \
+              dist/*
+          fi

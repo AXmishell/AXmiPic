@@ -72,6 +72,7 @@ func (h *Handler) adminImagingDrivers(w http.ResponseWriter, r *http.Request) {
 // RuntimeInfo 描述实例的运行时与运行环境信息（不含任何密钥）。
 type RuntimeInfo struct {
 	SiteName          string   `json:"site_name"`
+	Version           string   `json:"version"`
 	BaseURL           string   `json:"base_url"`
 	DatabaseDriver    string   `json:"database_driver"`
 	StorageDriver     string   `json:"storage_driver"`

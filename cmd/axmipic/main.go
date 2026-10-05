@@ -31,6 +31,10 @@ import (
 	"github.com/AXmishell/axmipic/internal/webui"
 )
 
+// version 是构建时注入的版本号（例如 v1.0.0），默认值用于本地开发构建。
+// 发布流水线通过 -ldflags "-X main.version=..." 覆盖它。
+var version = "dev"
+
 func main() {
 	if err := run(); err != nil {
 		slog.Error("axmipic exited with error", slog.Any("error", err))
@@ -40,7 +44,13 @@ func main() {
 
 func run() error {
 	configPath := flag.String("config", "configs/config.yaml", "path to the YAML configuration file")
+	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Println(version)
+		return nil
+	}
 
 	cfg, err := config.Load(*configPath)
 	if err != nil {
@@ -49,6 +59,10 @@ func run() error {
 
 	logger := newLogger(cfg.Logging.Level)
 	slog.SetDefault(logger)
+	logger.Info("AXmiPic starting",
+		slog.String("version", version),
+		slog.String("platform", runtime.GOOS+"/"+runtime.GOARCH),
+	)
 
 	installSvc := service.NewInstallService(cfg.Install.LockFile, cfg.Install.ConfigPath, cfg.Install.Disabled)
 	installed := installSvc.IsInstalled()
@@ -244,6 +258,7 @@ func run() error {
 
 	runtimeInfo := api.RuntimeInfo{
 		SiteName:          "AXmiPic",
+		Version:           version,
 		BaseURL:           cfg.Server.BaseURL,
 		DatabaseDriver:    normalizeDBDriver(cfg.Database.Driver),
 		StorageDriver:     cfg.Storage.Driver,
