@@ -8,7 +8,7 @@ import { Box, DataLine, Lock, Moon, Sunny, UploadFilled, User } from '@element-p
 import { ApiError } from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
-import { usernameRules } from '@/utils/validate'
+import { confirmPasswordRule, usernameRules } from '@/utils/validate'
 
 const auth = useAuthStore()
 const theme = useThemeStore()
@@ -18,7 +18,7 @@ const route = useRoute()
 const mode = ref<'login' | 'register' | 'admin'>('login')
 const formRef = ref<FormInstance>()
 const loading = ref(false)
-const form = reactive({ username: '', password: '' })
+const form = reactive({ username: '', password: '', confirmPassword: '' })
 
 // TOTP 二次验证步骤。
 const totpChallenge = ref('')
@@ -31,6 +31,7 @@ const rules: FormRules = {
     { required: true, message: '请输入密码', trigger: 'blur' },
     { min: 8, max: 72, message: '密码长度为 8 到 72 个字符', trigger: 'blur' },
   ],
+  confirmPassword: [confirmPasswordRule(() => form.password)],
 }
 
 const heading = computed(() => {
@@ -224,6 +225,17 @@ async function redirectAfterLogin(): Promise<void> {
               placeholder="请输入密码"
               :autocomplete="mode === 'login' ? 'current-password' : 'new-password'"
               @keyup.enter="handleSubmit"
+            />
+          </el-form-item>
+
+          <el-form-item v-if="mode === 'register'" label="确认密码" prop="confirmPassword">
+            <el-input
+              v-model="form.confirmPassword"
+              type="password"
+              show-password
+              :prefix-icon="Lock"
+              placeholder="请再次输入密码"
+              autocomplete="new-password"
             />
           </el-form-item>
 

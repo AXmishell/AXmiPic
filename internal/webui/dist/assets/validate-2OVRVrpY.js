@@ -1,1 +1,0 @@
-const r=/^[a-zA-Z0-9._+@-]{3,64}$/,s='用户名仅可包含字母、数字与 "."、"_"、"-"、"+"、"@"，长度 3-64 位';function t(e="请输入用户名"){return[{required:!0,message:e,trigger:"blur"},{min:3,max:64,message:"用户名长度为 3 到 64 个字符",trigger:"blur"},{pattern:r,message:s,trigger:"blur"}]}export{t as u};

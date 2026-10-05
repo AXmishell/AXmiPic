@@ -9,7 +9,7 @@ import { ApiError } from '@/api/client'
 import { fetchInstallStatus, runInstall, type InstallInput } from '@/api/auth'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
-import { usernameRules } from '@/utils/validate'
+import { confirmPasswordRule, usernameRules } from '@/utils/validate'
 
 const router = useRouter()
 const app = useAppStore()
@@ -39,19 +39,6 @@ interface InstallForm extends InstallInput {
   admin_password_confirm: string
 }
 
-/** 校验两次输入的密码是否一致。 */
-function validatePasswordConfirm(_rule: unknown, value: string, callback: (error?: Error) => void): void {
-  if (!value) {
-    callback(new Error('请再次输入管理员密码'))
-    return
-  }
-  if (value !== form.admin_password) {
-    callback(new Error('两次输入的密码不一致'))
-    return
-  }
-  callback()
-}
-
 const rules: FormRules = {
   base_url: [{ required: true, message: '请输入站点地址', trigger: 'blur' }],
   database_dsn: [{ required: true, message: '请输入数据库连接串', trigger: 'blur' }],
@@ -60,7 +47,7 @@ const rules: FormRules = {
     { required: true, message: '请输入管理员密码', trigger: 'blur' },
     { min: 8, max: 72, message: '密码长度为 8 到 72 个字符', trigger: 'blur' },
   ],
-  admin_password_confirm: [{ validator: validatePasswordConfirm, trigger: 'blur' }],
+  admin_password_confirm: [confirmPasswordRule(() => form.admin_password, '请再次输入管理员密码')],
 }
 
 /** 去除仅用于前端校验的字段后，构造提交给后端的输入。 */

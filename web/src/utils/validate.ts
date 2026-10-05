@@ -14,3 +14,24 @@ export function usernameRules(requiredMessage = '请输入用户名'): FormItemR
     { pattern: USERNAME_PATTERN, message: USERNAME_RULE_MESSAGE, trigger: 'blur' },
   ]
 }
+
+/** 构造「确认密码」校验规则：非空且与主密码一致。 */
+export function confirmPasswordRule(
+  getPassword: () => string,
+  emptyMessage = '请再次输入密码',
+): FormItemRule {
+  return {
+    validator: (_rule: unknown, value: string, callback: (error?: Error) => void): void => {
+      if (!value) {
+        callback(new Error(emptyMessage))
+        return
+      }
+      if (value !== getPassword()) {
+        callback(new Error('两次输入的密码不一致'))
+        return
+      }
+      callback()
+    },
+    trigger: 'blur',
+  }
+}
