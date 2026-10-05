@@ -144,6 +144,17 @@ function isActive(item: NavItem): boolean {
         :quota="auth.user.quota_bytes"
       />
       <router-link
+        v-if="variant === 'admin'"
+        to="/user"
+        class="nav-item nav-item--footer"
+        @click="emit('close')"
+      >
+        <span class="nav-item__rail" aria-hidden="true" />
+        <el-icon :size="16" class="nav-item__icon"><User /></el-icon>
+        <span class="nav-item__label">用户中心</span>
+        <el-icon :size="12" class="nav-item__arrow"><ArrowRight /></el-icon>
+      </router-link>
+      <router-link
         :to="variant === 'admin' ? '/admin/settings' : '/user/settings'"
         class="nav-item nav-item--footer"
         :class="{ 'is-active': route.path.endsWith('/settings') }"

@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowDown, Moon, Setting, Sunny, SwitchButton } from '@element-plus/icons-vue'
+import { ArrowDown, Moon, Setting, Sunny, SwitchButton, User } from '@element-plus/icons-vue'
 
 import UserAvatar from '@/components/UserAvatar.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -24,6 +24,10 @@ async function handleCommand(command: string | number | object): Promise<void> {
   }
   if (command === 'home') {
     await router.push('/')
+    return
+  }
+  if (command === 'user-center') {
+    await router.push('/user')
     return
   }
   if (command === 'logout') {
@@ -95,6 +99,9 @@ async function handleCommand(command: string | number | object): Promise<void> {
         <el-dropdown-menu>
           <el-dropdown-item command="home">
             <el-icon><Setting /></el-icon>返回首页
+          </el-dropdown-item>
+          <el-dropdown-item v-if="auth.isAdmin" command="user-center">
+            <el-icon><User /></el-icon>用户中心
           </el-dropdown-item>
           <el-dropdown-item command="settings">
             <el-icon><Setting /></el-icon>账号设置
