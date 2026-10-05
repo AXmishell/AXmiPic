@@ -38,6 +38,8 @@ type Deps struct {
 	UploadLimiter *auth.UploadLimiter
 	// ImageLimiter 按 IP 对公开图片服务和转换进行限流。
 	ImageLimiter *auth.RateLimiter
+	// ShareLimiter 按 IP 对分享访问（密码校验）进行限流，防止暴力破解。
+	ShareLimiter *auth.RateLimiter
 	// PolicyLimiter 为策略驱动的动态限流器；非 nil 且配置了 Policies 时，上传与
 	// 图片读取的限流改由角色组策略解析，覆盖 UploadLimiter/ImageLimiter。
 	PolicyLimiter *auth.RateLimiter
@@ -120,6 +122,8 @@ func NewRouter(d Deps) http.Handler {
 	if h.policyRateLimiter != nil {
 		imageLimit = h.imageRateLimit
 	}
+	// 分享访问（密码校验）按 IP 限流，避免暴力破解。
+	shareLimit := d.ShareLimiter.Middleware
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
@@ -161,7 +165,7 @@ func NewRouter(d Deps) http.Handler {
 				r.Get("/albums/{id}/images", h.listAlbumImages)
 				r.Get("/users/{id}", h.publicProfile)
 				r.Get("/shares/{token}", h.shareInfo)
-				r.Post("/shares/{token}/access", h.shareAccess)
+				r.With(shareLimit).Post("/shares/{token}/access", h.shareAccess)
 				r.Get("/announcements", h.listAnnouncements)
 				r.Get("/pages/{slug}", h.getPage)
 				r.Get("/plans", h.listPlans)

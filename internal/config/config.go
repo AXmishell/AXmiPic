@@ -78,6 +78,8 @@ var envPaths = map[string]string{
 	"limits_guest_burst":                 "limits.guest_burst",
 	"limits_image_per_minute":            "limits.image_per_minute",
 	"limits_image_burst":                 "limits.image_burst",
+	"limits_share_per_minute":            "limits.share_per_minute",
+	"limits_share_burst":                 "limits.share_burst",
 	"payment_default_gateway":            "payment.default_gateway",
 	"payment_alipay_enabled":             "payment.alipay.enabled",
 	"payment_alipay_gateway_url":         "payment.alipay.gateway_url",
@@ -254,6 +256,10 @@ type LimitsConfig struct {
 	GuestBurst      int `koanf:"guest_burst"`
 	ImagePerMinute  int `koanf:"image_per_minute"`
 	ImageBurst      int `koanf:"image_burst"`
+	// SharePerMinute 与 ShareBurst 限制单个 IP 对分享访问接口（密码校验）的
+	// 请求速率，避免暴力破解。
+	SharePerMinute int `koanf:"share_per_minute"`
+	ShareBurst     int `koanf:"share_burst"`
 }
 
 // LoggingConfig 配置日志。
@@ -397,6 +403,8 @@ func defaultConfig() Config {
 			GuestBurst:      2,
 			ImagePerMinute:  600,
 			ImageBurst:      120,
+			SharePerMinute:  30,
+			ShareBurst:      10,
 		},
 		Payment:  PaymentConfig{DefaultGateway: "manual"},
 		Security: SecurityConfig{Scanner: "builtin", CloudProcessor: "local"},
@@ -518,7 +526,8 @@ func (c Config) validate() error {
 	}
 	if c.Limits.UploadPerMinute < 0 || c.Limits.UploadBurst < 0 ||
 		c.Limits.GuestPerMinute < 0 || c.Limits.GuestBurst < 0 ||
-		c.Limits.ImagePerMinute < 0 || c.Limits.ImageBurst < 0 {
+		c.Limits.ImagePerMinute < 0 || c.Limits.ImageBurst < 0 ||
+		c.Limits.SharePerMinute < 0 || c.Limits.ShareBurst < 0 {
 		return fmt.Errorf("config: limits values must not be negative")
 	}
 	switch c.Payment.DefaultGateway {

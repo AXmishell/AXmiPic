@@ -339,6 +339,7 @@ func run() error {
 		Authenticator: authenticator,
 		// 上传与图片读取限流按角色组策略动态解析（PolicyLimiter + Policies）。
 		PolicyLimiter:    auth.NewDynamicRateLimiter(),
+		ShareLimiter:     auth.NewRateLimiter(cfg.Limits.SharePerMinute, cfg.Limits.ShareBurst),
 		RequireAuth:      cfg.Auth.RequireAuth,
 		AllowGuestUpload: cfg.Auth.AllowGuestUpload,
 		TrustProxy:       cfg.Server.TrustProxy,

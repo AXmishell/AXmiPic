@@ -119,6 +119,9 @@ limits:
   # Per-IP limit for public image serving and on-the-fly transformation.
   image_per_minute: 600
   image_burst: 120
+  # Per-IP limit for share access (password checks), to prevent brute force.
+  share_per_minute: 30
+  share_burst: 10
 
 payment:
   # Default payment gateway: manual | mock | alipay | wechat | epay

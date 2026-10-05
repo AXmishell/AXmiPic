@@ -85,14 +85,16 @@ func newPolicyTestEnv(t *testing.T) (*testEnv, *service.PolicyService) {
 		Albums:        service.NewAlbumService(repo),
 		Storage:       storageSvc,
 		Policies:      policies,
+		Shares:        service.NewShareService(repo, "http://localhost:8080"),
 		Authenticator: auth.NewAuthenticator(repo, issuer),
 		UploadLimiter: &auth.UploadLimiter{
 			User:  auth.NewRateLimiter(10000, 1000),
 			Guest: auth.NewRateLimiter(10000, 1000),
 		},
-		RequireAuth: true,
-		MaxUploadMB: 1,
-		Logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
+		ShareLimiter: auth.NewRateLimiter(1, 1),
+		RequireAuth:  true,
+		MaxUploadMB:  1,
+		Logger:       slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
 	return &testEnv{router: router, repo: repo, accounts: accounts}, policies
 }

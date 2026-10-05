@@ -183,6 +183,8 @@ limits:
   guest_burst: 2
   image_per_minute: 600                 # 公开图片读取/处理的每 IP 限流
   image_burst: 120
+  share_per_minute: 30                  # 分享访问（密码校验）的每 IP 限流，防暴力破解
+  share_burst: 10
 ```
 
 生产环境与多实例部署请务必显式设置固定的 `auth.jwt_secret`。当日 `jwt_secret` 与 `encryption_key` 都留空时，服务会生成一个主密钥并持久化到磁盘（SQLite 场景为数据库同目录下的 `.axmipic-key`，否则为 `./data/.axmipic-key`），从而保证重启后已加密入库的存储密钥仍可解密；单实例部署可依赖此机制开箱即用。
