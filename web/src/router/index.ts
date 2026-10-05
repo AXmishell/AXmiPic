@@ -180,6 +180,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '系统设置' },
       },
       {
+        path: 'mail-logs',
+        name: 'admin-mail-logs',
+        component: () => import('@/views/NotifyLogsView.vue'),
+        meta: { title: '邮件日志' },
+      },
+      {
         path: 'settings',
         name: 'admin-settings',
         component: () => import('@/views/SettingsView.vue'),
