@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
@@ -34,6 +34,22 @@ const resetDialog = ref(false)
 const resetSending = ref(false)
 const resetSubmitting = ref(false)
 const resetForm = reactive({ email: '', code: '', password: '', confirm: '' })
+
+// 普通登录页与管理员登录页共用本组件。切换路由时组件实例会被 Vue Router 复用，
+// 需监听 adminOnly 变化同步登录模式，否则地址变化但页面停留在旧模式。
+watch(
+  () => props.adminOnly,
+  (adminOnly) => {
+    mode.value = adminOnly ? 'admin' : 'login'
+    form.username = ''
+    form.password = ''
+    form.confirmPassword = ''
+    totpChallenge.value = ''
+    totpCode.value = ''
+    resetDialog.value = false
+    formRef.value?.clearValidate()
+  },
+)
 
 const rules: FormRules = {
   username: usernameRules('请输入用户名'),
