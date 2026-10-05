@@ -2,7 +2,7 @@
 
 轻量、可靠的自托管图床服务。提供图片上传、即时处理、多存储后端与后台管理，后端为单个 Go 二进制，前端为内嵌的单页应用。
 
-> 📖 完整文档见 **[在线文档站](https://axmishell.github.io/AXmiPic/)**。
+> 📖 完整文档见 **[在线文档站](https://axmipic.gpcn.cc/)**。
 
 ## 特性
 
@@ -90,13 +90,13 @@ make run            # 等价于 go run ./cmd/axmipic -config configs/config.exam
 
 | 文档 | 内容 |
 |------|------|
-| [快速开始](https://axmishell.github.io/AXmiPic/guide/getting-started) | 环境要求、构建运行、创建管理员 |
-| [配置说明](https://axmishell.github.io/AXmiPic/guide/configuration) | 服务器、数据库、存储、上传、认证与限流 |
-| [图片处理](https://axmishell.github.io/AXmiPic/guide/image-processing) | URL 处理参数、libvips 与处理驱动 |
-| [界面与路由](https://axmishell.github.io/AXmiPic/guide/ui-and-routes) | 用户中心 / 管理台路由、Guest 访客、安装向导 |
-| [Docker 部署](https://axmishell.github.io/AXmiPic/guide/deployment) | 镜像构建、GHCR、Docker Compose |
-| [API 参考](https://axmishell.github.io/AXmiPic/api/) | 全部 `/api/v1` 接口 |
-| [开发指南](https://axmishell.github.io/AXmiPic/dev/) | 本地开发、SDK、持续集成、目录结构 |
+| [快速开始](https://axmipic.gpcn.cc/guide/getting-started) | 环境要求、构建运行、创建管理员 |
+| [配置说明](https://axmipic.gpcn.cc/guide/configuration) | 服务器、数据库、存储、上传、认证与限流 |
+| [图片处理](https://axmipic.gpcn.cc/guide/image-processing) | URL 处理参数、libvips 与处理驱动 |
+| [界面与路由](https://axmipic.gpcn.cc/guide/ui-and-routes) | 用户中心 / 管理台路由、Guest 访客、安装向导 |
+| [Docker 部署](https://axmipic.gpcn.cc/guide/deployment) | 镜像构建、GHCR、Docker Compose |
+| [API 参考](https://axmipic.gpcn.cc/api/) | 全部 `/api/v1` 接口 |
+| [开发指南](https://axmipic.gpcn.cc/dev/) | 本地开发、SDK、持续集成、目录结构 |
 
 本地预览文档站：
 
@@ -117,7 +117,7 @@ docker run -d --name axmipic \
   ghcr.io/axmishell/axmipic:latest
 ```
 
-完整说明（镜像构建、GHCR、Docker Compose、安装向导）见 [Docker 部署](https://axmishell.github.io/AXmiPic/guide/deployment)。
+完整说明（镜像构建、GHCR、Docker Compose、安装向导）见 [Docker 部署](https://axmipic.gpcn.cc/guide/deployment)。
 
 ## 许可证
 

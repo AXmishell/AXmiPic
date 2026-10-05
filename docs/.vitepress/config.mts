@@ -1,12 +1,16 @@
+import process from 'node:process'
 import { defineConfig } from 'vitepress'
 
 export default defineConfig({
   lang: 'zh-CN',
   title: 'AXmiPic',
   description: '轻量、可靠的自托管图床服务',
-  base: '/AXmiPic/',
+  // 站点通过自定义域名 axmipic.gpcn.cc 在根路径提供，故 base 为 '/'。
+  // GitHub Pages 会把默认地址 axmishell.github.io/AXmiPic/ 301 跳转到该域名根路径。
+  // 若改回不带自定义域名的部署，可设 DOCS_BASE=/AXmiPic/ 覆盖。
+  base: process.env.DOCS_BASE ?? '/',
   lastUpdated: true,
-  head: [['link', { rel: 'icon', type: 'image/svg+xml', href: '/AXmiPic/favicon.svg' }]],
+  head: [['link', { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' }]],
   themeConfig: {
     nav: [
       { text: '指南', link: '/guide/', activeMatch: '/guide/' },
