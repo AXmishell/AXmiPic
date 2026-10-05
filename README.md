@@ -596,8 +596,6 @@ docker pull ghcr.io/axmishell/axmipic:latest
 仓库根目录提供 `docker-compose.yml`，默认引用 `ghcr.io/axmishell/axmipic:latest`，并使用**安装向导模式**：
 
 ```bash
-cp .env.example .env      # 可选：设置固定的 JWT 密钥
-docker compose pull
 docker compose up -d
 docker compose logs -f
 ```
@@ -606,9 +604,8 @@ docker compose logs -f
 
 - 向导会把数据库连接等写入具名卷 `axmipic-config`（容器内 `/app/configs/config.yaml`）并初始化目标数据库；数据库切换在**重启容器后**生效。
 - 数据（SQLite 数据库、本地上传文件、自动生成的主密钥）保存在具名卷 `axmipic-data`；`docker compose down` 不删除数据，`docker compose down -v` 会连同数据卷一并删除。
-- 如需 PostgreSQL，取消 `docker-compose.yml` 中 `postgres` 服务的注释，并在向导中选择 `postgres` 并填写指向 `postgres` 的 DSN。
+- 需要自定义时，可给服务添加 `environment:` 用 `AXMIPIC_*` 覆盖单项配置（如 PostgreSQL 用 `AXMIPIC_DATABASE_DRIVER=postgres`、`AXMIPIC_DATABASE_DSN=host=... port=5432 user=... password=... dbname=... sslmode=disable`），或挂载 `configs/config.yaml`；也可设 `AXMIPIC_INSTALL_DISABLED=true` + `AXMIPIC_AUTH_BOOTSTRAP_ADMIN=admin:<密码>` 跳过向导。
 - 镜像为 distroless，未内置 healthcheck，可通过外部探测 `GET /healthz` 做健康检查。
-- **非向导模式**（适合自动化部署）：将 `AXMIPIC_INSTALL_DISABLED` 设为 `"true"`，并设置 `AXMIPIC_AUTH_BOOTSTRAP_ADMIN: "admin:<密码>"`，即可跳过向导并在首次启动时创建管理员；此时数据库连接改由 `AXMIPIC_DATABASE_DRIVER` / `AXMIPIC_DATABASE_DSN` 配置。
 
 ## 开发
 
