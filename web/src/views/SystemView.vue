@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Refresh } from '@element-plus/icons-vue'
+import { DataLine, Monitor, Odometer, Refresh, SetUp } from '@element-plus/icons-vue'
 
 import { fetchStats } from '@/api/admin'
 import {
@@ -367,7 +367,13 @@ onBeforeUnmount(() => {
         <section class="settings-grid">
           <article class="ax-card">
             <header class="ax-card__head">
-              <h2 class="ax-card__title">运行环境</h2>
+              <div class="card-head">
+                <span class="card-head__icon"><el-icon><Monitor /></el-icon></span>
+                <div class="card-head__text">
+                  <h2 class="ax-card__title">运行环境</h2>
+                  <p class="card-head__sub">站点地址、数据库与运行平台</p>
+                </div>
+              </div>
             </header>
             <div class="ax-card__body">
               <dl class="info-list">
@@ -381,7 +387,13 @@ onBeforeUnmount(() => {
 
           <article class="ax-card">
             <header class="ax-card__head">
-              <h2 class="ax-card__title">策略概览</h2>
+              <div class="card-head">
+                <span class="card-head__icon"><el-icon><SetUp /></el-icon></span>
+                <div class="card-head__text">
+                  <h2 class="ax-card__title">策略概览</h2>
+                  <p class="card-head__sub">注册、上传、配额与限流</p>
+                </div>
+              </div>
             </header>
             <div class="ax-card__body">
               <dl class="info-list">
@@ -396,7 +408,13 @@ onBeforeUnmount(() => {
 
         <article v-if="process" class="ax-card settings-block">
           <header class="ax-card__head">
-            <h2 class="ax-card__title">进程概览</h2>
+            <div class="card-head">
+              <span class="card-head__icon"><el-icon><DataLine /></el-icon></span>
+              <div class="card-head__text">
+                <h2 class="ax-card__title">进程概览</h2>
+                <p class="card-head__sub">Goroutine、内存、GC 与运行时长</p>
+              </div>
+            </div>
             <span class="process-hint">每 5 秒自动刷新</span>
           </header>
           <div class="ax-card__body process-grid">
@@ -409,9 +427,32 @@ onBeforeUnmount(() => {
 
         <article v-if="stats" class="ax-card settings-block">
           <header class="ax-card__head">
-            <h2 class="ax-card__title">系统信息</h2>
+            <div class="card-head">
+              <span class="card-head__icon"><el-icon><Odometer /></el-icon></span>
+              <div class="card-head__text">
+                <h2 class="ax-card__title">系统信息</h2>
+                <p class="card-head__sub">规模、用量与能力</p>
+              </div>
+            </div>
           </header>
           <div class="ax-card__body">
+            <div class="stat-grid">
+              <div class="stat-tile">
+                <span class="stat-tile__label">用户数</span>
+                <span class="stat-tile__value">{{ formatNumber(stats.users) }}</span>
+                <span class="stat-tile__meta">管理员 {{ formatNumber(stats.admins) }}</span>
+              </div>
+              <div class="stat-tile">
+                <span class="stat-tile__label">图片数</span>
+                <span class="stat-tile__value">{{ formatNumber(stats.images) }}</span>
+                <span class="stat-tile__meta">已存储图片</span>
+              </div>
+              <div class="stat-tile">
+                <span class="stat-tile__label">存储总用量</span>
+                <span class="stat-tile__value">{{ formatBytes(stats.total_bytes) }}</span>
+                <span class="stat-tile__meta">全部存储后端</span>
+              </div>
+            </div>
             <dl class="info-list">
               <div class="info-list__row">
                 <dt>存储驱动</dt>
@@ -420,18 +461,6 @@ onBeforeUnmount(() => {
               <div class="info-list__row">
                 <dt>处理器</dt>
                 <dd><el-tag size="small" effect="plain">{{ stats.processor }}</el-tag></dd>
-              </div>
-              <div class="info-list__row">
-                <dt>用户数</dt>
-                <dd>{{ formatNumber(stats.users) }}（管理员 {{ formatNumber(stats.admins) }}）</dd>
-              </div>
-              <div class="info-list__row">
-                <dt>图片数</dt>
-                <dd>{{ formatNumber(stats.images) }}</dd>
-              </div>
-              <div class="info-list__row">
-                <dt>存储总用量</dt>
-                <dd>{{ formatBytes(stats.total_bytes) }}</dd>
               </div>
               <div class="info-list__row">
                 <dt>支持格式</dt>
@@ -798,6 +827,75 @@ onBeforeUnmount(() => {
   line-height: 1.5;
 }
 
+/* 概览卡片头：图标 + 标题 + 副标题。 */
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--ax-space-3);
+  min-width: 0;
+}
+
+.card-head__icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--ax-radius-md);
+  background: var(--ax-accent-soft);
+  color: var(--ax-accent-bright);
+  font-size: 18px;
+}
+
+.card-head__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.card-head__sub {
+  margin: 2px 0 0;
+  color: var(--ax-text-4);
+  font-size: var(--ax-text-xs);
+}
+
+/* 系统信息的统计方块。 */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr));
+  gap: var(--ax-space-3);
+  margin-bottom: var(--ax-space-4);
+}
+
+.stat-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--ax-space-3) var(--ax-space-4);
+  border: 1px solid var(--ax-border-subtle);
+  border-radius: var(--ax-radius-md);
+  background: linear-gradient(180deg, var(--ax-tint-weak), transparent);
+}
+
+.stat-tile__label {
+  color: var(--ax-text-4);
+  font-size: var(--ax-text-xs);
+}
+
+.stat-tile__value {
+  color: var(--ax-text);
+  font-size: var(--ax-text-xl);
+  font-weight: var(--ax-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--ax-tracking-tight);
+}
+
+.stat-tile__meta {
+  color: var(--ax-text-4);
+  font-size: var(--ax-text-xs);
+}
+
 .process-hint {
   color: var(--ax-text-4);
   font-size: var(--ax-text-xs);
@@ -810,13 +908,33 @@ onBeforeUnmount(() => {
 }
 
 .process-item {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: var(--ax-space-3) var(--ax-space-4);
+  padding: var(--ax-space-3) var(--ax-space-4) var(--ax-space-3) calc(var(--ax-space-4) + 4px);
   background: var(--ax-tint-weak);
   border: 1px solid var(--ax-border-subtle);
   border-radius: var(--ax-radius-md);
+  overflow: hidden;
+  transition: background var(--ax-duration-fast) var(--ax-ease),
+    border-color var(--ax-duration-fast) var(--ax-ease);
+}
+
+.process-item::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--ax-accent);
+  opacity: 0.55;
+}
+
+.process-item:hover {
+  background: var(--ax-tint);
+  border-color: var(--ax-border);
 }
 
 .process-item__label {
@@ -826,7 +944,7 @@ onBeforeUnmount(() => {
 
 .process-item__value {
   color: var(--ax-text);
-  font-size: var(--ax-text-md);
+  font-size: var(--ax-text-lg);
   font-weight: var(--ax-weight-semibold);
   font-variant-numeric: tabular-nums;
 }
@@ -883,7 +1001,6 @@ onBeforeUnmount(() => {
 .info-list {
   display: flex;
   flex-direction: column;
-  gap: var(--ax-space-3);
   margin: 0;
   width: 100%;
 }
@@ -894,6 +1011,17 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   gap: var(--ax-space-4);
   min-width: 0;
+  padding: var(--ax-space-2) var(--ax-space-2);
+  border-radius: var(--ax-radius-sm);
+  transition: background var(--ax-duration-fast) var(--ax-ease);
+}
+
+.info-list__row + .info-list__row {
+  border-top: 1px solid var(--ax-border-subtle);
+}
+
+.info-list__row:hover {
+  background: var(--ax-tint-weak);
 }
 
 .info-list__row dt {
@@ -907,6 +1035,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   color: var(--ax-text-2);
   font-size: var(--ax-text-sm);
+  font-weight: var(--ax-weight-medium);
   text-align: right;
   overflow-wrap: anywhere;
 }
