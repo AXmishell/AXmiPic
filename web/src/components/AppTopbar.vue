@@ -20,7 +20,7 @@ const inAdminArea = computed(() => route.path.startsWith('/admin'))
 
 async function handleCommand(command: string | number | object): Promise<void> {
   if (command === 'settings') {
-    await router.push(auth.isAdmin ? '/admin/settings' : '/user/settings')
+    await router.push(inAdminArea.value ? '/admin/settings' : '/user/settings')
     return
   }
   if (command === 'home') {
@@ -105,10 +105,10 @@ async function handleCommand(command: string | number | object): Promise<void> {
           <el-dropdown-item command="home">
             <el-icon><Setting /></el-icon>返回首页
           </el-dropdown-item>
-          <el-dropdown-item v-if="auth.isAdmin && !inAdminArea" command="user-center">
+          <el-dropdown-item v-if="auth.isAdmin && inAdminArea" command="user-center">
             <el-icon><User /></el-icon>用户中心
           </el-dropdown-item>
-          <el-dropdown-item v-if="auth.isAdmin && inAdminArea" command="admin-console">
+          <el-dropdown-item v-if="auth.isAdmin && !inAdminArea" command="admin-console">
             <el-icon><Management /></el-icon>管理控制台
           </el-dropdown-item>
           <el-dropdown-item command="settings">
