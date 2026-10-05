@@ -164,6 +164,41 @@ func TestUploadDeduplicatesIdenticalContent(t *testing.T) {
 	}
 }
 
+func TestUploadDedupIsPerOwner(t *testing.T) {
+	repo := newRepo(t)
+	svc := service.NewUploadService(repo, managerWithFallback(t, newFakeStorage()), pngPolicy())
+	ctx := context.Background()
+	newCustomer(t, repo, "u1")
+	newCustomer(t, repo, "u2")
+	u1 := &auth.Principal{UserID: "u1", Username: "u1", Role: auth.RoleUser}
+	u2 := &auth.Principal{UserID: "u2", Username: "u2", Role: auth.RoleUser}
+	data := testPNG(t)
+
+	first, err := svc.Upload(ctx, u1, service.UploadInput{Data: data, MimeType: "image/png"})
+	if err != nil {
+		t.Fatalf("u1 first Upload: %v", err)
+	}
+	// 同一所有者重复上传相同内容应去重。
+	again, err := svc.Upload(ctx, u1, service.UploadInput{Data: data, MimeType: "image/png"})
+	if err != nil {
+		t.Fatalf("u1 second Upload: %v", err)
+	}
+	if again.ID != first.ID || again.Key != first.Key {
+		t.Fatalf("same-owner dedup failed: %s vs %s", again.ID, first.ID)
+	}
+	// 不同所有者上传相同内容应各自持有独立记录与对象，不得共享。
+	second, err := svc.Upload(ctx, u2, service.UploadInput{Data: data, MimeType: "image/png"})
+	if err != nil {
+		t.Fatalf("u2 Upload: %v", err)
+	}
+	if second.ID == first.ID || second.Key == first.Key {
+		t.Fatalf("cross-owner content should not be shared: %s/%s vs %s/%s", first.ID, first.Key, second.ID, second.Key)
+	}
+	if second.Hash != first.Hash {
+		t.Fatalf("hash = %q, want %q", second.Hash, first.Hash)
+	}
+}
+
 func TestUploadRenamesAndRecordsOriginalNameAndHash(t *testing.T) {
 	repo := newRepo(t)
 	svc := service.NewUploadService(repo, managerWithFallback(t, newFakeStorage()), pngPolicy())
@@ -179,19 +214,19 @@ func TestUploadRenamesAndRecordsOriginalNameAndHash(t *testing.T) {
 		t.Fatalf("Upload: %v", err)
 	}
 
-	// 存储键与文件名应为哈希命名，而非原始名。
+	// 存储键与文件名应为随机命名，而非原始名或内容哈希。
 	wantHash := contentHashForTest(data)
 	if dto.Hash != wantHash {
 		t.Fatalf("hash = %q, want %q", dto.Hash, wantHash)
 	}
-	if dto.Filename != wantHash+".png" {
-		t.Fatalf("filename = %q, want %q", dto.Filename, wantHash+".png")
+	if !strings.HasSuffix(dto.Filename, ".png") || strings.Contains(dto.Filename, wantHash) {
+		t.Fatalf("filename = %q, want a random .png name", dto.Filename)
 	}
-	if !strings.HasSuffix(dto.Key, "/"+wantHash+".png") {
-		t.Fatalf("key = %q, want to end with hash-based name", dto.Key)
+	if !strings.HasSuffix(dto.Key, "/"+dto.Filename) {
+		t.Fatalf("key = %q should end with filename %q", dto.Key, dto.Filename)
 	}
-	if strings.Contains(dto.Key, "我的") {
-		t.Fatalf("key %q leaks the original name", dto.Key)
+	if strings.Contains(dto.Key, wantHash) || strings.Contains(dto.Key, "我的") {
+		t.Fatalf("key %q should be random and not leak content hash or original name", dto.Key)
 	}
 	// 原文件名应被保留。
 	if dto.OriginalName != "我的 照片.PNG" {

@@ -43,6 +43,27 @@ func (r *Repository) GetByKey(ctx context.Context, key string) (*Image, error) {
 	return &image, nil
 }
 
+// GetByHashAndUser 返回由 ownerID 拥有、内容哈希为 hash 的图像，或 ErrNotFound。
+// ownerID 为空字符串时匹配 user_id IS NULL（匿名上传）。同一所有者存在多张相同
+// 内容的记录时返回最早创建的一张。它用于按所有者的内容去重。
+func (r *Repository) GetByHashAndUser(ctx context.Context, hash, ownerID string) (*Image, error) {
+	query := r.db.WithContext(ctx).Where("hash = ?", hash)
+	if ownerID == "" {
+		query = query.Where("user_id IS NULL")
+	} else {
+		query = query.Where("user_id = ?", ownerID)
+	}
+	var image Image
+	err := query.Order("created_at ASC").First(&image).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, fmt.Errorf("store: image hash %q: %w", hash, ErrNotFound)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("store: get image by hash %q: %w", hash, err)
+	}
+	return &image, nil
+}
+
 // ImageListOptions 约束图片列表查询。
 type ImageListOptions struct {
 	// UserID 非空时仅返回该用户拥有的图片。

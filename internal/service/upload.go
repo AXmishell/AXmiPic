@@ -269,8 +269,9 @@ func (s *UploadService) BackendForKey(ctx context.Context, key string) (storage.
 	return s.backendFor(image), nil
 }
 
-// Upload 校验、存储并记录一张归 principal 所有的图片。相同内容会按其
-// 内容寻址键进行去重。
+// Upload 校验、存储并记录一张归 principal 所有的图片。存储键为随机、不可猜测
+// 的路径；相同所有者上传相同内容时按内容哈希去重，不同所有者各自持有独立对象，
+// 避免跨用户泄露与删除耦合。
 func (s *UploadService) Upload(ctx context.Context, principal *auth.Principal, in UploadInput) (*ImageDTO, error) {
 	policy, allowed, err := s.policyFor(ctx, principal)
 	if err != nil {
@@ -287,11 +288,11 @@ func (s *UploadService) Upload(ctx context.Context, principal *auth.Principal, i
 		return nil, err
 	}
 	hash := contentHash(in.Data)
-	key := hashKey(hash, in.MimeType)
-	filename := path.Base(key)
-	originalName := sanitizeOriginalName(in.OriginalName)
+	ownerID := ownerIDOf(principal)
+	ownerKey := stringValue(ownerID)
 
-	existing, err := s.repo.GetByKey(ctx, key)
+	// 同一所有者的相同内容直接复用已有记录。
+	existing, err := s.repo.GetByHashAndUser(ctx, hash, ownerKey)
 	if err == nil {
 		return toDTO(existing), nil
 	}
@@ -299,7 +300,6 @@ func (s *UploadService) Upload(ctx context.Context, principal *auth.Principal, i
 		return nil, fmt.Errorf("upload: lookup existing image: %w", err)
 	}
 
-	ownerID := ownerIDOf(principal)
 	release, ok, err := s.reserveQuota(ctx, principal, ownerID, size)
 	if err != nil {
 		return nil, err
@@ -314,21 +314,14 @@ func (s *UploadService) Upload(ctx context.Context, principal *auth.Principal, i
 		}
 	}()
 
-	// 如果上一次写入被中断，某个内容寻址对象可能已存在却没有元数据行；
-	// 此时复用它，而不是再次写入。
 	backend := s.manager.Current()
 	if backend == nil {
 		return nil, fmt.Errorf("%w: no storage backend configured", ErrStorageConfig)
 	}
 	currentID := s.manager.CurrentID()
-	exists, err := backend.Exists(ctx, key)
-	if err != nil {
-		return nil, fmt.Errorf("upload: check object existence: %w", err)
-	}
-	if !exists {
-		if err := backend.Put(ctx, key, bytes.NewReader(in.Data), size, in.MimeType); err != nil {
-			return nil, fmt.Errorf("upload: store object: %w", err)
-		}
+	key := randomKey(in.MimeType)
+	if err := backend.Put(ctx, key, bytes.NewReader(in.Data), size, in.MimeType); err != nil {
+		return nil, fmt.Errorf("upload: store object: %w", err)
 	}
 
 	width, height := decodeDimensions(in.Data)
@@ -337,8 +330,8 @@ func (s *UploadService) Upload(ctx context.Context, principal *auth.Principal, i
 		Key:          key,
 		UserID:       ownerID,
 		StorageID:    storageIDPtr(currentID),
-		OriginalName: originalName,
-		Filename:     filename,
+		OriginalName: sanitizeOriginalName(in.OriginalName),
+		Filename:     path.Base(key),
 		Hash:         hash,
 		URL:          s.urlFor(backend, key),
 		Size:         size,
@@ -347,8 +340,10 @@ func (s *UploadService) Upload(ctx context.Context, principal *auth.Principal, i
 		Height:       height,
 	}
 	if err := s.repo.Create(ctx, image); err != nil {
-		// 并发上传相同内容可能已先插入该行；复用那条记录并释放我们的预留。
-		if concurrent, getErr := s.repo.GetByKey(ctx, key); getErr == nil {
+		// 并发上传相同内容可能已先插入记录；此时删除我们刚写入的独立对象并复用
+		// 已有记录。
+		_ = backend.Delete(context.WithoutCancel(ctx), key)
+		if concurrent, getErr := s.repo.GetByHashAndUser(ctx, hash, ownerKey); getErr == nil {
 			return toDTO(concurrent), nil
 		}
 		return nil, fmt.Errorf("upload: record image: %w", err)
@@ -379,7 +374,7 @@ func (s *UploadService) Presign(ctx context.Context, principal *auth.Principal, 
 	}
 
 	backend := s.manager.Current()
-	key := directKey(in.MimeType)
+	key := randomKey(in.MimeType)
 	req, err := presigner.PresignPut(ctx, key, storage.PresignOptions{
 		ContentType:         in.MimeType,
 		AllowedContentTypes: policy.AllowedMIMETypes,
@@ -909,9 +904,18 @@ func storageIDValue(id *string) string {
 	return *id
 }
 
-// directKey 为直传到存储的上传构建一个按日期分区、唯一的键，此类上传
-// 服务器不会看到其字节内容，因而无法进行内容寻址。
-func directKey(mimeType string) string {
+// stringValue 安全地取出字符串指针的值；nil 返回空字符串。
+func stringValue(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+// randomKey 构建一个按日期分区、随机且不可猜测的存储键，形如
+// `2006/01/02/<uuid><扩展名>`。存储键不再与内容哈希相关，因此私有图片无法
+// 通过已知内容推断出 URL；内容哈希单独记录在数据库中用于按所有者去重。
+func randomKey(mimeType string) string {
 	return path.Join(time.Now().UTC().Format("2006/01/02"), uuid.NewString()+extensionForMIME(mimeType))
 }
 
@@ -919,12 +923,6 @@ func directKey(mimeType string) string {
 func contentHash(data []byte) string {
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
-}
-
-// hashKey 依据内容哈希构建「重命名」后的、以斜杠分隔的存储键：
-// 前两级为哈希前缀的目录，最后一段为 `<hash><扩展名>`。
-func hashKey(hash, mimeType string) string {
-	return path.Join(hash[0:2], hash[2:4], hash+extensionForMIME(mimeType))
 }
 
 // maxOriginalNameBytes 限制原始文件名的字节长度，与数据库列宽保持一致。
