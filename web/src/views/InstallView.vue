@@ -20,18 +20,37 @@ const submitting = ref(false)
 const formRef = ref<FormInstance>()
 const done = ref(false)
 
-const form = reactive<InstallInput>({
+const form = reactive<InstallForm>({
   site_name: 'AXmiPic',
   base_url: window.location.origin,
   database_driver: 'sqlite',
   database_dsn: './data/axmipic.db',
   admin_username: '',
   admin_password: '',
+  admin_password_confirm: '',
   storage_driver: 'local',
   storage_root: './data/uploads',
   allow_registration: true,
   allow_guest_upload: true,
 })
+
+/** 仅用于前端校验「确认密码」，不提交给后端。 */
+interface InstallForm extends InstallInput {
+  admin_password_confirm: string
+}
+
+/** 校验两次输入的密码是否一致。 */
+function validatePasswordConfirm(_rule: unknown, value: string, callback: (error?: Error) => void): void {
+  if (!value) {
+    callback(new Error('请再次输入管理员密码'))
+    return
+  }
+  if (value !== form.admin_password) {
+    callback(new Error('两次输入的密码不一致'))
+    return
+  }
+  callback()
+}
 
 const rules: FormRules = {
   base_url: [{ required: true, message: '请输入站点地址', trigger: 'blur' }],
@@ -41,6 +60,23 @@ const rules: FormRules = {
     { required: true, message: '请输入管理员密码', trigger: 'blur' },
     { min: 8, max: 72, message: '密码长度为 8 到 72 个字符', trigger: 'blur' },
   ],
+  admin_password_confirm: [{ validator: validatePasswordConfirm, trigger: 'blur' }],
+}
+
+/** 去除仅用于前端校验的字段后，构造提交给后端的输入。 */
+function installPayload(): InstallInput {
+  return {
+    site_name: form.site_name,
+    base_url: form.base_url,
+    database_driver: form.database_driver,
+    database_dsn: form.database_dsn,
+    admin_username: form.admin_username,
+    admin_password: form.admin_password,
+    storage_driver: form.storage_driver,
+    storage_root: form.storage_root,
+    allow_registration: form.allow_registration,
+    allow_guest_upload: form.allow_guest_upload,
+  }
 }
 
 const steps = [
@@ -130,7 +166,9 @@ function generatePassword(): void {
   const charset = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*'
   const bytes = new Uint32Array(18)
   crypto.getRandomValues(bytes)
-  form.admin_password = Array.from(bytes, (n) => charset[n % charset.length]).join('')
+  const password = Array.from(bytes, (n) => charset[n % charset.length]).join('')
+  form.admin_password = password
+  form.admin_password_confirm = password
 }
 
 async function next(): Promise<void> {
@@ -151,7 +189,7 @@ async function next(): Promise<void> {
     }
   }
   if (step.value === 1 && instance) {
-    const ok = await instance.validateField(['admin_username', 'admin_password']).catch(() => false)
+    const ok = await instance.validateField(['admin_username', 'admin_password', 'admin_password_confirm']).catch(() => false)
     if (!ok) return
   }
   step.value = Math.min(step.value + 1, steps.length - 1)
@@ -165,7 +203,7 @@ async function submit(): Promise<void> {
   if (submitting.value) return
   submitting.value = true
   try {
-    await runInstall({ ...form })
+    await runInstall(installPayload())
     app.markInstalled()
     done.value = true
     step.value = steps.length - 1
@@ -316,6 +354,15 @@ onMounted(async () => {
                   <el-button :icon="Refresh" @click="generatePassword">随机</el-button>
                 </template>
               </el-input>
+            </el-form-item>
+            <el-form-item label="确认密码" prop="admin_password_confirm">
+              <el-input
+                v-model="form.admin_password_confirm"
+                type="password"
+                show-password
+                :prefix-icon="Lock"
+                placeholder="再次输入管理员密码"
+              />
             </el-form-item>
             <p class="install__note">
               <el-icon><Key /></el-icon>
