@@ -167,6 +167,9 @@ const providerLabels: Record<string, string> = {
   epay: '易支付',
 }
 
+// knownGateways 是内置渠道，便于在同一次保存中把尚未启用的渠道设为默认。
+const knownGateways = ['manual', 'mock', 'alipay', 'wechat', 'epay']
+
 const paymentSaving = ref(false)
 const paymentMeta = ref<PaymentSettings | null>(null)
 const paymentGateways = ref<string[]>([])
@@ -196,6 +199,19 @@ const paymentForm = reactive<PaymentSettingsInput>({
 })
 
 const providerLabel = (name: string): string => providerLabels[name] ?? name
+
+/** 可选的默认渠道：内置渠道 ∪ 已注册渠道。 */
+const selectableGateways = computed(() => {
+  const set = new Set<string>(knownGateways)
+  for (const name of paymentGateways.value) {
+    set.add(name)
+  }
+  return Array.from(set)
+})
+
+/** 默认渠道选项标签；未启用时标注，便于理解保存后的回退行为。 */
+const gatewayOptionLabel = (name: string): string =>
+  paymentGateways.value.includes(name) ? providerLabel(name) : `${providerLabel(name)}（未启用）`
 
 /** 用服务端返回的配置填充表单，清空密钥输入框（空表示保持不变）。 */
 function fillPayment(cfg: PaymentSettings): void {
@@ -333,7 +349,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="ax-page">
-    <PageHeader title="系统设置" description="查看实例运行环境、配置通知渠道与系统集成。">
+    <PageHeader title="系统设置" description="查看实例运行环境，配置通知、支付渠道与系统集成。">
       <template #actions>
         <el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button>
       </template>
@@ -538,15 +554,15 @@ onBeforeUnmount(() => {
           <div class="ax-card__body">
             <el-form label-position="top" class="smtp-form" @submit.prevent>
               <el-form-item label="默认支付渠道">
-                <el-select v-model="paymentForm.default_gateway" style="max-width: 240px">
+                <el-select v-model="paymentForm.default_gateway" style="max-width: 260px">
                   <el-option
-                    v-for="gateway in paymentGateways"
+                    v-for="gateway in selectableGateways"
                     :key="gateway"
-                    :label="providerLabel(gateway)"
+                    :label="gatewayOptionLabel(gateway)"
                     :value="gateway"
                   />
                 </el-select>
-                <span class="smtp-form__hint">仅可选择已启用的渠道</span>
+                <span class="smtp-form__hint">可选择任意内置渠道；保存后未启用的渠道会自动回退为人工核销</span>
               </el-form-item>
             </el-form>
 
