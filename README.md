@@ -591,6 +591,23 @@ docker pull ghcr.io/axmishell/axmipic:latest
 
 标签策略：`main`、默认分支的 `latest`、`sha-<short>`，以及版本标签对应的 `1.2`、`1.2.3`。Pull Request 只构建（amd64）不推送。
 
+### 使用 Docker Compose
+
+仓库根目录提供 `docker-compose.yml`，默认引用 `ghcr.io/axmishell/axmipic:latest`，使用具名卷持久化数据，并在首次启动时创建管理员：
+
+```bash
+cp .env.example .env      # 按需修改管理员密码与对外地址
+docker compose pull
+docker compose up -d
+docker compose logs -f
+```
+
+- 管理员账号为 `admin`，密码取自 `.env` 的 `AXMIPIC_ADMIN_PASSWORD`（默认 `change-me-please`，请务必修改）。
+- 数据（SQLite 数据库、本地上传文件、自动生成的主密钥）保存在具名卷 `axmipic-data`；`docker compose down` 不删除数据，`docker compose down -v` 会连同数据卷一并删除。
+- 如需 PostgreSQL，取消 `docker-compose.yml` 中 `postgres` 服务与对应 `AXMIPIC_DATABASE_*` 环境变量的注释后重启。
+- 镜像为 distroless，未内置 healthcheck，可通过外部探测 `GET /healthz` 做健康检查。
+- 如需自定义配置，可挂载 `./configs/config.yaml:/app/configs/config.yaml:ro`（与 `AXMIPIC_*` 环境变量可叠加）。
+
 ## 开发
 
 ```bash

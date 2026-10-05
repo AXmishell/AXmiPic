@@ -1,0 +1,67 @@
+# ---------------------------------------------------------------------------
+# AXmiPic Docker Compose 编排
+#
+#   docker compose pull          # 拉取镜像
+#   docker compose up -d         # 启动
+#   docker compose logs -f       # 查看日志
+#   docker compose down          # 停止（数据保留在具名卷中）
+#
+# 首次启动会自动创建管理员（仅当 admins 表为空时生效），
+# 账号 admin、密码取自 .env 的 AXMIPIC_ADMIN_PASSWORD（默认 change-me-please）。
+# 请复制 .env.example 为 .env 并按需修改。
+# ---------------------------------------------------------------------------
+services:
+  axmipic:
+    image: ghcr.io/axmishell/axmipic:latest
+    container_name: axmipic
+    restart: unless-stopped
+    ports:
+      # 主机端口:容器端口
+      - "8080:8080"
+    environment:
+      # 对外访问地址（生成图片/分享链接使用），请改为实际域名或 IP
+      AXMIPIC_SERVER_BASE_URL: "${AXMIPIC_BASE_URL:-http://localhost:8080}"
+      # 跳过安装向导，并依据下面的引导管理员初始化
+      AXMIPIC_INSTALL_DISABLED: "true"
+      AXMIPIC_AUTH_BOOTSTRAP_ADMIN: "admin:${AXMIPIC_ADMIN_PASSWORD:-change-me-please}"
+      # 生产环境建议固定 JWT 密钥；留空时服务会生成并持久化到数据卷
+      AXMIPIC_AUTH_JWT_SECRET: "${AXMIPIC_JWT_SECRET:-}"
+      # 位于可信反向代理之后时才开启，以解析 X-Forwarded-For / X-Real-IP
+      # AXMIPIC_SERVER_TRUST_PROXY: "true"
+      # 关闭公开注册 / 访客上传
+      # AXMIPIC_AUTH_ALLOW_REGISTRATION: "false"
+      # AXMIPIC_AUTH_ALLOW_GUEST_UPLOAD: "false"
+      # 使用 PostgreSQL 时取消注释，并启用文件底部的 postgres 服务
+      # AXMIPIC_DATABASE_DRIVER: "postgres"
+      # AXMIPIC_DATABASE_DSN: "host=postgres port=5432 user=axmipic password=axmipic dbname=axmipic sslmode=disable"
+    volumes:
+      # 持久化：SQLite 数据库、本地上传文件、自动生成的主密钥
+      - axmipic-data:/app/data
+      # 可选：挂载自定义配置文件（与上面的环境变量可叠加）
+      # - ./configs/config.yaml:/app/configs/config.yaml:ro
+    # 镜像为 distroless，容器内无 shell/curl，故未配置 healthcheck；
+    # 如需健康检查，可在宿主机或编排层探测 GET /healthz。
+    # healthcheck:
+    #   test: ["CMD", "/usr/local/bin/axmipic", "-h"]
+    #   interval: 30s
+
+  # 可选：PostgreSQL 后端。启用后同时设置上面的 AXMIPIC_DATABASE_DRIVER / DSN。
+  # postgres:
+  #   image: postgres:17-alpine
+  #   container_name: axmipic-postgres
+  #   restart: unless-stopped
+  #   environment:
+  #     POSTGRES_USER: axmipic
+  #     POSTGRES_PASSWORD: axmipic
+  #     POSTGRES_DB: axmipic
+  #   volumes:
+  #     - axmipic-postgres:/var/lib/postgresql/data
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U axmipic"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+
+volumes:
+  axmipic-data:
+  # axmipic-postgres:
