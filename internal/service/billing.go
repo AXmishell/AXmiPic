@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -165,13 +166,13 @@ func (s *BillingService) Gateway(name string) (payment.Gateway, bool) {
 }
 
 // HandleCallback 校验某个渠道的支付回调，并在成功时确认订单。它返回处理是否
-// 成功，供回调处理器决定响应内容。
-func (s *BillingService) HandleCallback(ctx context.Context, provider string, raw []byte) (*OrderDTO, error) {
+// 成功，供回调处理器决定响应内容。header 为回调请求头（微信平台签名校验需要）。
+func (s *BillingService) HandleCallback(ctx context.Context, provider string, header http.Header, raw []byte) (*OrderDTO, error) {
 	gateway, ok := s.gateways[provider]
 	if !ok {
 		return nil, fmt.Errorf("%w: unknown payment provider %q", ErrInvalidInput, provider)
 	}
-	callback, err := gateway.VerifyCallback(ctx, raw)
+	callback, err := gateway.VerifyCallback(ctx, header, raw)
 	if err != nil {
 		return nil, fmt.Errorf("handle callback: %w", err)
 	}
@@ -180,6 +181,18 @@ func (s *BillingService) HandleCallback(ctx context.Context, provider string, ra
 	}
 	if !callback.Success {
 		return nil, fmt.Errorf("%w: callback indicates an unsuccessful payment", ErrInvalidInput)
+	}
+	// 核对回调声明的金额与订单金额一致，防止金额被篡改或金额不匹配。
+	order, err := s.repo.GetOrderByID(ctx, callback.OrderID)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return nil, ErrOrderNotFound
+		}
+		return nil, fmt.Errorf("handle callback: %w", err)
+	}
+	if callback.HasAmount && callback.AmountCents != order.AmountCents {
+		return nil, fmt.Errorf("%w: callback amount %d does not match order amount %d",
+			ErrInvalidInput, callback.AmountCents, order.AmountCents)
 	}
 	return s.ConfirmOrder(ctx, callback.OrderID, provider, callback.TradeNo)
 }

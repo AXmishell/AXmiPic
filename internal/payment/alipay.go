@@ -139,7 +139,7 @@ func (g *AlipayGateway) Create(ctx context.Context, order Order) (*CreateResult,
 
 // VerifyCallback 校验支付宝异步通知的 RSA2 签名，并解析支付结果。raw 为通知
 // 表单的原始查询串（application/x-www-form-urlencoded）。
-func (g *AlipayGateway) VerifyCallback(_ context.Context, raw []byte) (*Callback, error) {
+func (g *AlipayGateway) VerifyCallback(_ context.Context, _ http.Header, raw []byte) (*Callback, error) {
 	values, err := url.ParseQuery(string(raw))
 	if err != nil {
 		return nil, fmt.Errorf("payment: alipay callback parse: %w", err)
@@ -160,12 +160,19 @@ func (g *AlipayGateway) VerifyCallback(_ context.Context, raw []byte) (*Callback
 	if t, err := time.ParseInLocation("2006-01-02 15:04:05", values.Get("gmt_payment"), time.Local); err == nil {
 		paidAt = t
 	}
-	return &Callback{
+	callback := &Callback{
 		OrderID: values.Get("out_trade_no"),
 		TradeNo: values.Get("trade_no"),
 		Success: success,
 		PaidAt:  paidAt,
-	}, nil
+	}
+	if amount := values.Get("total_amount"); amount != "" {
+		if cents, err := parseYuan(amount); err == nil {
+			callback.AmountCents = cents
+			callback.HasAmount = true
+		}
+	}
+	return callback, nil
 }
 
 // signAlipay 对参数（排除 sign 与空值）按字典序拼接后做 RSA2(SHA256) 签名。

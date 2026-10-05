@@ -280,18 +280,35 @@ func run() error {
 	}
 	if cfg.Payment.Wechat.Enabled {
 		wechat, err := payment.NewWechatGateway(payment.WechatOptions{
-			AppID:      cfg.Payment.Wechat.AppID,
-			MchID:      cfg.Payment.Wechat.MchID,
-			SerialNo:   cfg.Payment.Wechat.SerialNo,
-			PrivateKey: cfg.Payment.Wechat.PrivateKey,
-			APIv3Key:   cfg.Payment.Wechat.APIv3Key,
-			GatewayURL: cfg.Payment.Wechat.GatewayURL,
+			AppID:             cfg.Payment.Wechat.AppID,
+			MchID:             cfg.Payment.Wechat.MchID,
+			SerialNo:          cfg.Payment.Wechat.SerialNo,
+			PrivateKey:        cfg.Payment.Wechat.PrivateKey,
+			APIv3Key:          cfg.Payment.Wechat.APIv3Key,
+			PlatformPublicKey: cfg.Payment.Wechat.PlatformPublicKey,
+			PlatformSerialNo:  cfg.Payment.Wechat.PlatformSerialNo,
+			GatewayURL:        cfg.Payment.Wechat.GatewayURL,
 		})
 		if err != nil {
 			return fmt.Errorf("main: wechat gateway: %w", err)
 		}
 		gateways = append(gateways, wechat)
 		logger.Info("wechat payment gateway enabled")
+	}
+	if cfg.Payment.Epay.Enabled {
+		epay, err := payment.NewEpayGateway(payment.EpayOptions{
+			PID:        cfg.Payment.Epay.PID,
+			Key:        cfg.Payment.Epay.Key,
+			GatewayURL: cfg.Payment.Epay.GatewayURL,
+			APIURL:     cfg.Payment.Epay.APIURL,
+			SubmitURL:  cfg.Payment.Epay.SubmitURL,
+			PayType:    cfg.Payment.Epay.PayType,
+		})
+		if err != nil {
+			return fmt.Errorf("main: epay gateway: %w", err)
+		}
+		gateways = append(gateways, epay)
+		logger.Info("epay payment gateway enabled")
 	}
 	billingSvc := service.NewBillingService(repo, cfg.Server.BaseURL, gateways, cfg.Payment.DefaultGateway)
 

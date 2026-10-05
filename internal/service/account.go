@@ -622,10 +622,26 @@ func (s *AccountService) decryptTOTPSecret(encrypted string) (string, error) {
 func (s *AccountService) storeEmailCode(principal *auth.Principal, email, code string) {
 	s.codeMu.Lock()
 	defer s.codeMu.Unlock()
+	s.pruneEmailState(time.Now())
 	s.emailCodes[emailCodeKey(principal)] = pendingEmailCode{
 		email:   email,
 		code:    code,
 		expires: time.Now().Add(emailCodeTTL),
+	}
+}
+
+// pruneEmailState 清理已过期或非当日的内存状态，避免 map 无界增长。
+func (s *AccountService) pruneEmailState(now time.Time) {
+	today := now.Format("2006-01-02")
+	for key, pending := range s.emailCodes {
+		if now.After(pending.expires) {
+			delete(s.emailCodes, key)
+		}
+	}
+	for key, counts := range s.emailDaily {
+		if counts.day != today {
+			delete(s.emailDaily, key)
+		}
 	}
 }
 

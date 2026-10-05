@@ -288,6 +288,8 @@ processing:
 
 设置 `install.disabled: true` 可完全跳过安装检查（适用于测试与容器编排）。
 
+> 安全提示：未安装时 `POST /api/v1/install` 仅接受来自本机或私网地址的请求，避免实例在初始化前被公网访问时被他人抢先完成安装。请在服务器本机或内网完成初始化，或先配置 `auth.bootstrap_admin` 再启动。
+
 ## API
 
 所有接口以 `/api/v1` 为前缀，请求头使用 `Authorization: Bearer <令牌>`（会话 JWT 或 API 令牌）。响应统一为：
@@ -467,18 +469,21 @@ curl -X POST http://localhost:8080/api/v1/upload \
 
 ### 支付渠道
 
-支付通过 `internal/payment` 的可插拔 `Gateway` 接口实现，内置四种渠道：
+支付通过 `internal/payment` 的可插拔 `Gateway` 接口实现，内置五种渠道：
 
 | 渠道 | 说明 |
 |------|------|
-| `manual` | 人工核销：下单后由管理员确认付款 |
-| `mock` | 模拟收银台：仅用于开发，立即完成支付 |
+| `manual` | 人工核销：下单后由管理员在后台确认付款 |
+| `mock` | 模拟收银台：仅用于开发，普通用户可自助完成支付 |
 | `alipay` | 支付宝当面付（扫码），RSA2 签名下单与回调验签 |
-| `wechat` | 微信支付 v3 Native 扫码，SHA256-RSA 签名下单、AES-256-GCM 解密回调 |
+| `wechat` | 微信支付 v3 Native 扫码，SHA256-RSA 签名下单、AES-256-GCM 解密回调，支持平台证书验签 |
+| `epay` | 易支付（彩虹易支付兼容）聚合支付，MD5 签名下单与异步通知验签 |
 
-`payment.default_gateway` 选择默认渠道。支付宝在 `payment.alipay` 配置 `app_id`、`private_key`（应用私钥）、`public_key`（支付宝公钥）；微信在 `payment.wechat` 配置 `app_id`、`mch_id`、`serial_no`（商户证书序列号）、`private_key`（商户 API 私钥）、`api_v3_key`（32 字节）。凭据齐备并置 `enabled: true` 后渠道会在启动时注册。
+`payment.default_gateway` 选择默认渠道。支付宝在 `payment.alipay` 配置 `app_id`、`private_key`（应用私钥）、`public_key`（支付宝公钥）；微信在 `payment.wechat` 配置 `app_id`、`mch_id`、`serial_no`（商户证书序列号）、`private_key`（商户 API 私钥）、`api_v3_key`（32 字节），并强烈建议配置 `platform_public_key`（微信支付平台证书公钥）与可选的 `platform_serial_no`，以对回调 `Wechatpay-Signature` 做 RSA 验签；易支付在 `payment.epay` 配置 `pid`（商户号）、`key`（MD5 密钥）、`gateway_url`（站点根地址），可选 `api_url`、`submit_url`、`pay_type`（`alipay`/`wxpay`/`qqpay` 等）。凭据齐备并置 `enabled: true` 后渠道会在启动时注册。
 
-下单请求体的 `provider` 字段选择渠道；支付结果回调地址为 `POST /api/v1/payments/{provider}/callback`（支付宝返回纯文本 `success`，微信返回 200）。`GET /api/v1/payment-gateways` 返回已注册渠道列表。
+为避免绕过真实支付，普通用户只能自助完成 `mock` 订单；`manual` 订单需管理员通过 `POST /api/v1/admin/orders/{id}/pay` 核销；`alipay`/`wechat`/`epay` 订单只能由支付回调确认，且回调金额会与订单金额核对。
+
+下单请求体的 `provider` 字段选择渠道；支付结果回调地址为 `POST /api/v1/payments/{provider}/callback`（支付宝与易支付返回纯文本 `success`，微信返回 200）。`GET /api/v1/payment-gateways` 返回已注册渠道列表。
 
 ### 图片安全、云处理、短信与邮件
 

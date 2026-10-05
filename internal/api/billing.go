@@ -222,7 +222,7 @@ func (h *Handler) paymentCallback(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, http.StatusBadRequest, "cannot read body")
 		return
 	}
-	if _, err := h.billing.HandleCallback(r.Context(), provider, raw); err != nil {
+	if _, err := h.billing.HandleCallback(r.Context(), provider, r.Header, raw); err != nil {
 		h.logger.WarnContext(r.Context(), "payment callback rejected",
 			slog.String("provider", provider),
 			slog.Any("error", err),
@@ -230,8 +230,8 @@ func (h *Handler) paymentCallback(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, http.StatusBadRequest, "invalid callback")
 		return
 	}
-	// 支付宝期望纯文本 "success"，微信期望 200/204。
-	if provider == "alipay" {
+	// 支付宝与易支付期望纯文本 "success"，微信期望 200/204。
+	if provider == "alipay" || provider == "epay" {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("success"))

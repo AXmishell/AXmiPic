@@ -3,6 +3,7 @@ package service_test
 import (
 	"context"
 	"errors"
+	"net/http"
 	"testing"
 
 	"github.com/AXmishell/axmipic/internal/auth"
@@ -184,7 +185,7 @@ func (g stubGateway) Create(context.Context, payment.Order) (*payment.CreateResu
 	return &payment.CreateResult{TradeNo: "stub-" + g.name}, nil
 }
 
-func (g stubGateway) VerifyCallback(context.Context, []byte) (*payment.Callback, error) {
+func (g stubGateway) VerifyCallback(context.Context, http.Header, []byte) (*payment.Callback, error) {
 	return nil, payment.ErrUnsupported
 }
 

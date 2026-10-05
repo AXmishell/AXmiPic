@@ -121,7 +121,7 @@ limits:
   image_burst: 120
 
 payment:
-  # Default payment gateway: manual | mock | alipay | wechat
+  # Default payment gateway: manual | mock | alipay | wechat | epay
   default_gateway: "manual"
   # Alipay 当面付（扫码支付）。启用需填写 app_id、private_key、public_key。
   alipay:
@@ -144,6 +144,25 @@ payment:
     private_key: ""
     # APIv3 密钥（32 字节），用于解密回调。
     api_v3_key: ""
+    # 微信支付平台证书公钥（PEM 或裸 base64）；配置后会对回调
+    # Wechatpay-Signature 做 RSA 验签，强烈建议配置。
+    platform_public_key: ""
+    # 平台证书序列号；配置后校验回调头中的 serial。
+    platform_serial_no: ""
+  # 易支付（彩虹易支付兼容）聚合支付。启用需填写 pid、key、gateway_url。
+  epay:
+    enabled: false
+    # 商户号与密钥（MD5 签名）。
+    pid: ""
+    key: ""
+    # 站点根地址，例如 https://pay.example.com
+    gateway_url: ""
+    # 自定义下单/收银台地址；留空分别使用 <gateway_url>/mapi.php 与
+    # <gateway_url>/submit.php。
+    api_url: ""
+    submit_url: ""
+    # 支付通道：alipay、wxpay、qqpay 等；留空默认 alipay。
+    pay_type: "alipay"
 
 security:
   # Upload content scanner: none | builtin

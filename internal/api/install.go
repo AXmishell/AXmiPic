@@ -2,7 +2,9 @@ package api
 
 import (
 	"encoding/json"
+	"net"
 	"net/http"
+	"strings"
 
 	"github.com/AXmishell/axmipic/internal/service"
 )
@@ -38,10 +40,15 @@ func (h *Handler) installStatus(w http.ResponseWriter, r *http.Request) {
 	writeOK(w, installStatusResponse{Installed: status.Installed, LockFile: status.LockFile, Reasons: status.Reasons})
 }
 
-// runInstall 执行初始化。
+// runInstall 执行初始化。未安装时仅允许本机或私网来源调用，避免服务在初始化
+// 前被公网访问时被他人抢先完成安装并接管实例。
 func (h *Handler) runInstall(w http.ResponseWriter, r *http.Request) {
 	if h.install == nil {
 		writeError(w, http.StatusNotFound, http.StatusNotFound, "installer is not available")
+		return
+	}
+	if !h.install.IsInstalled() && !installAllowedFrom(r) {
+		writeError(w, http.StatusForbidden, http.StatusForbidden, "installation is only allowed from a local or private network")
 		return
 	}
 	var body installRequest
@@ -66,4 +73,18 @@ func (h *Handler) runInstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeOK(w, map[string]bool{"installed": true})
+}
+
+// installAllowedFrom 报告安装请求是否来自本机或私网地址。无法解析来源地址时
+// 拒绝，避免在来源不可信时放行安装。
+func installAllowedFrom(r *http.Request) bool {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = strings.TrimSpace(r.RemoteAddr)
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast()
 }

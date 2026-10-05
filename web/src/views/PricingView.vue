@@ -29,6 +29,7 @@ const providerLabels: Record<string, string> = {
   mock: '模拟支付',
   alipay: '支付宝',
   wechat: '微信支付',
+  epay: '易支付',
 }
 
 const priceLabel = (cents: number): string => (cents === 0 ? '免费' : `¥${(cents / 100).toFixed(2)}`)

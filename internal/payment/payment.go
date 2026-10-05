@@ -9,6 +9,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
+	"net/http"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -40,16 +44,20 @@ type Callback struct {
 	TradeNo string
 	Success bool
 	PaidAt  time.Time
+	// AmountCents 为回调声明的支付金额（分）；HasAmount 为 false 时表示渠道
+	// 未提供金额，调用方应跳过金额核对。
+	AmountCents int64
+	HasAmount   bool
 }
 
 // Gateway 是支付渠道的通用接口。
 type Gateway interface {
-	// Name 返回渠道标识，例如 alipay、wechat、manual、mock。
+	// Name 返回渠道标识，例如 alipay、wechat、epay、manual、mock。
 	Name() string
 	// Create 发起一笔支付。
 	Create(ctx context.Context, order Order) (*CreateResult, error)
-	// VerifyCallback 校验并解析支付回调的原始请求。
-	VerifyCallback(ctx context.Context, raw []byte) (*Callback, error)
+	// VerifyCallback 依据回调请求头与原始请求体校验并解析支付回调。
+	VerifyCallback(ctx context.Context, header http.Header, raw []byte) (*Callback, error)
 }
 
 // ---- 手动渠道 ----
@@ -67,7 +75,7 @@ func (ManualGateway) Create(_ context.Context, order Order) (*CreateResult, erro
 }
 
 // VerifyCallback 对手动渠道不可用。
-func (ManualGateway) VerifyCallback(_ context.Context, _ []byte) (*Callback, error) {
+func (ManualGateway) VerifyCallback(_ context.Context, _ http.Header, _ []byte) (*Callback, error) {
 	return nil, ErrUnsupported
 }
 
@@ -107,7 +115,7 @@ func (g *MockGateway) Create(_ context.Context, order Order) (*CreateResult, err
 }
 
 // VerifyCallback 接受任意回调（仅用于开发）。
-func (g *MockGateway) VerifyCallback(_ context.Context, _ []byte) (*Callback, error) {
+func (g *MockGateway) VerifyCallback(_ context.Context, _ http.Header, _ []byte) (*Callback, error) {
 	return nil, ErrUnsupported
 }
 
@@ -118,4 +126,20 @@ func randomHex(n int) (string, error) {
 		return "", fmt.Errorf("payment: read random bytes: %w", err)
 	}
 	return hex.EncodeToString(buf), nil
+}
+
+// parseYuan 将「元」金额字符串（如 "12.34"）转换为分，用于核对回调金额。
+func parseYuan(value string) (int64, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, fmt.Errorf("payment: empty amount")
+	}
+	f, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return 0, fmt.Errorf("payment: invalid amount %q: %w", value, err)
+	}
+	if f < 0 {
+		return 0, fmt.Errorf("payment: negative amount %q", value)
+	}
+	return int64(math.Round(f * 100)), nil
 }

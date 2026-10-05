@@ -20,91 +20,100 @@ const envPrefix = "AXMIPIC_"
 // envPaths 将每个可通过环境变量设置的 AXMIPIC_* 变量映射到其点分隔的配置路径。
 // 叶子节点被显式列出，因此字段名中的下划线（例如 max_size_mb）不会被误认为嵌套。
 var envPaths = map[string]string{
-	"server_host":                 "server.host",
-	"server_port":                 "server.port",
-	"server_base_url":             "server.base_url",
-	"server_trust_proxy":          "server.trust_proxy",
-	"server_read_timeout_sec":     "server.read_timeout_sec",
-	"server_write_timeout_sec":    "server.write_timeout_sec",
-	"server_shutdown_timeout_sec": "server.shutdown_timeout_sec",
-	"database_driver":             "database.driver",
-	"database_dsn":                "database.dsn",
-	"storage_driver":              "storage.driver",
-	"storage_local_root":          "storage.local.root",
-	"s3_endpoint":                 "storage.s3.endpoint",
-	"s3_region":                   "storage.s3.region",
-	"s3_bucket":                   "storage.s3.bucket",
-	"s3_access_key_id":            "storage.s3.access_key_id",
-	"s3_secret_access_key":        "storage.s3.secret_access_key",
-	"s3_secure":                   "storage.s3.secure",
-	"s3_use_path_style":           "storage.s3.use_path_style",
-	"s3_public_base_url":          "storage.s3.public_base_url",
-	"s3_presign_expiry_sec":       "storage.s3.presign_expiry_sec",
-	"qiniu_access_key":            "storage.qiniu.access_key",
-	"qiniu_secret_key":            "storage.qiniu.secret_key",
-	"qiniu_bucket":                "storage.qiniu.bucket",
-	"qiniu_domain":                "storage.qiniu.domain",
-	"qiniu_upload_host":           "storage.qiniu.upload_host",
-	"qiniu_zone":                  "storage.qiniu.zone",
-	"qiniu_private":               "storage.qiniu.private",
-	"qiniu_use_https":             "storage.qiniu.use_https",
-	"qiniu_presign_expiry_sec":    "storage.qiniu.presign_expiry_sec",
-	"upload_max_size_mb":          "upload.max_size_mb",
-	"processing_enabled":          "processing.enabled",
-	"processing_driver":           "processing.driver",
-	"processing_max_width":        "processing.max_width",
-	"processing_max_height":       "processing.max_height",
-	"processing_default_quality":  "processing.default_quality",
-	"processing_allow_enlarge":    "processing.allow_enlarge",
-	"processing_allow_effects":    "processing.allow_effects",
-	"processing_allow_watermark":  "processing.allow_watermark",
-	"processing_watermark_text":   "processing.watermark_text",
-	"auth_jwt_secret":             "auth.jwt_secret",
-	"auth_encryption_key":         "auth.encryption_key",
-	"auth_session_ttl_hours":      "auth.session_ttl_hours",
-	"auth_allow_registration":     "auth.allow_registration",
-	"auth_require_auth":           "auth.require_auth",
-	"auth_default_quota_mb":       "auth.default_quota_mb",
-	"auth_bootstrap_admin":        "auth.bootstrap_admin",
-	"auth_allow_guest_upload":     "auth.allow_guest_upload",
-	"auth_guest_quota_mb":         "auth.guest_quota_mb",
-	"auth_guest_upload_max_mb":    "auth.guest_upload_max_mb",
-	"install_lock_file":           "install.lock_file",
-	"install_config_path":         "install.config_path",
-	"install_disabled":            "install.disabled",
-	"limits_upload_per_minute":    "limits.upload_per_minute",
-	"limits_upload_burst":         "limits.upload_burst",
-	"limits_guest_per_minute":     "limits.guest_per_minute",
-	"limits_guest_burst":          "limits.guest_burst",
-	"limits_image_per_minute":     "limits.image_per_minute",
-	"limits_image_burst":          "limits.image_burst",
-	"payment_default_gateway":     "payment.default_gateway",
-	"payment_alipay_enabled":      "payment.alipay.enabled",
-	"payment_alipay_gateway_url":  "payment.alipay.gateway_url",
-	"payment_alipay_app_id":       "payment.alipay.app_id",
-	"payment_alipay_private_key":  "payment.alipay.private_key",
-	"payment_alipay_public_key":   "payment.alipay.public_key",
-	"payment_wechat_enabled":      "payment.wechat.enabled",
-	"payment_wechat_gateway_url":  "payment.wechat.gateway_url",
-	"payment_wechat_app_id":       "payment.wechat.app_id",
-	"payment_wechat_mch_id":       "payment.wechat.mch_id",
-	"payment_wechat_serial_no":    "payment.wechat.serial_no",
-	"payment_wechat_private_key":  "payment.wechat.private_key",
-	"payment_wechat_api_v3_key":   "payment.wechat.api_v3_key",
-	"security_scanner":            "security.scanner",
-	"security_cloud_processor":    "security.cloud_processor",
-	"sms_enabled":                 "sms.enabled",
-	"sms_provider":                "sms.provider",
-	"sms_endpoint":                "sms.endpoint",
-	"sms_method":                  "sms.method",
-	"email_enabled":               "email.enabled",
-	"email_host":                  "email.host",
-	"email_port":                  "email.port",
-	"email_username":              "email.username",
-	"email_password":              "email.password",
-	"email_from":                  "email.from",
-	"email_use_tls":               "email.use_tls",
-	"logging_level":               "logging.level",
+	"server_host":                        "server.host",
+	"server_port":                        "server.port",
+	"server_base_url":                    "server.base_url",
+	"server_trust_proxy":                 "server.trust_proxy",
+	"server_read_timeout_sec":            "server.read_timeout_sec",
+	"server_write_timeout_sec":           "server.write_timeout_sec",
+	"server_shutdown_timeout_sec":        "server.shutdown_timeout_sec",
+	"database_driver":                    "database.driver",
+	"database_dsn":                       "database.dsn",
+	"storage_driver":                     "storage.driver",
+	"storage_local_root":                 "storage.local.root",
+	"s3_endpoint":                        "storage.s3.endpoint",
+	"s3_region":                          "storage.s3.region",
+	"s3_bucket":                          "storage.s3.bucket",
+	"s3_access_key_id":                   "storage.s3.access_key_id",
+	"s3_secret_access_key":               "storage.s3.secret_access_key",
+	"s3_secure":                          "storage.s3.secure",
+	"s3_use_path_style":                  "storage.s3.use_path_style",
+	"s3_public_base_url":                 "storage.s3.public_base_url",
+	"s3_presign_expiry_sec":              "storage.s3.presign_expiry_sec",
+	"qiniu_access_key":                   "storage.qiniu.access_key",
+	"qiniu_secret_key":                   "storage.qiniu.secret_key",
+	"qiniu_bucket":                       "storage.qiniu.bucket",
+	"qiniu_domain":                       "storage.qiniu.domain",
+	"qiniu_upload_host":                  "storage.qiniu.upload_host",
+	"qiniu_zone":                         "storage.qiniu.zone",
+	"qiniu_private":                      "storage.qiniu.private",
+	"qiniu_use_https":                    "storage.qiniu.use_https",
+	"qiniu_presign_expiry_sec":           "storage.qiniu.presign_expiry_sec",
+	"upload_max_size_mb":                 "upload.max_size_mb",
+	"processing_enabled":                 "processing.enabled",
+	"processing_driver":                  "processing.driver",
+	"processing_max_width":               "processing.max_width",
+	"processing_max_height":              "processing.max_height",
+	"processing_default_quality":         "processing.default_quality",
+	"processing_allow_enlarge":           "processing.allow_enlarge",
+	"processing_allow_effects":           "processing.allow_effects",
+	"processing_allow_watermark":         "processing.allow_watermark",
+	"processing_watermark_text":          "processing.watermark_text",
+	"auth_jwt_secret":                    "auth.jwt_secret",
+	"auth_encryption_key":                "auth.encryption_key",
+	"auth_session_ttl_hours":             "auth.session_ttl_hours",
+	"auth_allow_registration":            "auth.allow_registration",
+	"auth_require_auth":                  "auth.require_auth",
+	"auth_default_quota_mb":              "auth.default_quota_mb",
+	"auth_bootstrap_admin":               "auth.bootstrap_admin",
+	"auth_allow_guest_upload":            "auth.allow_guest_upload",
+	"auth_guest_quota_mb":                "auth.guest_quota_mb",
+	"auth_guest_upload_max_mb":           "auth.guest_upload_max_mb",
+	"install_lock_file":                  "install.lock_file",
+	"install_config_path":                "install.config_path",
+	"install_disabled":                   "install.disabled",
+	"limits_upload_per_minute":           "limits.upload_per_minute",
+	"limits_upload_burst":                "limits.upload_burst",
+	"limits_guest_per_minute":            "limits.guest_per_minute",
+	"limits_guest_burst":                 "limits.guest_burst",
+	"limits_image_per_minute":            "limits.image_per_minute",
+	"limits_image_burst":                 "limits.image_burst",
+	"payment_default_gateway":            "payment.default_gateway",
+	"payment_alipay_enabled":             "payment.alipay.enabled",
+	"payment_alipay_gateway_url":         "payment.alipay.gateway_url",
+	"payment_alipay_app_id":              "payment.alipay.app_id",
+	"payment_alipay_private_key":         "payment.alipay.private_key",
+	"payment_alipay_public_key":          "payment.alipay.public_key",
+	"payment_wechat_enabled":             "payment.wechat.enabled",
+	"payment_wechat_gateway_url":         "payment.wechat.gateway_url",
+	"payment_wechat_app_id":              "payment.wechat.app_id",
+	"payment_wechat_mch_id":              "payment.wechat.mch_id",
+	"payment_wechat_serial_no":           "payment.wechat.serial_no",
+	"payment_wechat_private_key":         "payment.wechat.private_key",
+	"payment_wechat_api_v3_key":          "payment.wechat.api_v3_key",
+	"payment_wechat_platform_public_key": "payment.wechat.platform_public_key",
+	"payment_wechat_platform_serial_no":  "payment.wechat.platform_serial_no",
+	"payment_epay_enabled":               "payment.epay.enabled",
+	"payment_epay_pid":                   "payment.epay.pid",
+	"payment_epay_key":                   "payment.epay.key",
+	"payment_epay_gateway_url":           "payment.epay.gateway_url",
+	"payment_epay_api_url":               "payment.epay.api_url",
+	"payment_epay_submit_url":            "payment.epay.submit_url",
+	"payment_epay_pay_type":              "payment.epay.pay_type",
+	"security_scanner":                   "security.scanner",
+	"security_cloud_processor":           "security.cloud_processor",
+	"sms_enabled":                        "sms.enabled",
+	"sms_provider":                       "sms.provider",
+	"sms_endpoint":                       "sms.endpoint",
+	"sms_method":                         "sms.method",
+	"email_enabled":                      "email.enabled",
+	"email_host":                         "email.host",
+	"email_port":                         "email.port",
+	"email_username":                     "email.username",
+	"email_password":                     "email.password",
+	"email_from":                         "email.from",
+	"email_use_tls":                      "email.use_tls",
+	"logging_level":                      "logging.level",
 }
 
 // Config 是顶层应用配置。
@@ -282,11 +291,12 @@ type EmailConfig struct {
 }
 
 // PaymentConfig 配置支付渠道。默认渠道需在已注册的渠道（manual、mock、
-// alipay、wechat）中选择。
+// alipay、wechat、epay）中选择。
 type PaymentConfig struct {
 	DefaultGateway string       `koanf:"default_gateway"`
 	Alipay         AlipayConfig `koanf:"alipay"`
 	Wechat         WechatConfig `koanf:"wechat"`
+	Epay           EpayConfig   `koanf:"epay"`
 }
 
 // AlipayConfig 配置支付宝当面付（扫码支付）。凭据齐备（AppID、应用私钥、
@@ -316,6 +326,29 @@ type WechatConfig struct {
 	PrivateKey string `koanf:"private_key"`
 	// APIv3Key 用于解密回调中的敏感信息与校验回调签名。
 	APIv3Key string `koanf:"api_v3_key"`
+	// PlatformPublicKey 为微信支付平台证书公钥（PEM 或裸 base64）；配置后
+	// 对回调的 Wechatpay-Signature 做 RSA 验签（强烈建议配置）。
+	PlatformPublicKey string `koanf:"platform_public_key"`
+	// PlatformSerialNo 为平台证书序列号；配置后校验回调头中的 serial。
+	PlatformSerialNo string `koanf:"platform_serial_no"`
+}
+
+// EpayConfig 配置易支付（彩虹易支付兼容）聚合支付。PID、密钥与网关地址齐备
+// 时启用。
+type EpayConfig struct {
+	Enabled bool `koanf:"enabled"`
+	// PID 为易支付商户号。
+	PID string `koanf:"pid"`
+	// Key 为商户密钥（MD5 签名）。
+	Key string `koanf:"key"`
+	// GatewayURL 为易支付站点根地址，例如 https://pay.example.com。
+	GatewayURL string `koanf:"gateway_url"`
+	// APIURL 为下单接口；留空使用 <GatewayURL>/mapi.php。
+	APIURL string `koanf:"api_url"`
+	// SubmitURL 为收银台地址；留空使用 <GatewayURL>/submit.php。
+	SubmitURL string `koanf:"submit_url"`
+	// PayType 为支付通道：alipay、wxpay、qqpay 等；留空默认 alipay。
+	PayType string `koanf:"pay_type"`
 }
 
 func defaultConfig() Config {
@@ -489,9 +522,18 @@ func (c Config) validate() error {
 		return fmt.Errorf("config: limits values must not be negative")
 	}
 	switch c.Payment.DefaultGateway {
-	case "", "manual", "mock", "alipay", "wechat":
+	case "", "manual", "mock", "alipay", "wechat", "epay":
 	default:
 		return fmt.Errorf("config: payment.default_gateway %q is not supported", c.Payment.DefaultGateway)
+	}
+	if c.Payment.Epay.Enabled {
+		if strings.TrimSpace(c.Payment.Epay.PID) == "" || strings.TrimSpace(c.Payment.Epay.Key) == "" {
+			return fmt.Errorf("config: payment.epay.pid and payment.epay.key must not be empty when epay is enabled")
+		}
+		if strings.TrimSpace(c.Payment.Epay.GatewayURL) == "" &&
+			strings.TrimSpace(c.Payment.Epay.APIURL) == "" && strings.TrimSpace(c.Payment.Epay.SubmitURL) == "" {
+			return fmt.Errorf("config: payment.epay.gateway_url must not be empty when epay is enabled")
+		}
 	}
 	switch c.Security.Scanner {
 	case "", "none", "builtin":
