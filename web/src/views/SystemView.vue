@@ -773,11 +773,22 @@ onBeforeUnmount(() => {
 
 .gateway-grid {
   margin-top: var(--ax-space-4);
-  grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
 }
 
 .gateway-card {
   height: 100%;
+  min-width: 0;
+}
+
+/* 卡片内每个字段各占一行。 */
+.gateway-card .smtp-grid {
+  grid-template-columns: 1fr;
+}
+
+/* 单列时取消「宽字段跨列」，避免强制两列。 */
+.gateway-card .smtp-grid__wide {
+  grid-column: auto;
 }
 
 .gateway-card__hint {
