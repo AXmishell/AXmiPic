@@ -273,8 +273,15 @@ onBeforeUnmount(() => {
           </div>
         </div>
       </section>
+    </main>
 
-      <section class="home__plaza" aria-label="图片广场">
+    <footer class="home__footer">
+      <span>AXmiPic · 自托管图床</span>
+      <router-link to="/login" class="home__footer-link">登录 / 注册</router-link>
+    </footer>
+
+    <section class="home__plaza" aria-label="图片广场">
+      <div class="home__plaza-inner">
         <div class="home__section-head">
           <h2 class="home__section-title"><el-icon :size="16"><Grid /></el-icon>图片广场</h2>
           <router-link v-if="auth.isAuthenticated" to="/user/plaza" class="home__section-link">
@@ -308,13 +315,8 @@ onBeforeUnmount(() => {
           <span v-if="plazaLoading && plaza.length > 0">正在加载更多…</span>
           <span v-else-if="!plazaHasMore && plaza.length > 0">已经到底啦</span>
         </div>
-      </section>
-    </main>
-
-    <footer class="home__footer">
-      <span>AXmiPic · 自托管图床</span>
-      <router-link to="/login" class="home__footer-link">登录 / 注册</router-link>
-    </footer>
+      </div>
+    </section>
 
     <div v-if="dragActive" class="home__dropzone" aria-hidden="true">
       <el-icon :size="40"><Upload /></el-icon>
@@ -544,7 +546,13 @@ onBeforeUnmount(() => {
 }
 
 .home__plaza {
-  margin-top: var(--ax-space-6);
+  border-top: 1px solid var(--ax-border-subtle);
+}
+
+.home__plaza-inner {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: var(--ax-space-8) var(--ax-space-5) var(--ax-space-12);
 }
 
 .home__section-head {
@@ -669,6 +677,12 @@ onBeforeUnmount(() => {
 
   .home__plaza-masonry {
     column-count: 2;
+  }
+}
+
+@media (min-width: 1200px) {
+  .home__plaza-masonry {
+    column-count: 4;
   }
 }
 </style>
