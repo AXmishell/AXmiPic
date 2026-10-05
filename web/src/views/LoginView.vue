@@ -16,7 +16,10 @@ const theme = useThemeStore()
 const router = useRouter()
 const route = useRoute()
 
-const mode = ref<'login' | 'register' | 'admin'>('login')
+// 独立的管理员登录页（/admin/login）只需管理员登录，不显示注册与身份切换。
+const props = defineProps<{ adminOnly?: boolean }>()
+
+const mode = ref<'login' | 'register' | 'admin'>(props.adminOnly ? 'admin' : 'login')
 const formRef = ref<FormInstance>()
 const loading = ref(false)
 const form = reactive({ username: '', password: '', confirmPassword: '' })
@@ -58,11 +61,6 @@ const submitLabel = computed(() => {
 
 function switchMode(): void {
   mode.value = mode.value === 'register' ? 'login' : 'register'
-  formRef.value?.clearValidate()
-}
-
-function toggleAdmin(): void {
-  mode.value = mode.value === 'admin' ? 'login' : 'admin'
   formRef.value?.clearValidate()
 }
 
@@ -175,8 +173,13 @@ async function submitReset(): Promise<void> {
 }
 
 async function redirectAfterLogin(): Promise<void> {
-  const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/'
-  await router.replace(redirect.startsWith('/') ? redirect : '/')
+  const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : ''
+  if (redirect.startsWith('/')) {
+    await router.replace(redirect)
+    return
+  }
+  // 管理员登录页默认进入管理控制台；普通登录保持原有首页跳转。
+  await router.replace(props.adminOnly ? '/admin' : '/')
 }
 </script>
 
@@ -343,13 +346,11 @@ async function redirectAfterLogin(): Promise<void> {
             <button type="button" class="auth__switch-btn" @click="switchMode">去登录</button>
           </template>
           <template v-else-if="mode === 'admin'">
-            <button type="button" class="auth__switch-btn" @click="toggleAdmin">返回普通登录</button>
+            <router-link to="/login" class="auth__switch-link">普通用户登录</router-link>
           </template>
           <template v-else>
             还没有账号？
             <button type="button" class="auth__switch-btn" @click="switchMode">立即注册</button>
-            <span class="auth__switch-sep">·</span>
-            <button type="button" class="auth__switch-btn" @click="toggleAdmin">管理员登录</button>
           </template>
         </p>
       </div>
@@ -658,6 +659,16 @@ async function redirectAfterLogin(): Promise<void> {
   outline: 2px solid var(--ax-focus);
   outline-offset: 2px;
   border-radius: 2px;
+}
+
+.auth__switch-link {
+  color: var(--ax-accent-hover);
+  font-weight: var(--ax-weight-medium);
+  text-decoration: none;
+}
+
+.auth__switch-link:hover {
+  text-decoration: underline;
 }
 
 .auth__switch-sep {

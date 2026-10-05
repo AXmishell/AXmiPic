@@ -43,6 +43,13 @@ const routes: RouteRecordRaw[] = [
     meta: { title: '登录', public: true },
   },
   {
+    path: '/admin/login',
+    name: 'admin-login',
+    component: () => import('@/views/LoginView.vue'),
+    props: { adminOnly: true },
+    meta: { title: '管理员登录', public: true },
+  },
+  {
     path: '/install',
     name: 'install',
     component: () => import('@/views/InstallView.vue'),
@@ -216,14 +223,16 @@ router.beforeEach(async (to) => {
   }
 
   if (to.meta.public) {
-    if (to.name === 'login' && auth.isAuthenticated) {
+    if ((to.name === 'login' || to.name === 'admin-login') && auth.isAuthenticated) {
       return { path: homeForRole(auth.isAdmin) }
     }
     return true
   }
 
   if (!auth.isAuthenticated) {
-    return { path: '/login', query: to.fullPath === '/' ? {} : { redirect: to.fullPath } }
+    // 管理后台的未登录访问导向独立的管理员登录页。
+    const loginPath = to.meta.requiresAdmin ? '/admin/login' : '/login'
+    return { path: loginPath, query: to.fullPath === '/' ? {} : { redirect: to.fullPath } }
   }
 
   if (to.meta.requiresAdmin && !auth.isAdmin) {

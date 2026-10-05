@@ -112,10 +112,14 @@ configureAuth({
   getToken: () => auth.token,
   onUnauthorized: () => {
     if (!auth.isAuthenticated) return
+    const wasAdminArea = auth.isAdmin || Boolean(router.currentRoute.value.meta.requiresAdmin)
     auth.clearSession()
     const current = router.currentRoute.value
-    if (current.name !== 'login') {
-      void router.replace({ path: '/login', query: { redirect: current.fullPath } })
+    if (current.name !== 'login' && current.name !== 'admin-login') {
+      void router.replace({
+        path: wasAdminArea ? '/admin/login' : '/login',
+        query: { redirect: current.fullPath },
+      })
     }
   },
 })
