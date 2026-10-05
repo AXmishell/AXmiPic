@@ -126,6 +126,10 @@ func (h *Handler) batchImages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	principal := principalOf(r)
+	if err := h.requireFeature(r, principal, service.FeatureBatchUpload); err != nil {
+		h.fail(w, r, err)
+		return
+	}
 	if body.Permission != nil {
 		if err := h.svc.SetPermission(r.Context(), principal, body.IDs, *body.Permission); err != nil {
 			h.fail(w, r, err)

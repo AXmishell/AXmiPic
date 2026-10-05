@@ -23,12 +23,21 @@ type shareAccessRequest struct {
 	Password string `json:"password"`
 }
 
-// requireFeature 在角色策略中校验某个功能开关是否启用。
+// requireFeature 在角色策略中校验某个功能开关是否启用。管理员不受功能开关
+// 限制；访客按 Guest 角色组解析，其余按账户所属角色组解析。
 func (h *Handler) requireFeature(r *http.Request, principal *auth.Principal, name string) error {
-	if h.policies == nil {
+	if h.policies == nil || principal == nil || principal.IsAdmin() {
 		return nil
 	}
-	effective, err := h.policies.ResolveForCustomer(r.Context(), principal.UserID)
+	var (
+		effective *service.EffectivePolicies
+		err       error
+	)
+	if principal.IsGuest() {
+		effective, err = h.policies.ResolveGuest(r.Context())
+	} else {
+		effective, err = h.policies.ResolveForCustomer(r.Context(), principal.UserID)
+	}
 	if err != nil {
 		return err
 	}

@@ -5,6 +5,8 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+
+	"github.com/AXmishell/axmipic/internal/service"
 )
 
 type credentialsRequest struct {
@@ -79,6 +81,10 @@ func (h *Handler) createToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	principal := principalOf(r)
+	if err := h.requireFeature(r, principal, service.FeatureAPITokens); err != nil {
+		h.fail(w, r, err)
+		return
+	}
 	token, err := h.accounts.CreateToken(r.Context(), principal.UserID, body.Name)
 	if err != nil {
 		h.fail(w, r, err)

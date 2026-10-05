@@ -11,7 +11,12 @@ import (
 
 // listAlbums 返回当前主体可见的相册。
 func (h *Handler) listAlbums(w http.ResponseWriter, r *http.Request) {
-	albums, err := h.albums.List(r.Context(), principalOf(r))
+	principal := principalOf(r)
+	if err := h.requireFeature(r, principal, service.FeatureAlbums); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	albums, err := h.albums.List(r.Context(), principal)
 	if err != nil {
 		h.fail(w, r, err)
 		return
@@ -33,7 +38,12 @@ func (h *Handler) createAlbum(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	album, err := h.albums.Create(r.Context(), principalOf(r), service.AlbumInput{
+	principal := principalOf(r)
+	if err := h.requireFeature(r, principal, service.FeatureAlbums); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	album, err := h.albums.Create(r.Context(), principal, service.AlbumInput{
 		Name: body.Name, Intro: body.Intro, Permission: body.Permission,
 	})
 	if err != nil {
@@ -96,7 +106,12 @@ func (h *Handler) updateAlbum(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	album, err := h.albums.Update(r.Context(), principalOf(r), chi.URLParam(r, "id"), service.AlbumInput{
+	principal := principalOf(r)
+	if err := h.requireFeature(r, principal, service.FeatureAlbums); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	album, err := h.albums.Update(r.Context(), principal, chi.URLParam(r, "id"), service.AlbumInput{
 		Name: body.Name, Intro: body.Intro, Permission: body.Permission,
 	})
 	if err != nil {
@@ -109,7 +124,12 @@ func (h *Handler) updateAlbum(w http.ResponseWriter, r *http.Request) {
 // deleteAlbum 删除相册，其中的图片会被移出相册但保留。
 func (h *Handler) deleteAlbum(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	if err := h.albums.Delete(r.Context(), principalOf(r), id); err != nil {
+	principal := principalOf(r)
+	if err := h.requireFeature(r, principal, service.FeatureAlbums); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	if err := h.albums.Delete(r.Context(), principal, id); err != nil {
 		h.fail(w, r, err)
 		return
 	}
