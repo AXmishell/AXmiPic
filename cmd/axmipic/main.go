@@ -311,6 +311,7 @@ func run() error {
 		logger.Info("epay payment gateway enabled")
 	}
 	billingSvc := service.NewBillingService(repo, cfg.Server.BaseURL, gateways, cfg.Payment.DefaultGateway)
+	billingSvc.SetPolicyService(policies)
 
 	authenticator := auth.NewAuthenticator(repo, issuer)
 	// 允许访客上传时，为匿名请求附加内置 Guest 账户身份，使访客上传计入
@@ -359,6 +360,7 @@ func run() error {
 	defer stop()
 
 	go runPendingUploadJanitor(ctx, uploadSvc, logger)
+	go runExpiredPlanJanitor(ctx, billingSvc, logger)
 
 	return srv.Run(ctx)
 }
@@ -561,6 +563,36 @@ func runPendingUploadJanitor(ctx context.Context, svc *service.UploadService, lo
 		}
 		if removed > 0 {
 			logger.Info("cleaned up expired pending uploads", slog.Int("count", removed))
+		}
+	}
+
+	cleanup()
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			cleanup()
+		}
+	}
+}
+
+// runExpiredPlanJanitor 定期把已到期套餐的客户回退到默认角色组与配额。
+// 它运行直到 ctx 被取消。
+func runExpiredPlanJanitor(ctx context.Context, svc *service.BillingService, logger *slog.Logger) {
+	const interval = time.Hour
+	cleanup := func() {
+		cleanupCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		handled, err := svc.ExpirePlans(cleanupCtx, time.Now())
+		if err != nil {
+			logger.Warn("expired plan cleanup failed", slog.Any("error", err))
+			return
+		}
+		if handled > 0 {
+			logger.Info("reverted expired plan customers", slog.Int("count", handled))
 		}
 	}
 

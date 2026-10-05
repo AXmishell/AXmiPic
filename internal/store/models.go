@@ -106,6 +106,8 @@ type Customer struct {
 	QuotaBytes   int64  `gorm:"not null;default:0"` // 0 表示不限额
 	// RoleGroupID 指向用户所属的角色组；为空表示使用默认角色组。
 	RoleGroupID *string `gorm:"index;size:36"`
+	// PlanExpiresAt 为已购套餐的到期时间；为空表示无套餐（永久或从未购买）。
+	PlanExpiresAt *time.Time `gorm:"index"`
 	// Email 为已绑定的邮箱（未验证时仅作暂存）；空字符串表示未绑定。
 	Email         string `gorm:"size:255;not null;default:''"`
 	EmailVerified bool   `gorm:"not null;default:false"`
@@ -123,10 +125,13 @@ func (Customer) TableName() string {
 
 // UserUpdate 携带可选的账户字段更改。Nil 字段将被忽略。RoleGroupID 仅对
 // 客户有意义：非 nil 时字符串值指向新角色组，空字符串表示清空（回退默认组）。
+// ClearPlanExpiry 为 true 时清空套餐到期时间。
 type UserUpdate struct {
-	Disabled    *bool
-	RoleGroupID *string
-	QuotaBytes  *int64
+	Disabled        *bool
+	RoleGroupID     *string
+	QuotaBytes      *int64
+	PlanExpiresAt   *time.Time
+	ClearPlanExpiry bool
 }
 
 // ImageStats 汇总图像数量和总字节数。

@@ -19,6 +19,8 @@ export interface User {
   used_bytes: number
   quota_bytes: number
   role_group_id?: string
+  /** 已购套餐的到期时间；为空表示无套餐或永久有效。 */
+  plan_expires_at?: string
   /** 已绑定的邮箱。 */
   email?: string
   /** 邮箱是否已通过验证。 */

@@ -134,6 +134,13 @@ type BillingService struct {
 	// defaultGateway 为未指定渠道时使用；可为空。
 	defaultGateway string
 	baseURL        string
+	// policies 用于套餐到期后回退默认角色组与配额；未安装策略服务时跳过回退。
+	policies *PolicyService
+}
+
+// SetPolicyService 安装角色组/策略服务，使套餐到期后可以回退到默认角色组。
+func (s *BillingService) SetPolicyService(policies *PolicyService) {
+	s.policies = policies
 }
 
 // NewBillingService 构造一个 BillingService。
@@ -579,7 +586,8 @@ func (s *BillingService) applyOrder(ctx context.Context, orderID string) error {
 	return nil
 }
 
-// grantPlan 依据套餐调整用户的角色组与配额。
+// grantPlan 依据套餐调整用户的角色组、配额与到期时间。有效期从当前到期时间
+// （未到期时）或现在起顺延；DurationDays 为 0 表示永久，会清除到期时间。
 func (s *BillingService) grantPlan(ctx context.Context, order *store.Order) error {
 	plan, err := s.repo.GetPlanByID(ctx, order.PlanID)
 	if err != nil {
@@ -598,13 +606,61 @@ func (s *BillingService) grantPlan(ctx context.Context, order *store.Order) erro
 		groupID := *plan.RoleGroupID
 		update.RoleGroupID = &groupID
 	}
-	if update.QuotaBytes == nil && update.RoleGroupID == nil {
+	if plan.DurationDays > 0 {
+		account, err := s.repo.GetAccountByID(ctx, store.RoleCustomer, order.UserID)
+		if err != nil {
+			return fmt.Errorf("grant plan: %w", err)
+		}
+		base := time.Now()
+		if account.PlanExpiresAt != nil && account.PlanExpiresAt.After(base) {
+			base = *account.PlanExpiresAt
+		}
+		expires := base.AddDate(0, 0, plan.DurationDays)
+		update.PlanExpiresAt = &expires
+	} else {
+		update.ClearPlanExpiry = true
+	}
+	if update.QuotaBytes == nil && update.RoleGroupID == nil && update.PlanExpiresAt == nil && !update.ClearPlanExpiry {
 		return nil
 	}
 	if _, err := s.repo.UpdateCustomer(ctx, order.UserID, update); err != nil {
 		return fmt.Errorf("grant plan: %w", err)
 	}
 	return nil
+}
+
+// ExpirePlans 把已到期套餐的客户回退到默认角色组与配额，并清除到期时间。它返回
+// 处理的客户数量。未安装策略服务时不执行任何操作。
+func (s *BillingService) ExpirePlans(ctx context.Context, now time.Time) (int, error) {
+	if s.policies == nil {
+		return 0, nil
+	}
+	expired, err := s.repo.ListCustomersWithExpiredPlan(ctx, now)
+	if err != nil {
+		return 0, fmt.Errorf("expire plans: %w", err)
+	}
+	if len(expired) == 0 {
+		return 0, nil
+	}
+	defaults, err := s.policies.ResolveDefault(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("expire plans: %w", err)
+	}
+	handled := 0
+	for i := range expired {
+		update := store.UserUpdate{ClearPlanExpiry: true}
+		quota := defaults.QuotaBytes
+		update.QuotaBytes = &quota
+		if defaults.RoleGroupID != "" {
+			groupID := defaults.RoleGroupID
+			update.RoleGroupID = &groupID
+		}
+		if _, err := s.repo.UpdateCustomer(ctx, expired[i].ID, update); err != nil {
+			continue
+		}
+		handled++
+	}
+	return handled, nil
 }
 
 // ---- 工单 ----

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/AXmishell/axmipic/internal/auth"
 	"github.com/AXmishell/axmipic/internal/payment"
@@ -187,6 +188,72 @@ func (g stubGateway) Create(context.Context, payment.Order) (*payment.CreateResu
 
 func (g stubGateway) VerifyCallback(context.Context, http.Header, []byte) (*payment.Callback, error) {
 	return nil, payment.ErrUnsupported
+}
+
+// TestPlanDurationSetsAndRevertsExpiry 验证套餐有效期按天顺延，并在到期后回退
+// 到默认角色组与配额。
+func TestPlanDurationSetsAndRevertsExpiry(t *testing.T) {
+	svc, repo := newBilling(t)
+	ctx := context.Background()
+	newCustomer(t, repo, "u1")
+	policies := service.NewPolicyService(repo, service.PolicyDefaults{
+		QuotaBytes:       100 << 20,
+		UploadMaxBytes:   5 << 20,
+		AllowedMIMETypes: []string{"image/png"},
+		Processing: service.ProcessingSettings{
+			Enabled:        true,
+			MaxWidth:       2048,
+			MaxHeight:      2048,
+			DefaultQuality: 80,
+			AllowedFormats: []string{"png"},
+		},
+	})
+	if err := policies.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+	svc.SetPolicyService(policies)
+
+	plan, err := svc.CreatePlan(ctx, service.PlanInput{Name: "月付", PriceCents: 0, QuotaMB: 512, DurationDays: 30, Active: true})
+	if err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+	u1 := &auth.Principal{UserID: "u1", Username: "u1", Role: auth.RoleUser}
+	for i := 0; i < 2; i++ {
+		if _, err := svc.CreateOrder(ctx, u1, plan.ID, "", ""); err != nil {
+			t.Fatalf("CreateOrder #%d: %v", i+1, err)
+		}
+	}
+
+	account, err := repo.GetAccountByID(ctx, store.RoleCustomer, "u1")
+	if err != nil {
+		t.Fatalf("GetAccountByID: %v", err)
+	}
+	if account.PlanExpiresAt == nil {
+		t.Fatal("plan expiry was not set")
+	}
+	// 两次购买各 30 天，应从现在起顺延约 60 天。
+	if d := time.Until(*account.PlanExpiresAt); d < 59*24*time.Hour || d > 61*24*time.Hour {
+		t.Fatalf("expiry in %v, want ~60 days", d)
+	}
+
+	// 到期后回退到默认角色组与配额。
+	handled, err := svc.ExpirePlans(ctx, time.Now().AddDate(0, 0, 61))
+	if err != nil {
+		t.Fatalf("ExpirePlans: %v", err)
+	}
+	if handled != 1 {
+		t.Fatalf("handled = %d, want 1", handled)
+	}
+	reverted, err := repo.GetAccountByID(ctx, store.RoleCustomer, "u1")
+	if err != nil {
+		t.Fatalf("GetAccountByID after expiry: %v", err)
+	}
+	if reverted.PlanExpiresAt != nil {
+		t.Fatalf("plan expiry not cleared: %v", reverted.PlanExpiresAt)
+	}
+	if reverted.QuotaBytes != 100<<20 {
+		t.Fatalf("quota = %d, want default 100MiB", reverted.QuotaBytes)
+	}
 }
 
 // TestPayOrderProviderRestrictions 验证普通用户不能自助完成非 mock 订单，

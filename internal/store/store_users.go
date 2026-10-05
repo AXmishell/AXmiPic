@@ -29,7 +29,9 @@ type Account struct {
 	UsedBytes    int64
 	QuotaBytes   int64
 	// RoleGroupID 仅对客户有意义，指向其所属角色组。
-	RoleGroupID   *string
+	RoleGroupID *string
+	// PlanExpiresAt 为已购套餐的到期时间；仅对客户有意义。
+	PlanExpiresAt *time.Time
 	Email         string
 	EmailVerified bool
 	TOTPSecret    string
@@ -203,12 +205,29 @@ func (r *Repository) UpdateCustomer(ctx context.Context, id string, update UserU
 	if update.QuotaBytes != nil {
 		fields["quota_bytes"] = *update.QuotaBytes
 	}
+	if update.ClearPlanExpiry {
+		fields["plan_expires_at"] = nil
+	} else if update.PlanExpiresAt != nil {
+		fields["plan_expires_at"] = *update.PlanExpiresAt
+	}
 	if len(fields) > 0 {
 		if err := r.db.WithContext(ctx).Model(&Customer{}).Where("id = ?", id).Updates(fields).Error; err != nil {
 			return nil, fmt.Errorf("store: update customer %q: %w", id, err)
 		}
 	}
 	return r.GetAccountByID(ctx, RoleCustomer, id)
+}
+
+// ListCustomersWithExpiredPlan 返回套餐到期时间早于 cutoff 的客户。
+func (r *Repository) ListCustomersWithExpiredPlan(ctx context.Context, cutoff time.Time) ([]Customer, error) {
+	var customers []Customer
+	if err := r.db.WithContext(ctx).
+		Where("plan_expires_at IS NOT NULL AND plan_expires_at < ?", cutoff).
+		Order("plan_expires_at ASC").
+		Find(&customers).Error; err != nil {
+		return nil, fmt.Errorf("store: list customers with expired plan: %w", err)
+	}
+	return customers, nil
 }
 
 // UpdateAdmin 更新管理员的禁用标志并返回结果。
@@ -279,6 +298,7 @@ func accountFromCustomer(customer *Customer) *Account {
 		UsedBytes:     customer.UsedBytes,
 		QuotaBytes:    customer.QuotaBytes,
 		RoleGroupID:   customer.RoleGroupID,
+		PlanExpiresAt: customer.PlanExpiresAt,
 		Email:         customer.Email,
 		EmailVerified: customer.EmailVerified,
 		TOTPSecret:    customer.TOTPSecret,

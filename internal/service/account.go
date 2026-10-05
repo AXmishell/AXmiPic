@@ -96,6 +96,8 @@ type UserDTO struct {
 	QuotaBytes int64  `json:"quota_bytes"`
 	// RoleGroupID 是普通用户所属的角色组；管理员与未分配用户为空。
 	RoleGroupID string `json:"role_group_id,omitempty"`
+	// PlanExpiresAt 为已购套餐的到期时间；为空表示无套餐或永久有效。
+	PlanExpiresAt *time.Time `json:"plan_expires_at,omitempty"`
 	// Email 为已绑定的邮箱；EmailVerified 表示是否已通过验证。
 	Email         string    `json:"email,omitempty"`
 	EmailVerified bool      `json:"email_verified"`
@@ -854,6 +856,7 @@ func accountFromCustomer(customer *store.Customer) *store.Account {
 		UsedBytes:     customer.UsedBytes,
 		QuotaBytes:    customer.QuotaBytes,
 		RoleGroupID:   customer.RoleGroupID,
+		PlanExpiresAt: customer.PlanExpiresAt,
 		Email:         customer.Email,
 		EmailVerified: customer.EmailVerified,
 		TOTPSecret:    customer.TOTPSecret,
@@ -872,6 +875,7 @@ func toUserDTO(account *store.Account) *UserDTO {
 		UsedBytes:     account.UsedBytes,
 		QuotaBytes:    account.QuotaBytes,
 		RoleGroupID:   storageIDValue(account.RoleGroupID),
+		PlanExpiresAt: account.PlanExpiresAt,
 		Email:         account.Email,
 		EmailVerified: account.EmailVerified,
 		TOTPEnabled:   account.TOTPEnabled,
