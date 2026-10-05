@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowDown, Moon, Setting, Sunny, SwitchButton, User } from '@element-plus/icons-vue'
+import { ArrowDown, Management, Moon, Setting, Sunny, SwitchButton, User } from '@element-plus/icons-vue'
 
 import UserAvatar from '@/components/UserAvatar.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -16,6 +16,7 @@ const route = useRoute()
 const router = useRouter()
 
 const pageTitle = computed(() => route.meta.title ?? '')
+const inAdminArea = computed(() => route.path.startsWith('/admin'))
 
 async function handleCommand(command: string | number | object): Promise<void> {
   if (command === 'settings') {
@@ -28,6 +29,10 @@ async function handleCommand(command: string | number | object): Promise<void> {
   }
   if (command === 'user-center') {
     await router.push('/user')
+    return
+  }
+  if (command === 'admin-console') {
+    await router.push('/admin')
     return
   }
   if (command === 'logout') {
@@ -100,8 +105,11 @@ async function handleCommand(command: string | number | object): Promise<void> {
           <el-dropdown-item command="home">
             <el-icon><Setting /></el-icon>返回首页
           </el-dropdown-item>
-          <el-dropdown-item v-if="auth.isAdmin" command="user-center">
+          <el-dropdown-item v-if="auth.isAdmin && !inAdminArea" command="user-center">
             <el-icon><User /></el-icon>用户中心
+          </el-dropdown-item>
+          <el-dropdown-item v-if="auth.isAdmin && inAdminArea" command="admin-console">
+            <el-icon><Management /></el-icon>管理控制台
           </el-dropdown-item>
           <el-dropdown-item command="settings">
             <el-icon><Setting /></el-icon>账号设置

@@ -155,6 +155,17 @@ function isActive(item: NavItem): boolean {
         <el-icon :size="12" class="nav-item__arrow"><ArrowRight /></el-icon>
       </router-link>
       <router-link
+        v-if="variant !== 'admin' && auth.isAdmin"
+        to="/admin"
+        class="nav-item nav-item--footer"
+        @click="emit('close')"
+      >
+        <span class="nav-item__rail" aria-hidden="true" />
+        <el-icon :size="16" class="nav-item__icon"><Management /></el-icon>
+        <span class="nav-item__label">管理控制台</span>
+        <el-icon :size="12" class="nav-item__arrow"><ArrowRight /></el-icon>
+      </router-link>
+      <router-link
         :to="variant === 'admin' ? '/admin/settings' : '/user/settings'"
         class="nav-item nav-item--footer"
         :class="{ 'is-active': route.path.endsWith('/settings') }"
