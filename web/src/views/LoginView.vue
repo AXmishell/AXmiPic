@@ -321,6 +321,7 @@ async function redirectAfterLogin(): Promise<void> {
           ref="formRef"
           :model="form"
           :rules="rules"
+          :validate-on-rule-change="false"
           label-position="top"
           size="large"
           @submit.prevent="handleSubmit"
