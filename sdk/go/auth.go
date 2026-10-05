@@ -46,6 +46,28 @@ func (c *Client) Me(ctx context.Context) (*User, error) {
 	return &out, nil
 }
 
+// ChangePassword 修改当前账户密码（需提供当前密码）。
+func (c *Client) ChangePassword(ctx context.Context, currentPassword, newPassword string) error {
+	return c.postJSON(ctx, "/api/v1/auth/password", map[string]string{
+		"current_password": currentPassword,
+		"new_password":     newPassword,
+	}, nil)
+}
+
+// SendPasswordResetCode 向邮箱发送密码重置验证码（无需登录）。
+func (c *Client) SendPasswordResetCode(ctx context.Context, email string) error {
+	return c.postJSON(ctx, "/api/v1/auth/password/reset/code", map[string]string{"email": email}, nil)
+}
+
+// ResetPassword 校验邮箱验证码并重置密码（无需登录）。
+func (c *Client) ResetPassword(ctx context.Context, email, code, newPassword string) error {
+	return c.postJSON(ctx, "/api/v1/auth/password/reset", map[string]string{
+		"email":        email,
+		"code":         code,
+		"new_password": newPassword,
+	}, nil)
+}
+
 // Policies 返回当前账户生效的角色策略。
 func (c *Client) Policies(ctx context.Context) (*UploadPolicy, error) {
 	var out UploadPolicy

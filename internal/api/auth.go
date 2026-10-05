@@ -249,3 +249,59 @@ func (h *Handler) unbindEmail(w http.ResponseWriter, r *http.Request) {
 	}
 	writeOK(w, user)
 }
+
+// ---- 修改密码与找回密码 ----
+
+type changePasswordRequest struct {
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password"`
+}
+
+// changePassword 在验证当前密码后修改当前账户密码。
+func (h *Handler) changePassword(w http.ResponseWriter, r *http.Request) {
+	var body changePasswordRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxJSONBody)).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if err := h.accounts.ChangePassword(r.Context(), principalOf(r), body.CurrentPassword, body.NewPassword); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeOK(w, map[string]string{"status": "updated"})
+}
+
+// sendPasswordResetCode 向已验证邮箱发送密码重置验证码（无需登录）。
+func (h *Handler) sendPasswordResetCode(w http.ResponseWriter, r *http.Request) {
+	var body emailRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxJSONBody)).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if err := h.accounts.SendPasswordResetCode(r.Context(), body.Email); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	// 始终返回成功，避免暴露邮箱是否已注册。
+	writeOK(w, map[string]string{"status": "sent"})
+}
+
+type passwordResetRequest struct {
+	Email       string `json:"email"`
+	Code        string `json:"code"`
+	NewPassword string `json:"new_password"`
+}
+
+// resetPassword 校验邮箱验证码并重置密码（无需登录）。
+func (h *Handler) resetPassword(w http.ResponseWriter, r *http.Request) {
+	var body passwordResetRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxJSONBody)).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if err := h.accounts.ResetPassword(r.Context(), body.Email, body.Code, body.NewPassword); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeOK(w, map[string]string{"status": "updated"})
+}

@@ -319,6 +319,9 @@ processing:
 | POST | `/auth/email/code` | 向目标邮箱发送验证码（每账号每分钟 1 条、每天上限 10 条） |
 | POST | `/auth/email/verify` | 校验验证码并绑定邮箱；换绑不同邮箱时需提供当前密码 |
 | POST | `/auth/email/unbind` | 解绑邮箱（需当前密码） |
+| POST | `/auth/password` | 修改当前账户密码（需 `current_password`、`new_password`） |
+| POST | `/auth/password/reset/code` | 向已验证邮箱发送密码重置验证码（无需登录） |
+| POST | `/auth/password/reset` | 校验验证码并重置密码（无需登录） |
 
 启用 TOTP 后，`/auth/login` 与 `/admin/auth/login` 不再直接返回会话，而是返回
 `{"totp_required": true, "challenge_token": "…"}`；客户端需携带该令牌与
@@ -332,6 +335,11 @@ processing:
 验证码发送按账号限流（每分钟 1 条、突发 2 条、每天上限 10 条），超限返回
 HTTP 429。验证码 10 分钟内有效、一次性、最多尝试 5 次，且与其他账号已绑定的
 邮箱冲突时返回 HTTP 409。
+
+密码管理：已登录用户通过 `POST /auth/password` 提供当前密码即可修改密码。忘记
+密码时可调用 `POST /auth/password/reset/code` 向已验证邮箱发送验证码，再调用
+`POST /auth/password/reset` 携验证码设置新密码；为避免账户枚举，对未注册邮箱
+发送请求同样返回成功但不实际发信，重置时未注册邮箱与验证码错误返回同一错误。
 
 ### 上传
 

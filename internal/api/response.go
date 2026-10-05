@@ -66,6 +66,8 @@ func (h *Handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, http.StatusConflict, http.StatusConflict, err.Error())
 	case errors.Is(err, service.ErrInvalidCredentials):
 		writeError(w, http.StatusUnauthorized, http.StatusUnauthorized, err.Error())
+	case errors.Is(err, service.ErrInvalidPassword):
+		writeError(w, http.StatusBadRequest, http.StatusBadRequest, err.Error())
 	case errors.Is(err, service.ErrInvalidChallenge), errors.Is(err, service.ErrInvalidTOTPCode):
 		writeError(w, http.StatusUnauthorized, http.StatusUnauthorized, err.Error())
 	case errors.Is(err, service.ErrTOTPUnavailable), errors.Is(err, service.ErrTOTPAlreadyEnabled),

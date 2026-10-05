@@ -338,3 +338,29 @@ func (r *Repository) EmailInUse(ctx context.Context, email string, excludeID str
 	}
 	return count > 0, nil
 }
+
+// FindVerifiedAccountByEmail 在客户表与管理员表中查找邮箱已通过验证的账户，
+// 返回其角色与账户。未找到时返回 ErrNotFound。
+func (r *Repository) FindVerifiedAccountByEmail(ctx context.Context, email string) (AccountRole, *Account, error) {
+	email = strings.TrimSpace(email)
+	if email == "" {
+		return "", nil, ErrNotFound
+	}
+	var customer Customer
+	err := r.first(ctx, &customer, "email = ? AND email_verified = ?", email, true)
+	if err == nil {
+		return RoleCustomer, accountFromCustomer(&customer), nil
+	}
+	if !errors.Is(err, ErrNotFound) {
+		return "", nil, fmt.Errorf("store: find customer by email: %w", err)
+	}
+	var admin Admin
+	err = r.first(ctx, &admin, "email = ? AND email_verified = ?", email, true)
+	if err == nil {
+		return RoleAdmin, accountFromAdmin(&admin), nil
+	}
+	if !errors.Is(err, ErrNotFound) {
+		return "", nil, fmt.Errorf("store: find admin by email: %w", err)
+	}
+	return "", nil, ErrNotFound
+}

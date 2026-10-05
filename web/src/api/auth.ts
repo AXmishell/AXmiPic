@@ -115,3 +115,26 @@ export function verifyEmail(email: string, code: string, password?: string): Pro
 export function unbindEmail(password: string): Promise<User> {
   return request<User>({ method: 'POST', url: '/auth/email/unbind', data: { password } })
 }
+
+/** 修改当前账户密码（需当前密码）。 */
+export function changePassword(currentPassword: string, newPassword: string): Promise<{ status: string }> {
+  return request<{ status: string }>({
+    method: 'POST',
+    url: '/auth/password',
+    data: { current_password: currentPassword, new_password: newPassword },
+  })
+}
+
+/** 向邮箱发送密码重置验证码（无需登录）。 */
+export function sendPasswordResetCode(email: string): Promise<{ status: string }> {
+  return request<{ status: string }>({ method: 'POST', url: '/auth/password/reset/code', data: { email } })
+}
+
+/** 校验验证码并重置密码（无需登录）。 */
+export function resetPassword(email: string, code: string, newPassword: string): Promise<{ status: string }> {
+  return request<{ status: string }>({
+    method: 'POST',
+    url: '/auth/password/reset',
+    data: { email, code, new_password: newPassword },
+  })
+}

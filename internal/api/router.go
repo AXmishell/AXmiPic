@@ -152,6 +152,9 @@ func NewRouter(d Deps) http.Handler {
 			r.Post("/auth/login", h.login)
 			r.Post("/auth/totp/verify", h.verifyTOTPLogin)
 			r.Post("/admin/auth/login", h.adminLogin)
+			// 找回密码：无需登录，按 IP 限流（服务层再按邮箱限流）。
+			r.Post("/auth/password/reset/code", h.sendPasswordResetCode)
+			r.Post("/auth/password/reset", h.resetPassword)
 		})
 
 		r.Group(func(r chi.Router) {
@@ -193,6 +196,7 @@ func NewRouter(d Deps) http.Handler {
 				r.Post("/auth/email/code", h.sendEmailCode)
 				r.Post("/auth/email/verify", h.verifyEmail)
 				r.Post("/auth/email/unbind", h.unbindEmail)
+				r.Post("/auth/password", h.changePassword)
 				r.Get("/auth/policies", h.authPolicies)
 				r.Post("/tokens", h.createToken)
 				r.Get("/tokens", h.listTokens)

@@ -6,6 +6,7 @@ import type { FormInstance, FormRules } from 'element-plus'
 import { Box, DataLine, Lock, Moon, Sunny, UploadFilled, User } from '@element-plus/icons-vue'
 
 import { ApiError } from '@/api/client'
+import { resetPassword, sendPasswordResetCode } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
 import { confirmPasswordRule, usernameRules } from '@/utils/validate'
@@ -24,6 +25,12 @@ const form = reactive({ username: '', password: '', confirmPassword: '' })
 const totpChallenge = ref('')
 const totpCode = ref('')
 const totpLoading = ref(false)
+
+// 找回密码步骤。
+const resetDialog = ref(false)
+const resetSending = ref(false)
+const resetSubmitting = ref(false)
+const resetForm = reactive({ email: '', code: '', password: '', confirm: '' })
 
 const rules: FormRules = {
   username: usernameRules('请输入用户名'),
@@ -113,6 +120,58 @@ async function submitTOTP(): Promise<void> {
 function cancelTOTP(): void {
   totpChallenge.value = ''
   totpCode.value = ''
+}
+
+/** 打开找回密码对话框。 */
+function openReset(): void {
+  resetForm.email = ''
+  resetForm.code = ''
+  resetForm.password = ''
+  resetForm.confirm = ''
+  resetDialog.value = true
+}
+
+/** 发送密码重置验证码。 */
+async function sendResetCode(): Promise<void> {
+  if (!resetForm.email.trim()) {
+    ElMessage.warning('请输入邮箱地址')
+    return
+  }
+  resetSending.value = true
+  try {
+    await sendPasswordResetCode(resetForm.email.trim())
+    ElMessage.success('若该邮箱已绑定账号，验证码将发送至邮箱')
+  } catch (error) {
+    ElMessage.error(error instanceof ApiError ? error.message : '发送失败，请稍后重试')
+  } finally {
+    resetSending.value = false
+  }
+}
+
+/** 提交密码重置。 */
+async function submitReset(): Promise<void> {
+  if (!/^\d{6}$/.test(resetForm.code.trim())) {
+    ElMessage.warning('请输入 6 位验证码')
+    return
+  }
+  if (resetForm.password.length < 8) {
+    ElMessage.warning('新密码至少 8 位')
+    return
+  }
+  if (resetForm.password !== resetForm.confirm) {
+    ElMessage.warning('两次输入的新密码不一致')
+    return
+  }
+  resetSubmitting.value = true
+  try {
+    await resetPassword(resetForm.email.trim(), resetForm.code.trim(), resetForm.password)
+    resetDialog.value = false
+    ElMessage.success('密码已重置，请使用新密码登录')
+  } catch (error) {
+    ElMessage.error(error instanceof ApiError ? error.message : '重置失败，请稍后重试')
+  } finally {
+    resetSubmitting.value = false
+  }
 }
 
 async function redirectAfterLogin(): Promise<void> {
@@ -248,6 +307,10 @@ async function redirectAfterLogin(): Promise<void> {
           >
             {{ submitLabel }}
           </el-button>
+
+          <div v-if="mode === 'login'" class="auth__forgot">
+            <button type="button" class="auth__switch-btn" @click="openReset">忘记密码？</button>
+          </div>
         </el-form>
 
         <form v-else class="auth__totp" @submit.prevent="submitTOTP">
@@ -291,6 +354,48 @@ async function redirectAfterLogin(): Promise<void> {
         </p>
       </div>
     </section>
+
+    <el-dialog
+      v-model="resetDialog"
+      title="找回密码"
+      width="min(420px, 92vw)"
+      append-to-body
+      :close-on-click-modal="false"
+    >
+      <div class="auth__reset">
+        <p class="auth__reset-desc">
+          请输入已绑定账号的邮箱，获取验证码后设置新密码。未收到验证码说明该邮箱未绑定账号。
+        </p>
+        <div class="auth__reset-row">
+          <el-input v-model="resetForm.email" placeholder="you@example.com" autocomplete="email" />
+          <el-button :loading="resetSending" @click="sendResetCode">发送验证码</el-button>
+        </div>
+        <el-input
+          v-model="resetForm.code"
+          maxlength="6"
+          inputmode="numeric"
+          placeholder="6 位验证码"
+        />
+        <el-input
+          v-model="resetForm.password"
+          type="password"
+          show-password
+          placeholder="新密码（至少 8 位）"
+          autocomplete="new-password"
+        />
+        <el-input
+          v-model="resetForm.confirm"
+          type="password"
+          show-password
+          placeholder="确认新密码"
+          autocomplete="new-password"
+        />
+      </div>
+      <template #footer>
+        <el-button @click="resetDialog = false">取消</el-button>
+        <el-button type="primary" :loading="resetSubmitting" @click="submitReset">重置密码</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -490,6 +595,30 @@ async function redirectAfterLogin(): Promise<void> {
 .auth__submit {
   width: 100%;
   margin-top: var(--ax-space-2);
+}
+
+.auth__forgot {
+  margin-top: var(--ax-space-3);
+  font-size: var(--ax-text-sm);
+  text-align: right;
+}
+
+.auth__reset {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ax-space-2);
+}
+
+.auth__reset-desc {
+  margin: 0 0 var(--ax-space-2);
+  color: var(--ax-text-3);
+  font-size: var(--ax-text-sm);
+  line-height: 1.6;
+}
+
+.auth__reset-row {
+  display: flex;
+  gap: var(--ax-space-2);
 }
 
 .auth__totp {

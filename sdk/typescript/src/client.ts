@@ -215,6 +215,27 @@ export class AxmipicClient {
     return this.request<User>('/api/v1/auth/me')
   }
 
+  async changePassword(currentPassword: string, newPassword: string): Promise<void> {
+    await this.request<{ status: string }>('/api/v1/auth/password', {
+      method: 'POST',
+      body: { current_password: currentPassword, new_password: newPassword },
+    })
+  }
+
+  async sendPasswordResetCode(email: string): Promise<void> {
+    await this.request<{ status: string }>('/api/v1/auth/password/reset/code', {
+      method: 'POST',
+      body: { email },
+    })
+  }
+
+  async resetPassword(email: string, code: string, newPassword: string): Promise<void> {
+    await this.request<{ status: string }>('/api/v1/auth/password/reset', {
+      method: 'POST',
+      body: { email, code, new_password: newPassword },
+    })
+  }
+
   async policies(): Promise<UploadPolicy> {
     return this.request<UploadPolicy>('/api/v1/auth/policies')
   }

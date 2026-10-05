@@ -6,6 +6,7 @@ import { Key, Refresh, SwitchButton } from '@element-plus/icons-vue'
 import QRCode from 'qrcode'
 
 import {
+  changePassword,
   disableTOTP,
   enableTOTP,
   fetchSecurity,
@@ -67,6 +68,11 @@ const emailBinding = ref(false)
 const unbindDialog = ref(false)
 const unbindBusy = ref(false)
 const unbindPassword = ref('')
+
+// 修改密码
+const passwordDialog = ref(false)
+const passwordBusy = ref(false)
+const passwordForm = reactive({ current: '', next: '', confirm: '' })
 
 const emailBound = computed(() => Boolean(security.value?.email && security.value.email_verified))
 const showEmailForm = computed(() => !emailBound.value || emailEditing.value)
@@ -208,6 +214,38 @@ async function confirmUnbindEmail(): Promise<void> {
     ElMessage.error(toApiError(error).message)
   } finally {
     unbindBusy.value = false
+  }
+}
+
+function openChangePassword(): void {
+  passwordForm.current = ''
+  passwordForm.next = ''
+  passwordForm.confirm = ''
+  passwordDialog.value = true
+}
+
+async function confirmChangePassword(): Promise<void> {
+  if (!passwordForm.current) {
+    ElMessage.warning('请输入当前密码')
+    return
+  }
+  if (passwordForm.next.length < 8) {
+    ElMessage.warning('新密码至少 8 位')
+    return
+  }
+  if (passwordForm.next !== passwordForm.confirm) {
+    ElMessage.warning('两次输入的新密码不一致')
+    return
+  }
+  passwordBusy.value = true
+  try {
+    await changePassword(passwordForm.current, passwordForm.next)
+    passwordDialog.value = false
+    ElMessage.success('密码已修改')
+  } catch (error) {
+    ElMessage.error(toApiError(error).message)
+  } finally {
+    passwordBusy.value = false
   }
 }
 
@@ -406,6 +444,20 @@ onMounted(load)
             </template>
           </div>
         </article>
+
+        <article class="ax-card">
+          <header class="ax-card__head">
+            <h2 class="ax-card__title">登录密码</h2>
+          </header>
+          <div class="ax-card__body security-card">
+            <p class="security-card__desc">
+              定期更换密码有助于保障账号安全。修改密码需要先输入当前密码。
+            </p>
+            <div class="security-card__actions">
+              <el-button type="primary" plain :icon="Key" @click="openChangePassword">修改密码</el-button>
+            </div>
+          </div>
+        </article>
       </section>
 
       <article class="ax-card settings-block">
@@ -502,6 +554,43 @@ onMounted(load)
       <template #footer>
         <el-button @click="unbindDialog = false">取消</el-button>
         <el-button type="danger" :loading="unbindBusy" @click="confirmUnbindEmail">确认解绑</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 修改密码 -->
+    <el-dialog
+      v-model="passwordDialog"
+      title="修改密码"
+      width="min(420px, 92vw)"
+      append-to-body
+      :close-on-click-modal="false"
+    >
+      <div class="email-form">
+        <el-input
+          v-model="passwordForm.current"
+          type="password"
+          show-password
+          placeholder="当前密码"
+          autocomplete="current-password"
+        />
+        <el-input
+          v-model="passwordForm.next"
+          type="password"
+          show-password
+          placeholder="新密码（至少 8 位）"
+          autocomplete="new-password"
+        />
+        <el-input
+          v-model="passwordForm.confirm"
+          type="password"
+          show-password
+          placeholder="确认新密码"
+          autocomplete="new-password"
+        />
+      </div>
+      <template #footer>
+        <el-button @click="passwordDialog = false">取消</el-button>
+        <el-button type="primary" :loading="passwordBusy" @click="confirmChangePassword">确认修改</el-button>
       </template>
     </el-dialog>
   </div>

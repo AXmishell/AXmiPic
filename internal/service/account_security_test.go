@@ -228,3 +228,93 @@ func TestEmailRebindPolicy(t *testing.T) {
 		t.Fatalf("rate limit err = %v, want ErrEmailRateLimited", err)
 	}
 }
+
+func TestChangePassword(t *testing.T) {
+	svc := newSecurityService(t)
+	ctx := context.Background()
+	user, err := svc.RegisterCustomer(ctx, "pwuser", "password123")
+	if err != nil {
+		t.Fatalf("RegisterCustomer: %v", err)
+	}
+	principal := &auth.Principal{UserID: user.ID, Role: auth.RoleUser}
+
+	// 当前密码错误。
+	if err := svc.ChangePassword(ctx, principal, "wrong-password", "newpassword123"); !errors.Is(err, service.ErrInvalidPassword) {
+		t.Fatalf("wrong current err = %v, want ErrInvalidPassword", err)
+	}
+	// 新密码过短。
+	if err := svc.ChangePassword(ctx, principal, "password123", "short"); !errors.Is(err, service.ErrInvalidInput) {
+		t.Fatalf("short new err = %v, want ErrInvalidInput", err)
+	}
+	// 新密码与旧密码相同。
+	if err := svc.ChangePassword(ctx, principal, "password123", "password123"); !errors.Is(err, service.ErrInvalidInput) {
+		t.Fatalf("same new err = %v, want ErrInvalidInput", err)
+	}
+	// 正常修改。
+	if err := svc.ChangePassword(ctx, principal, "password123", "newpassword123"); err != nil {
+		t.Fatalf("ChangePassword: %v", err)
+	}
+	if _, err := svc.LoginCustomer(ctx, "pwuser", "password123"); !errors.Is(err, service.ErrInvalidCredentials) {
+		t.Fatalf("old password login err = %v, want ErrInvalidCredentials", err)
+	}
+	if _, err := svc.LoginCustomer(ctx, "pwuser", "newpassword123"); err != nil {
+		t.Fatalf("new password login: %v", err)
+	}
+}
+
+func TestPasswordResetFlow(t *testing.T) {
+	svc := newSecurityService(t)
+	mock := notify.NewMockSender("email")
+	svc.SetNotifyService(service.NewNotifyService(nil, mock))
+
+	ctx := context.Background()
+	user, err := svc.RegisterCustomer(ctx, "resetuser", "password123")
+	if err != nil {
+		t.Fatalf("RegisterCustomer: %v", err)
+	}
+	principal := &auth.Principal{UserID: user.ID, Role: auth.RoleUser}
+
+	// 绑定并验证邮箱。
+	if err := svc.SendEmailVerification(ctx, principal, "reset@example.com"); err != nil {
+		t.Fatalf("SendEmailVerification: %v", err)
+	}
+	bindCode := extractCode(t, mock.Sent[len(mock.Sent)-1].Body)
+	if _, err := svc.VerifyEmail(ctx, principal, "reset@example.com", bindCode, ""); err != nil {
+		t.Fatalf("VerifyEmail: %v", err)
+	}
+
+	// 未注册的邮箱：不报错也不发信，避免枚举。
+	before := len(mock.Sent)
+	if err := svc.SendPasswordResetCode(ctx, "nobody@example.com"); err != nil {
+		t.Fatalf("unknown email send err = %v, want nil", err)
+	}
+	if len(mock.Sent) != before {
+		t.Fatalf("unknown email should not send, sent=%d", len(mock.Sent)-before)
+	}
+
+	// 请求重置验证码。
+	if err := svc.SendPasswordResetCode(ctx, "reset@example.com"); err != nil {
+		t.Fatalf("SendPasswordResetCode: %v", err)
+	}
+	resetCode := extractCode(t, mock.Sent[len(mock.Sent)-1].Body)
+
+	// 错误验证码。
+	if err := svc.ResetPassword(ctx, "reset@example.com", "000000", "brandnew123"); !errors.Is(err, service.ErrEmailCodeInvalid) {
+		t.Fatalf("wrong reset code err = %v, want ErrEmailCodeInvalid", err)
+	}
+	// 未注册邮箱同样返回 ErrEmailCodeInvalid（不暴露是否存在）。
+	if err := svc.ResetPassword(ctx, "nobody@example.com", resetCode, "brandnew123"); !errors.Is(err, service.ErrEmailCodeInvalid) {
+		t.Fatalf("unknown email reset err = %v, want ErrEmailCodeInvalid", err)
+	}
+	// 正常重置。
+	if err := svc.ResetPassword(ctx, "reset@example.com", resetCode, "brandnew123"); err != nil {
+		t.Fatalf("ResetPassword: %v", err)
+	}
+	if _, err := svc.LoginCustomer(ctx, "resetuser", "brandnew123"); err != nil {
+		t.Fatalf("login with reset password: %v", err)
+	}
+	// 验证码一次性。
+	if err := svc.ResetPassword(ctx, "reset@example.com", resetCode, "another12345"); !errors.Is(err, service.ErrEmailCodeInvalid) {
+		t.Fatalf("reuse reset code err = %v, want ErrEmailCodeInvalid", err)
+	}
+}

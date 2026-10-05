@@ -26,6 +26,8 @@ var (
 	ErrUserExists = errors.New("service: username already exists")
 	// ErrInvalidCredentials 表示用户名或密码错误。
 	ErrInvalidCredentials = errors.New("service: invalid username or password")
+	// ErrInvalidPassword 表示当前密码不正确（用于已登录状态下的改密/校验）。
+	ErrInvalidPassword = errors.New("service: current password is incorrect")
 	// ErrRegistrationDisabled 表示注册功能已关闭。
 	ErrRegistrationDisabled = errors.New("service: registration is disabled")
 	// ErrTokenNotFound 表示某个 API 令牌不存在。
@@ -610,6 +612,108 @@ func (s *AccountService) UnbindEmail(ctx context.Context, principal *auth.Princi
 	return toUserDTO(updated), nil
 }
 
+// ChangePassword 在验证当前密码后更新账户密码。它用于已登录用户主动改密。
+func (s *AccountService) ChangePassword(ctx context.Context, principal *auth.Principal, currentPassword, newPassword string) error {
+	account, err := s.repo.GetAccountByID(ctx, principal.StoreRole(), principal.UserID)
+	if err != nil {
+		return fmt.Errorf("change password: %w", err)
+	}
+	if !auth.VerifyPassword(account.PasswordHash, currentPassword) {
+		return ErrInvalidPassword
+	}
+	if err := validateNewPassword(newPassword); err != nil {
+		return err
+	}
+	if currentPassword == newPassword {
+		return fmt.Errorf("%w: new password must differ from the current one", ErrInvalidInput)
+	}
+	hash, err := auth.HashPassword(newPassword)
+	if err != nil {
+		return err
+	}
+	if _, err := s.repo.UpdateAccountSecurity(ctx, principal.StoreRole(), principal.UserID, map[string]any{
+		"password_hash": hash,
+	}); err != nil {
+		return fmt.Errorf("change password: %w", err)
+	}
+	return nil
+}
+
+// SendPasswordResetCode 向某个已验证邮箱发送密码重置验证码。为避免账户枚举，
+// 当邮箱未绑定任何已验证账户时同样返回成功，但不发送邮件。
+func (s *AccountService) SendPasswordResetCode(ctx context.Context, email string) error {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if _, err := mail.ParseAddress(email); err != nil {
+		return fmt.Errorf("%w: %s", ErrInvalidEmail, email)
+	}
+	if s.notify == nil {
+		return ErrEmailNotConfigured
+	}
+	key := passwordResetKey(email)
+	if !s.allowEmailSendForKey(key) {
+		return ErrEmailRateLimited
+	}
+	if _, _, err := s.repo.FindVerifiedAccountByEmail(ctx, email); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			// 不泄露该邮箱是否已注册；仍然按频率限制计数以避免探测。
+			s.recordEmailSendForKey(key)
+			return nil
+		}
+		return err
+	}
+	code, err := generateNumericCode()
+	if err != nil {
+		return err
+	}
+	body := fmt.Sprintf("你的 AXmiPic 密码重置验证码是：%s\n\n验证码 %d 分钟内有效，请勿转发给他人。", code, int(emailCodeTTL.Minutes()))
+	if err := s.notify.SendEmail(ctx, email, "AXmiPic 密码重置", body); err != nil {
+		return err
+	}
+	s.storeEmailCodeForKey(key, email, code)
+	s.recordEmailSendForKey(key)
+	return nil
+}
+
+// ResetPassword 校验邮箱验证码后设置新密码。邮箱不存在或验证码错误都返回同一
+// 错误，避免账户枚举。
+func (s *AccountService) ResetPassword(ctx context.Context, email, code, newPassword string) error {
+	if err := validateNewPassword(newPassword); err != nil {
+		return err
+	}
+	email = strings.ToLower(strings.TrimSpace(email))
+	role, account, err := s.repo.FindVerifiedAccountByEmail(ctx, email)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return ErrEmailCodeInvalid
+		}
+		return fmt.Errorf("reset password: %w", err)
+	}
+	if !s.consumeEmailCodeForKey(passwordResetKey(email), email, code) {
+		return ErrEmailCodeInvalid
+	}
+	hash, err := auth.HashPassword(newPassword)
+	if err != nil {
+		return err
+	}
+	if _, err := s.repo.UpdateAccountSecurity(ctx, role, account.ID, map[string]any{
+		"password_hash": hash,
+	}); err != nil {
+		return fmt.Errorf("reset password: %w", err)
+	}
+	return nil
+}
+
+// validateNewPassword 校验新密码长度，与注册时保持一致。
+func validateNewPassword(password string) error {
+	if len(password) < minPasswordLength {
+		return fmt.Errorf("%w: password must be at least %d characters", ErrInvalidInput, minPasswordLength)
+	}
+	if len(password) > maxPasswordLength {
+		return fmt.Errorf("%w: password must be at most %d bytes", ErrInvalidInput, maxPasswordLength)
+	}
+	return nil
+}
+
 func (s *AccountService) decryptTOTPSecret(encrypted string) (string, error) {
 	if s.cipher == nil {
 		return "", ErrTOTPUnavailable
@@ -622,10 +726,15 @@ func (s *AccountService) decryptTOTPSecret(encrypted string) (string, error) {
 }
 
 func (s *AccountService) storeEmailCode(principal *auth.Principal, email, code string) {
+	s.storeEmailCodeForKey(emailCodeKey(principal), email, code)
+}
+
+// storeEmailCodeForKey 按 key 暂存一条验证码。
+func (s *AccountService) storeEmailCodeForKey(key, email, code string) {
 	s.codeMu.Lock()
 	defer s.codeMu.Unlock()
 	s.pruneEmailState(time.Now())
-	s.emailCodes[emailCodeKey(principal)] = pendingEmailCode{
+	s.emailCodes[key] = pendingEmailCode{
 		email:   email,
 		code:    code,
 		expires: time.Now().Add(emailCodeTTL),
@@ -649,7 +758,11 @@ func (s *AccountService) pruneEmailState(now time.Time) {
 
 // allowEmailSend 判断账户是否还能请求验证码：先看当日额度，再消耗频率令牌。
 func (s *AccountService) allowEmailSend(principal *auth.Principal) bool {
-	key := emailCodeKey(principal)
+	return s.allowEmailSendForKey(emailCodeKey(principal))
+}
+
+// allowEmailSendForKey 判断某个 key（账户或重置邮箱）是否还能请求验证码。
+func (s *AccountService) allowEmailSendForKey(key string) bool {
 	today := time.Now().Format("2006-01-02")
 	s.codeMu.Lock()
 	entry := s.emailDaily[key]
@@ -663,7 +776,11 @@ func (s *AccountService) allowEmailSend(principal *auth.Principal) bool {
 
 // recordEmailSend 在成功发送后累加账户当日发送次数。
 func (s *AccountService) recordEmailSend(principal *auth.Principal) {
-	key := emailCodeKey(principal)
+	s.recordEmailSendForKey(emailCodeKey(principal))
+}
+
+// recordEmailSendForKey 在成功发送后累加某个 key 的当日发送次数。
+func (s *AccountService) recordEmailSendForKey(key string) {
 	today := time.Now().Format("2006-01-02")
 	s.codeMu.Lock()
 	defer s.codeMu.Unlock()
@@ -677,7 +794,12 @@ func (s *AccountService) recordEmailSend(principal *auth.Principal) {
 
 // consumeEmailCode 校验并消费验证码，防止重放。校验失败会增加尝试次数。
 func (s *AccountService) consumeEmailCode(principal *auth.Principal, email, code string) bool {
-	key := emailCodeKey(principal)
+	return s.consumeEmailCodeForKey(emailCodeKey(principal), email, code)
+}
+
+// consumeEmailCodeForKey 校验并消费某个 key 下的验证码，防止重放。校验失败会
+// 增加尝试次数。
+func (s *AccountService) consumeEmailCodeForKey(key, email, code string) bool {
 	s.codeMu.Lock()
 	defer s.codeMu.Unlock()
 	pending, ok := s.emailCodes[key]
@@ -703,6 +825,11 @@ func (s *AccountService) consumeEmailCode(principal *auth.Principal, email, code
 
 func emailCodeKey(principal *auth.Principal) string {
 	return string(principal.Role) + ":" + principal.UserID
+}
+
+// passwordResetKey 返回重置密码验证码的存储键（按邮箱维度）。
+func passwordResetKey(email string) string {
+	return "reset:" + strings.ToLower(strings.TrimSpace(email))
 }
 
 // generateNumericCode 生成一个无前导零的 6 位数字验证码。
@@ -810,13 +937,7 @@ func validateCredentials(username, password string) error {
 			return fmt.Errorf("%w: username may only contain letters, digits, '.', '_', '-', '+' and '@'", ErrInvalidInput)
 		}
 	}
-	if len(password) < minPasswordLength {
-		return fmt.Errorf("%w: password must be at least %d characters", ErrInvalidInput, minPasswordLength)
-	}
-	if len(password) > maxPasswordLength {
-		return fmt.Errorf("%w: password must be at most %d bytes", ErrInvalidInput, maxPasswordLength)
-	}
-	return nil
+	return validateNewPassword(password)
 }
 
 func isUsernameRune(r rune) bool {
