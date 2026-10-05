@@ -220,10 +220,8 @@ func (s *AccountService) RegisterCustomer(ctx context.Context, username, passwor
 // createCustomer 在完成占用检查后写入一个新客户账户。email 非空时会写入并
 // 按 emailVerified 标记验证状态。
 func (s *AccountService) createCustomer(ctx context.Context, username, password, email string, emailVerified bool) (*UserDTO, error) {
-	if _, err := s.repo.GetAccountByUsername(ctx, store.RoleCustomer, username); err == nil {
-		return nil, ErrUserExists
-	} else if !errors.Is(err, store.ErrNotFound) {
-		return nil, fmt.Errorf("register: lookup username: %w", err)
+	if err := s.ensureLoginIdentifiersFree(ctx, store.RoleCustomer, username, email, ""); err != nil {
+		return nil, err
 	}
 
 	hash, err := auth.HashPassword(password)
@@ -250,6 +248,48 @@ func (s *AccountService) createCustomer(ctx context.Context, username, password,
 	return toUserDTO(accountFromCustomer(customer)), nil
 }
 
+// ensureLoginIdentifiersFree 校验用户名与邮箱在给定账户表内不与任何账户的
+// 用户名或邮箱冲突。登录时以同一字符串先查用户名再查邮箱，因此若用户名与
+// 他人邮箱相同（反之亦然）就会产生登录歧义，必须在此拒绝。excludeID 用于
+// 排除当前账户自身（改绑邮箱时）。
+func (s *AccountService) ensureLoginIdentifiersFree(ctx context.Context, role store.AccountRole, username, email, excludeID string) error {
+	if username != "" {
+		if existing, err := s.repo.GetAccountByUsername(ctx, role, username); err == nil {
+			if existing.ID != excludeID {
+				return ErrUserExists
+			}
+		} else if !errors.Is(err, store.ErrNotFound) {
+			return fmt.Errorf("check username: %w", err)
+		}
+		// 用户名不能等于他人已绑定的邮箱。
+		if existing, err := s.repo.GetAccountByEmail(ctx, role, username); err == nil {
+			if existing.ID != excludeID {
+				return fmt.Errorf("%w: username conflicts with an existing email", ErrUserExists)
+			}
+		} else if !errors.Is(err, store.ErrNotFound) {
+			return fmt.Errorf("check username as email: %w", err)
+		}
+	}
+	if email != "" {
+		inUse, err := s.repo.EmailInUse(ctx, email, excludeID)
+		if err != nil {
+			return err
+		}
+		if inUse {
+			return ErrEmailInUse
+		}
+		// 邮箱不能等于他人用户名。
+		if existing, err := s.repo.GetAccountByUsername(ctx, role, email); err == nil {
+			if existing.ID != excludeID {
+				return fmt.Errorf("%w: email conflicts with an existing username", ErrEmailInUse)
+			}
+		} else if !errors.Is(err, store.ErrNotFound) {
+			return fmt.Errorf("check email as username: %w", err)
+		}
+	}
+	return nil
+}
+
 // SendRegistrationCode 向邮箱发送注册验证码（无需登录）。邮箱已被占用时返回
 // ErrEmailInUse，便于前端即时提示。
 func (s *AccountService) SendRegistrationCode(ctx context.Context, email string) error {
@@ -270,6 +310,12 @@ func (s *AccountService) SendRegistrationCode(ctx context.Context, email string)
 	}
 	if inUse {
 		return ErrEmailInUse
+	}
+	// 邮箱也不能已被他人用作登录用户名。
+	if existing, err := s.repo.GetAccountByUsername(ctx, store.RoleCustomer, email); err == nil && existing.ID != "" {
+		return ErrEmailInUse
+	} else if err != nil && !errors.Is(err, store.ErrNotFound) {
+		return fmt.Errorf("check email as username: %w", err)
 	}
 	code, err := generateNumericCode()
 	if err != nil {
@@ -300,18 +346,9 @@ func (s *AccountService) RegisterCustomerWithEmail(ctx context.Context, username
 	if _, err := mail.ParseAddress(email); err != nil {
 		return nil, fmt.Errorf("%w: %s", ErrInvalidEmail, email)
 	}
-	// 先做占用检查，避免因用户名/邮箱冲突而消耗验证码。
-	if _, err := s.repo.GetAccountByUsername(ctx, store.RoleCustomer, username); err == nil {
-		return nil, ErrUserExists
-	} else if !errors.Is(err, store.ErrNotFound) {
-		return nil, fmt.Errorf("register: lookup username: %w", err)
-	}
-	inUse, err := s.repo.EmailInUse(ctx, email, "")
-	if err != nil {
+	// 先做占用检查（用户名/邮箱互不冲突且各自唯一），避免因冲突消耗验证码。
+	if err := s.ensureLoginIdentifiersFree(ctx, store.RoleCustomer, username, email, ""); err != nil {
 		return nil, err
-	}
-	if inUse {
-		return nil, ErrEmailInUse
 	}
 	if !s.consumeEmailCodeForKey(ctx, registrationKey(email), email, code) {
 		return nil, ErrEmailCodeInvalid
@@ -379,10 +416,8 @@ func (s *AccountService) RegisterAdmin(ctx context.Context, username, password s
 	if err := validateCredentials(username, password); err != nil {
 		return nil, err
 	}
-	if _, err := s.repo.GetAccountByUsername(ctx, store.RoleAdmin, username); err == nil {
-		return nil, ErrUserExists
-	} else if !errors.Is(err, store.ErrNotFound) {
-		return nil, fmt.Errorf("register admin: lookup username: %w", err)
+	if err := s.ensureLoginIdentifiersFree(ctx, store.RoleAdmin, username, "", ""); err != nil {
+		return nil, err
 	}
 	hash, err := auth.HashPassword(password)
 	if err != nil {
@@ -594,12 +629,8 @@ func (s *AccountService) SendEmailVerification(ctx context.Context, principal *a
 	if !s.allowEmailSendForKey(ctx, emailCodeKey(principal)) {
 		return ErrEmailRateLimited
 	}
-	inUse, err := s.repo.EmailInUse(ctx, email, principal.UserID)
-	if err != nil {
+	if err := s.ensureLoginIdentifiersFree(ctx, principal.StoreRole(), "", email, principal.UserID); err != nil {
 		return err
-	}
-	if inUse {
-		return ErrEmailInUse
 	}
 	code, err := generateNumericCode()
 	if err != nil {
@@ -638,11 +669,9 @@ func (s *AccountService) VerifyEmail(ctx context.Context, principal *auth.Princi
 	if !s.consumeEmailCodeForKey(ctx, emailCodeKey(principal), email, code) {
 		return nil, ErrEmailCodeInvalid
 	}
-	// 在写入前复查邮箱是否已被其他账户占用，缩小并发换绑的竞态窗口。
-	if inUse, err := s.repo.EmailInUse(ctx, email, principal.UserID); err != nil {
+	// 在写入前复查邮箱是否已被其他账户占用或用作他人用户名，缩小竞态窗口。
+	if err := s.ensureLoginIdentifiersFree(ctx, principal.StoreRole(), "", email, principal.UserID); err != nil {
 		return nil, err
-	} else if inUse {
-		return nil, ErrEmailInUse
 	}
 	updated, err := s.repo.UpdateAccountSecurity(ctx, principal.StoreRole(), principal.UserID, map[string]any{
 		"email":          email,

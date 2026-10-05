@@ -314,6 +314,50 @@ func TestRegisterWithEmailVerification(t *testing.T) {
 	}
 }
 
+// TestLoginIdentifierConflictPrevented 验证用户名与邮箱不会互相占用，从而保证
+// 登录标识（用户名/邮箱）在账户表内唯一、不存在歧义。
+func TestLoginIdentifierConflictPrevented(t *testing.T) {
+	svc := newSecurityService(t)
+	mock := notify.NewMockSender("email")
+	svc.SetNotifyService(service.NewNotifyService(nil, mock))
+	ctx := context.Background()
+
+	register := func(username, email string) error {
+		if err := svc.SendRegistrationCode(ctx, email); err != nil {
+			return err
+		}
+		code := extractCode(t, mock.Sent[len(mock.Sent)-1].Body)
+		_, err := svc.RegisterCustomerWithEmail(ctx, username, "password123", email, code)
+		return err
+	}
+
+	// A：用户名 alice，邮箱 shared@example.com。
+	if err := register("alice", "shared@example.com"); err != nil {
+		t.Fatalf("register A: %v", err)
+	}
+	// A 用用户名或邮箱都能登录。
+	if _, err := svc.LoginCustomer(ctx, "alice", "password123"); err != nil {
+		t.Fatalf("login by username: %v", err)
+	}
+	if _, err := svc.LoginCustomer(ctx, "shared@example.com", "password123"); err != nil {
+		t.Fatalf("login by email: %v", err)
+	}
+
+	// B 用 A 的邮箱作为用户名注册：应被拒绝。
+	if err := register("shared@example.com", "bob@example.com"); !errors.Is(err, service.ErrUserExists) {
+		t.Fatalf("username-as-email conflict err = %v, want ErrUserExists", err)
+	}
+
+	// C：用户名本身就是邮箱形式。
+	if err := register("carol@example.com", "carol@example.org"); err != nil {
+		t.Fatalf("register C: %v", err)
+	}
+	// D 用 C 的用户名作为邮箱：发码阶段即被拒绝。
+	if err := svc.SendRegistrationCode(ctx, "carol@example.com"); !errors.Is(err, service.ErrEmailInUse) {
+		t.Fatalf("email-as-username err = %v, want ErrEmailInUse", err)
+	}
+}
+
 func TestChangePassword(t *testing.T) {
 	svc := newSecurityService(t)
 	ctx := context.Background()
