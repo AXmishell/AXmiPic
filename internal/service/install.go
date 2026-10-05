@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 	"fmt"
 	"os"
@@ -51,11 +52,23 @@ type InstallService struct {
 	lockFile   string
 	configPath string
 	disabled   bool
+	// token 为安装授权令牌；非空时 POST /install 必须携带匹配的令牌。
+	token string
 }
 
-// NewInstallService 构造一个 InstallService。
-func NewInstallService(lockFile, configPath string, disabled bool) *InstallService {
-	return &InstallService{lockFile: lockFile, configPath: configPath, disabled: disabled}
+// NewInstallService 构造一个 InstallService。token 为空且未禁用安装时，调用方
+// 应生成一个随机令牌传入。禁用安装时不再校验令牌。
+func NewInstallService(lockFile, configPath string, disabled bool, token string) *InstallService {
+	return &InstallService{lockFile: lockFile, configPath: configPath, disabled: disabled, token: strings.TrimSpace(token)}
+}
+
+// Authorize 报告给定的安装令牌是否可用于执行初始化。禁用安装时不校验；未配置
+// 令牌时放行（兼容旧部署与测试）。
+func (s *InstallService) Authorize(token string) bool {
+	if s.disabled || s.token == "" {
+		return true
+	}
+	return subtle.ConstantTimeCompare([]byte(strings.TrimSpace(token)), []byte(s.token)) == 1
 }
 
 // LockFile 返回锁文件路径。

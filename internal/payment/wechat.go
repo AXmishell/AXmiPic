@@ -9,7 +9,6 @@ import (
 	"crypto/rsa"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -64,7 +63,8 @@ type WechatOptions struct {
 	HTTPClient       *http.Client
 }
 
-// NewWechatGateway 构造一个微信支付渠道。
+// NewWechatGateway 构造一个微信支付渠道。app_id、mch_id、serial_no、商户私钥、
+// APIv3 密钥与平台公钥均为必需；缺少平台公钥将无法验签回调，因此拒绝构造。
 func NewWechatGateway(opts WechatOptions) (*WechatGateway, error) {
 	if strings.TrimSpace(opts.AppID) == "" || strings.TrimSpace(opts.MchID) == "" {
 		return nil, fmt.Errorf("payment: wechat app_id and mch_id are required")
@@ -75,17 +75,16 @@ func NewWechatGateway(opts WechatOptions) (*WechatGateway, error) {
 	if len(opts.APIv3Key) != 32 {
 		return nil, fmt.Errorf("payment: wechat api_v3_key must be 32 bytes")
 	}
+	if strings.TrimSpace(opts.PlatformPublicKey) == "" {
+		return nil, fmt.Errorf("payment: wechat platform_public_key is required to verify callbacks")
+	}
 	priv, err := parseRSAPrivateKey(opts.PrivateKey)
 	if err != nil {
 		return nil, fmt.Errorf("payment: wechat private key: %w", err)
 	}
-	var platformKey *rsa.PublicKey
-	if strings.TrimSpace(opts.PlatformPublicKey) != "" {
-		parsed, err := parseRSAPublicKey(opts.PlatformPublicKey)
-		if err != nil {
-			return nil, fmt.Errorf("payment: wechat platform public key: %w", err)
-		}
-		platformKey = parsed
+	platformKey, err := parseRSAPublicKey(opts.PlatformPublicKey)
+	if err != nil {
+		return nil, fmt.Errorf("payment: wechat platform public key: %w", err)
 	}
 	gatewayURL := strings.TrimSpace(opts.GatewayURL)
 	if gatewayURL == "" {
@@ -138,12 +137,8 @@ func (g *WechatGateway) Create(ctx context.Context, order Order) (*CreateResult,
 	return &CreateResult{TradeNo: order.ID, PayURL: *resp.CodeUrl}, nil
 }
 
-// VerifyCallback 使用官方 SDK 的通知处理器校验签名并解密回调；未配置平台公钥
-// 时回退为仅 AES-GCM 解密（不验签），以兼容旧部署。
+// VerifyCallback 使用官方 SDK 的通知处理器校验签名并解密回调。
 func (g *WechatGateway) VerifyCallback(ctx context.Context, header http.Header, raw []byte) (*Callback, error) {
-	if g.platformPublicKey == nil {
-		return g.verifyCallbackUnverified(ctx, raw)
-	}
 	handler, err := notify.NewRSANotifyHandler(g.apiV3Key, wechatPubkeyVerifier{
 		publicKey: g.platformPublicKey,
 		serial:    g.platformSerialNo,
@@ -165,38 +160,6 @@ func (g *WechatGateway) VerifyCallback(ctx context.Context, header http.Header, 
 	}
 	if parsed.EventType != "TRANSACTION.SUCCESS" {
 		return nil, fmt.Errorf("payment: wechat event %q is not a successful payment", parsed.EventType)
-	}
-	return transaction.toCallback(), nil
-}
-
-// verifyCallbackUnverified 在未配置平台公钥时仅解密回调资源（不校验签名）。
-func (g *WechatGateway) verifyCallbackUnverified(_ context.Context, raw []byte) (*Callback, error) {
-	var notification struct {
-		EventType string `json:"event_type"`
-		Resource  struct {
-			Algorithm      string `json:"algorithm"`
-			Ciphertext     string `json:"ciphertext"`
-			Nonce          string `json:"nonce"`
-			AssociatedData string `json:"associated_data"`
-		} `json:"resource"`
-	}
-	if err := json.Unmarshal(raw, &notification); err != nil {
-		return nil, fmt.Errorf("payment: wechat callback decode: %w", err)
-	}
-	if notification.EventType != "TRANSACTION.SUCCESS" {
-		return nil, fmt.Errorf("payment: wechat event %q is not a successful payment", notification.EventType)
-	}
-	plaintext, err := decryptAESGCM([]byte(g.apiV3Key),
-		notification.Resource.Ciphertext,
-		notification.Resource.Nonce,
-		notification.Resource.AssociatedData,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("payment: wechat decrypt: %w", err)
-	}
-	var transaction wechatTransaction
-	if err := json.Unmarshal(plaintext, &transaction); err != nil {
-		return nil, fmt.Errorf("payment: wechat transaction decode: %w", err)
 	}
 	return transaction.toCallback(), nil
 }

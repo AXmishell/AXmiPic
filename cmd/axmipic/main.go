@@ -64,10 +64,22 @@ func run() error {
 		slog.String("platform", runtime.GOOS+"/"+runtime.GOARCH),
 	)
 
-	installSvc := service.NewInstallService(cfg.Install.LockFile, cfg.Install.ConfigPath, cfg.Install.Disabled)
+	installToken := strings.TrimSpace(cfg.Install.Token)
+	if installToken == "" && !cfg.Install.Disabled {
+		buf := make([]byte, 18)
+		if _, err := rand.Read(buf); err != nil {
+			return fmt.Errorf("main: generate install token: %w", err)
+		}
+		installToken = base64.RawURLEncoding.EncodeToString(buf)
+	}
+	installSvc := service.NewInstallService(cfg.Install.LockFile, cfg.Install.ConfigPath, cfg.Install.Disabled, installToken)
 	installed := installSvc.IsInstalled()
 	if !installed {
 		logger.Warn("AXmiPic is not installed yet; visit /install to run the setup wizard")
+		if installToken != "" {
+			logger.Warn("installation requires a setup token; enter it on the install page",
+				slog.String("install_token", installToken))
+		}
 	}
 
 	repo, err := store.Open(cfg.Database.Driver, cfg.Database.DSN)

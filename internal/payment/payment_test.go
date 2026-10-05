@@ -92,10 +92,11 @@ func TestWechatCreateUsesGatewayURL(t *testing.T) {
 	}))
 	defer server.Close()
 
-	privatePEM, _ := generateKeyPair(t)
+	privatePEM, publicPEM := generateKeyPair(t)
 	gateway, err := NewWechatGateway(WechatOptions{
 		AppID: "wxapp", MchID: "1900000001", SerialNo: "serial-1",
 		PrivateKey: privatePEM, APIv3Key: "0123456789abcdef0123456789abcdef",
+		PlatformPublicKey: publicPEM, PlatformSerialNo: "PLAT-1",
 		GatewayURL: server.URL,
 	})
 	if err != nil {
@@ -116,13 +117,14 @@ func TestWechatCreateUsesGatewayURL(t *testing.T) {
 }
 
 func TestWechatDecryptResource(t *testing.T) {
-	privatePEM, _ := generateKeyPair(t)
+	privatePEM, publicPEM := generateKeyPair(t)
 	gateway, err := NewWechatGateway(WechatOptions{
-		AppID:      "wxapp",
-		MchID:      "1900000001",
-		SerialNo:   "serial-1",
-		PrivateKey: privatePEM,
-		APIv3Key:   "0123456789abcdef0123456789abcdef",
+		AppID:             "wxapp",
+		MchID:             "1900000001",
+		SerialNo:          "serial-1",
+		PrivateKey:        privatePEM,
+		APIv3Key:          "0123456789abcdef0123456789abcdef",
+		PlatformPublicKey: publicPEM,
 	})
 	if err != nil {
 		t.Fatalf("NewWechatGateway: %v", err)
@@ -150,6 +152,16 @@ func TestWechatRejectsBadKey(t *testing.T) {
 		AppID: "wxapp", MchID: "1", SerialNo: "s", PrivateKey: privatePEM, APIv3Key: "short",
 	}); err == nil {
 		t.Fatalf("expected error for short api_v3_key")
+	}
+}
+
+func TestWechatRequiresPlatformPublicKey(t *testing.T) {
+	privatePEM, _ := generateKeyPair(t)
+	if _, err := NewWechatGateway(WechatOptions{
+		AppID: "wxapp", MchID: "1", SerialNo: "s", PrivateKey: privatePEM,
+		APIv3Key: "0123456789abcdef0123456789abcdef",
+	}); err == nil {
+		t.Fatal("expected error when platform_public_key is missing")
 	}
 }
 

@@ -71,6 +71,7 @@ var envPaths = map[string]string{
 	"auth_guest_upload_max_mb":           "auth.guest_upload_max_mb",
 	"install_lock_file":                  "install.lock_file",
 	"install_config_path":                "install.config_path",
+	"install_token":                      "install.token",
 	"install_disabled":                   "install.disabled",
 	"limits_upload_per_minute":           "limits.upload_per_minute",
 	"limits_upload_burst":                "limits.upload_burst",
@@ -244,6 +245,9 @@ type InstallConfig struct {
 	LockFile string `koanf:"lock_file"`
 	// ConfigPath 为安装向导写入的配置文件路径。
 	ConfigPath string `koanf:"config_path"`
+	// Token 为安装向导的访问令牌。为空且未禁用安装时，服务会生成一个随机令牌
+	// 并在启动日志中输出，需在安装界面填写后才能执行初始化。
+	Token string `koanf:"token"`
 	// Disabled 为 true 时跳过安装检查（用于测试或容器编排）。
 	Disabled bool `koanf:"disabled"`
 }

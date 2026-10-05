@@ -32,15 +32,18 @@ const form = reactive<InstallForm>({
   storage_root: './data/uploads',
   allow_registration: true,
   allow_guest_upload: true,
+  install_token: '',
 })
 
-/** 仅用于前端校验「确认密码」，不提交给后端。 */
+/** 仅用于前端校验「确认密码」与安装令牌，不直接提交给后端。 */
 interface InstallForm extends InstallInput {
   admin_password_confirm: string
+  install_token: string
 }
 
 const rules: FormRules = {
   base_url: [{ required: true, message: '请输入站点地址', trigger: 'blur' }],
+  install_token: [{ required: true, message: '请输入安装令牌', trigger: 'blur' }],
   database_dsn: [{ required: true, message: '请输入数据库连接串', trigger: 'blur' }],
   admin_username: usernameRules('请输入管理员用户名'),
   admin_password: [
@@ -162,7 +165,7 @@ async function next(): Promise<void> {
   const instance = formRef.value
   if (step.value === 0) {
     if (instance) {
-      const ok = await instance.validateField('base_url').catch(() => false)
+      const ok = await instance.validateField(['base_url', 'install_token']).catch(() => false)
       if (!ok) return
     }
     if (isPostgres.value && !useAdvancedDsn.value) {
@@ -190,7 +193,7 @@ async function submit(): Promise<void> {
   if (submitting.value) return
   submitting.value = true
   try {
-    await runInstall(installPayload())
+    await runInstall(installPayload(), form.install_token.trim())
     app.markInstalled()
     done.value = true
     step.value = steps.length - 1
@@ -257,6 +260,11 @@ onMounted(async () => {
                 <p class="install__section-desc">选择数据库类型并填写连接信息</p>
               </div>
             </div>
+
+            <el-form-item label="安装令牌" prop="install_token">
+              <el-input v-model="form.install_token" placeholder="启动日志中的 install_token" autocomplete="off" />
+              <div class="install__hint">首次部署时服务启动日志会输出 install_token，请在此填写以完成初始化。</div>
+            </el-form-item>
 
             <el-form-item label="站点地址" prop="base_url">
               <el-input v-model="form.base_url" placeholder="https://pic.example.com" />

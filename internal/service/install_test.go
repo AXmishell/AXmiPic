@@ -14,7 +14,7 @@ import (
 func TestInstallStatusAndLock(t *testing.T) {
 	dir := t.TempDir()
 	lock := filepath.Join(dir, "install.lock")
-	svc := service.NewInstallService(lock, filepath.Join(dir, "config.yaml"), false)
+	svc := service.NewInstallService(lock, filepath.Join(dir, "config.yaml"), false, "")
 
 	status := svc.Status()
 	if status.Installed {
@@ -34,9 +34,29 @@ func TestInstallStatusAndLock(t *testing.T) {
 }
 
 func TestInstallDisabledSkipsCheck(t *testing.T) {
-	svc := service.NewInstallService(filepath.Join(t.TempDir(), "missing.lock"), "", true)
+	svc := service.NewInstallService(filepath.Join(t.TempDir(), "missing.lock"), "", true, "")
 	if !svc.IsInstalled() {
 		t.Fatal("disabled installer should report installed")
+	}
+}
+
+func TestInstallAuthorizeToken(t *testing.T) {
+	svc := service.NewInstallService(filepath.Join(t.TempDir(), "missing.lock"), "", false, "s3cret")
+	if !svc.Authorize("s3cret") {
+		t.Fatal("correct token should be authorized")
+	}
+	if svc.Authorize("wrong") || svc.Authorize("") {
+		t.Fatal("wrong or empty token must be rejected")
+	}
+	// 未配置令牌时放行（兼容旧部署与测试）。
+	open := service.NewInstallService(filepath.Join(t.TempDir(), "missing.lock"), "", false, "")
+	if !open.Authorize("") {
+		t.Fatal("empty configured token should authorize")
+	}
+	// 禁用安装时不校验令牌。
+	disabled := service.NewInstallService(filepath.Join(t.TempDir(), "missing.lock"), "", true, "s3cret")
+	if !disabled.Authorize("anything") {
+		t.Fatal("disabled installer should authorize any token")
 	}
 }
 
@@ -44,7 +64,7 @@ func TestInstallWritesConfigAndLock(t *testing.T) {
 	dir := t.TempDir()
 	lock := filepath.Join(dir, "install.lock")
 	cfg := filepath.Join(dir, "config.yaml")
-	svc := service.NewInstallService(lock, cfg, false)
+	svc := service.NewInstallService(lock, cfg, false, "")
 
 	var seeded bool
 	opener := func(driver, dsn string) (*store.Repository, error) {
@@ -94,7 +114,7 @@ func TestInstallWritesConfigAndLock(t *testing.T) {
 
 func TestInstallValidatesInput(t *testing.T) {
 	dir := t.TempDir()
-	svc := service.NewInstallService(filepath.Join(dir, "install.lock"), "", false)
+	svc := service.NewInstallService(filepath.Join(dir, "install.lock"), "", false, "")
 	opener := func(driver, dsn string) (*store.Repository, error) {
 		return store.Open("sqlite", filepath.Join(dir, "install.db"))
 	}

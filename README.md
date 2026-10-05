@@ -204,6 +204,9 @@ install:
   lock_file: "./data/install.lock"
   # 安装向导会重写的配置文件路径。
   config_path: "./configs/config.yaml"
+  # 安装授权令牌。留空且未禁用安装时，服务启动会生成随机令牌并输出到日志，
+  # 需在安装页面填写后方可执行初始化。
+  token: ""
   # 完全跳过安装检查（测试 / 容器编排）。
   disabled: false
 ```
@@ -291,7 +294,7 @@ processing:
 
 设置 `install.disabled: true` 可完全跳过安装检查（适用于测试与容器编排）。
 
-> 安全提示：未安装时 `POST /api/v1/install` 仅接受来自本机或私网地址的请求，避免实例在初始化前被公网访问时被他人抢先完成安装。请在服务器本机或内网完成初始化，或先配置 `auth.bootstrap_admin` 再启动。
+> 安全提示：未安装时 `POST /api/v1/install` 需要携带安装令牌（请求头 `X-Install-Token`）。未显式配置 `install.token` 时，服务启动会生成一个随机令牌并在日志中以 `install_token` 字段输出，需在安装页面填写后才能完成初始化，从而避免实例在初始化前被他人抢先接管。也可配置 `auth.bootstrap_admin` 跳过安装向导。
 
 ## API
 
@@ -493,7 +496,7 @@ curl -X POST http://localhost:8080/api/v1/upload \
 | `wechat` | 微信支付 v3 Native 扫码，基于官方 SDK（`wechatpay-apiv3/wechatpay-go`）完成下单与回调验签/解密 |
 | `epay` | 易支付（彩虹易支付兼容）聚合支付，MD5 签名下单与异步通知验签 |
 
-`payment.default_gateway` 选择默认渠道。支付宝在 `payment.alipay` 配置 `app_id`、`private_key`（应用私钥）、`public_key`（支付宝公钥）；微信在 `payment.wechat` 配置 `app_id`、`mch_id`、`serial_no`（商户证书序列号）、`private_key`（商户 API 私钥）、`api_v3_key`（32 字节），并强烈建议配置 `platform_public_key`（微信支付平台证书公钥）与可选的 `platform_serial_no`，以对回调 `Wechatpay-Signature` 做 RSA 验签；易支付在 `payment.epay` 配置 `pid`（商户号）、`key`（MD5 密钥）、`gateway_url`（站点根地址），可选 `api_url`、`submit_url`、`pay_type`（`alipay`/`wxpay`/`qqpay` 等）。凭据齐备并置 `enabled: true` 后渠道会在启动时注册。
+`payment.default_gateway` 选择默认渠道。支付宝在 `payment.alipay` 配置 `app_id`、`private_key`（应用私钥）、`public_key`（支付宝公钥）；微信在 `payment.wechat` 配置 `app_id`、`mch_id`、`serial_no`（商户证书序列号）、`private_key`（商户 API 私钥）、`api_v3_key`（32 字节）、`platform_public_key`（微信支付平台证书公钥，**必填**，用于对回调 `Wechatpay-Signature` 做 RSA 验签）与可选的 `platform_serial_no`；缺少平台公钥时微信渠道将拒绝构造，避免未验签的回调确认支付。易支付在 `payment.epay` 配置 `pid`（商户号）、`key`（MD5 密钥）、`gateway_url`（站点根地址），可选 `api_url`、`submit_url`、`pay_type`（`alipay`/`wxpay`/`qqpay` 等）。凭据齐备并置 `enabled: true` 后渠道会在启动时注册。
 
 为避免绕过真实支付，普通用户只能自助完成 `mock` 订单；`manual` 订单需管理员通过 `POST /api/v1/admin/orders/{id}/pay` 核销；`alipay`/`wechat`/`epay` 订单只能由支付回调确认，且回调金额会与订单金额核对。
 
@@ -611,7 +614,7 @@ docker compose up -d
 docker compose logs -f
 ```
 
-启动后访问 **`http://<主机>:8080/install`**，按向导填写数据库连接、站点地址与管理员账号完成初始化。
+启动后访问 **`http://<主机>:8080/install`**，按向导填写数据库连接、站点地址与管理员账号完成初始化。首次启动日志（`docker compose logs -f`）会输出 `install_token`，请在向导的「安装令牌」字段填写；也可通过 `AXMIPIC_INSTALL_TOKEN` 预先指定。
 
 - 向导会把数据库连接等写入具名卷 `axmipic-config`（容器内 `/app/configs/config.yaml`）并初始化目标数据库；数据库切换在**重启容器后**生效。
 - 数据（SQLite 数据库、本地上传文件、自动生成的主密钥）保存在具名卷 `axmipic-data`；`docker compose down` 不删除数据，`docker compose down -v` 会连同数据卷一并删除。

@@ -108,6 +108,10 @@ install:
   lock_file: "./data/install.lock"
   # Config file rewritten by the setup wizard.
   config_path: "./configs/config.yaml"
+  # Setup-wizard authorization token. Leave empty to have the server generate a
+  # random token at startup (printed to the logs) that must be entered on the
+  # install page.
+  token: ""
   # Skip the install check entirely (useful for tests / orchestration).
   disabled: false
 
@@ -147,8 +151,8 @@ payment:
     private_key: ""
     # APIv3 密钥（32 字节），用于解密回调。
     api_v3_key: ""
-    # 微信支付平台证书公钥（PEM 或裸 base64）；配置后会对回调
-    # Wechatpay-Signature 做 RSA 验签，强烈建议配置。
+    # 微信支付平台证书公钥（PEM 或裸 base64）；**必填**，用于对回调
+    # Wechatpay-Signature 做 RSA 验签，缺失时微信渠道将拒绝构造。
     platform_public_key: ""
     # 平台证书序列号；配置后校验回调头中的 serial。
     platform_serial_no: ""

@@ -48,9 +48,14 @@ export function fetchInstallStatus(): Promise<InstallStatus> {
   return request<InstallStatus>({ method: 'GET', url: '/install/status' })
 }
 
-/** 执行安装初始化。 */
-export function runInstall(input: InstallInput): Promise<{ installed: boolean }> {
-  return request<{ installed: boolean }>({ method: 'POST', url: '/install', data: input })
+/** 执行安装初始化。token 为启动日志中输出的安装令牌。 */
+export function runInstall(input: InstallInput, token: string): Promise<{ installed: boolean }> {
+  return request<{ installed: boolean }>({
+    method: 'POST',
+    url: '/install',
+    data: input,
+    headers: token ? { 'X-Install-Token': token } : undefined,
+  })
 }
 
 // ---- 二次验证（TOTP）与邮箱绑定 ----
