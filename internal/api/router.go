@@ -32,6 +32,8 @@ type Deps struct {
 	Install  *service.InstallService
 	// Settings 管理运行时可修改的系统设置（如 SMTP）。
 	Settings *service.SettingsService
+	// GuestSigner 为匿名访客的签名 cookie 提供签名与校验。
+	GuestSigner *auth.GuestSigner
 	// Runtime 是实例运行环境信息，供管理端展示（不含密钥）。
 	Runtime       RuntimeInfo
 	Authenticator *auth.Authenticator
@@ -48,10 +50,7 @@ type Deps struct {
 	// InstallSeed 在安装过程中创建管理员、角色组与 Guest 账户。
 	InstallSeed func(ctx context.Context, repo *store.Repository, in service.InstallInput) error
 	// Static 非 nil 时，为未匹配的路由提供单页应用服务。
-	Static      http.Handler
-	RequireAuth bool
-	// AllowGuestUpload 允许未登录访客上传（使用 Guest 角色策略）。
-	AllowGuestUpload bool
+	Static http.Handler
 	// TrustProxy 启用从 X-Forwarded-For / X-Real-IP 解析客户端 IP。
 	TrustProxy  bool
 	MaxUploadMB int
@@ -73,6 +72,7 @@ type Handler struct {
 	notify         *service.NotifyService
 	install        *service.InstallService
 	settings       *service.SettingsService
+	guestSigner    *auth.GuestSigner
 	runtime        RuntimeInfo
 	installRepo    func(driver, dsn string) (*store.Repository, error)
 	installSeed    func(ctx context.Context, repo *store.Repository, in service.InstallInput) error
@@ -100,6 +100,7 @@ func NewRouter(d Deps) http.Handler {
 		notify:         d.Notify,
 		install:        d.Install,
 		settings:       d.Settings,
+		guestSigner:    d.GuestSigner,
 		runtime:        d.Runtime,
 		installRepo:    d.InstallRepo,
 		installSeed:    d.InstallSeed,
@@ -178,10 +179,9 @@ func NewRouter(d Deps) http.Handler {
 			})
 
 			r.Group(func(r chi.Router) {
-				if d.RequireAuth && !d.AllowGuestUpload {
-					r.Use(auth.RequireAuth)
-				}
+				r.Use(h.uploadAuthGuard)
 				r.Use(uploadLimit)
+				r.Use(h.guestEnsure)
 				r.Post("/upload", h.uploadImage)
 				r.Post("/upload/presign", h.presignUpload)
 				r.Post("/upload/confirm", h.confirmUpload)
@@ -291,6 +291,8 @@ func NewRouter(d Deps) http.Handler {
 				r.Get("/admin/notify/logs", h.adminNotifyLogs)
 				r.Get("/admin/notify/smtp", h.adminGetSMTP)
 				r.Put("/admin/notify/smtp", h.adminUpdateSMTP)
+				r.Get("/admin/auth", h.adminGetAuth)
+				r.Put("/admin/auth", h.adminUpdateAuth)
 				r.Get("/admin/payment", h.adminGetPayment)
 				r.Put("/admin/payment", h.adminUpdatePayment)
 				r.Get("/admin/security", h.adminSecurityInfo)
@@ -306,6 +308,32 @@ func NewRouter(d Deps) http.Handler {
 	}
 
 	return r
+}
+
+// currentAuth 返回当前生效的上传鉴权开关：优先读取可在后台热更新的设置，
+// 未配置设置服务时回退到启动时的运行环境信息。
+func (h *Handler) currentAuth() service.AuthConfig {
+	if h.settings != nil {
+		return h.settings.Auth()
+	}
+	return service.AuthConfig{
+		RequireAuth:      h.runtime.RequireAuth,
+		AllowGuestUpload: h.runtime.AllowGuestUpload,
+	}
+}
+
+// uploadAuthGuard 在上传接口按当前开关决定是否强制登录。允许访客上传时放行，
+// 以便匿名请求由 Authenticator 附加 Guest 身份后上传；该判断在每次请求时读取，
+// 因此后台切换后无需重启即生效。
+func (h *Handler) uploadAuthGuard(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cfg := h.currentAuth()
+		if cfg.RequireAuth && !cfg.AllowGuestUpload {
+			auth.RequireAuth(next).ServeHTTP(w, r)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // securityHeaders 为每个响应应用纵深防御的响应头。

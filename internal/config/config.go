@@ -69,6 +69,7 @@ var envPaths = map[string]string{
 	"auth_allow_guest_upload":            "auth.allow_guest_upload",
 	"auth_guest_quota_mb":                "auth.guest_quota_mb",
 	"auth_guest_upload_max_mb":           "auth.guest_upload_max_mb",
+	"auth_guest_ip_quota_mb":             "auth.guest_ip_quota_mb",
 	"install_lock_file":                  "install.lock_file",
 	"install_config_path":                "install.config_path",
 	"install_token":                      "install.token",
@@ -237,6 +238,9 @@ type AuthConfig struct {
 	GuestQuotaMB int `koanf:"guest_quota_mb"`
 	// GuestUploadMaxMB 为 Guest 单文件大小上限。
 	GuestUploadMaxMB int `koanf:"guest_upload_max_mb"`
+	// GuestIPQuotaMB 为单个客户端 IP 在固定窗口内允许的访客上传总量（MiB，
+	// 0 表示不限）。窗口为 24 小时。
+	GuestIPQuotaMB int `koanf:"guest_ip_quota_mb"`
 }
 
 // InstallConfig 配置安装向导与锁文件。

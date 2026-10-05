@@ -87,6 +87,8 @@ func (h *Handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, http.StatusNotFound, http.StatusNotFound, err.Error())
 	case errors.Is(err, service.ErrQuotaExceeded):
 		writeError(w, http.StatusInsufficientStorage, http.StatusInsufficientStorage, err.Error())
+	case errors.Is(err, service.ErrGuestQuotaExceeded):
+		writeError(w, http.StatusTooManyRequests, http.StatusTooManyRequests, err.Error())
 	case errors.Is(err, service.ErrStorageNotFound):
 		writeError(w, http.StatusNotFound, http.StatusNotFound, "storage backend not found")
 	case errors.Is(err, service.ErrStorageInUse):

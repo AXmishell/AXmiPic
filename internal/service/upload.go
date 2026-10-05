@@ -46,6 +46,9 @@ var ErrInvalidInput = errors.New("service: invalid input")
 // ErrQuotaExceeded 在上传会超出所有者配额时返回。
 var ErrQuotaExceeded = errors.New("service: storage quota exceeded")
 
+// ErrGuestQuotaExceeded 在匿名访客的按 IP 窗口配额已用尽时返回。
+var ErrGuestQuotaExceeded = errors.New("service: guest ip quota exceeded")
+
 // ErrForbidden 在调用者无权访问某个资源时返回。
 var ErrForbidden = errors.New("service: forbidden")
 
@@ -177,6 +180,11 @@ type UploadService struct {
 	policy   UploadPolicy
 	resolver UploadPolicyResolver
 	scanner  security.Scanner
+
+	// guestIPQuotaBytes 与 guestIPQuotaWindow 控制匿名访客按 IP 的累计上传配额；
+	// guestIPQuotaBytes<=0 表示不限。
+	guestIPQuotaBytes  int64
+	guestIPQuotaWindow time.Duration
 }
 
 // NewUploadService 构造一个 UploadService。
@@ -192,6 +200,55 @@ func (s *UploadService) SetPolicyResolver(resolver UploadPolicyResolver) {
 // SetScanner 安装一个上传内容安全扫描器。
 func (s *UploadService) SetScanner(scanner security.Scanner) {
 	s.scanner = scanner
+}
+
+// SetGuestIPQuota 配置匿名访客按客户端 IP 的累计上传配额（固定窗口内）。
+// limitBytes<=0 表示不限。
+func (s *UploadService) SetGuestIPQuota(limitBytes int64, window time.Duration) {
+	s.guestIPQuotaBytes = limitBytes
+	s.guestIPQuotaWindow = window
+}
+
+// clientIPKey 是上下文键，用于把客户端 IP 传递给访客配额记账。
+type clientIPKey struct{}
+
+// WithClientIP 把客户端 IP 附带到上下文，供访客 IP 配额记账使用。
+func WithClientIP(ctx context.Context, ip string) context.Context {
+	if ip == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, clientIPKey{}, ip)
+}
+
+func clientIPFrom(ctx context.Context) string {
+	ip, _ := ctx.Value(clientIPKey{}).(string)
+	return ip
+}
+
+// reserveGuestIPQuota 为匿名访客预留按 IP 的窗口配额。非访客或未配置时无操作。
+func (s *UploadService) reserveGuestIPQuota(ctx context.Context, principal *auth.Principal, amount int64) (func(), bool, error) {
+	if s.guestIPQuotaBytes <= 0 || !principal.IsGuest() {
+		return func() {}, true, nil
+	}
+	ip := clientIPFrom(ctx)
+	if ip == "" {
+		return func() {}, true, nil
+	}
+	ok, err := s.repo.ReserveGuestIPQuota(ctx, ip, amount, s.guestIPQuotaBytes, s.guestIPQuotaWindow)
+	if err != nil {
+		return nil, false, err
+	}
+	if !ok {
+		return func() {}, false, nil
+	}
+	released := false
+	return func() {
+		if released {
+			return
+		}
+		released = true
+		_ = s.repo.ReleaseGuestIPQuota(context.WithoutCancel(ctx), ip, amount)
+	}, true, nil
 }
 
 // ScannerName 返回当前扫描器名称；未配置时返回 "none"。
@@ -307,9 +364,19 @@ func (s *UploadService) Upload(ctx context.Context, principal *auth.Principal, i
 	if !ok {
 		return nil, ErrQuotaExceeded
 	}
+	releaseIP, ok, err := s.reserveGuestIPQuota(ctx, principal, size)
+	if err != nil {
+		release()
+		return nil, err
+	}
+	if !ok {
+		release()
+		return nil, ErrGuestQuotaExceeded
+	}
 	committed := false
 	defer func() {
 		if !committed {
+			releaseIP()
 			release()
 		}
 	}()
@@ -498,9 +565,21 @@ func (s *UploadService) Confirm(ctx context.Context, principal *auth.Principal, 
 		_ = s.repo.DeletePendingUpload(ctx, key)
 		return nil, ErrQuotaExceeded
 	}
+	releaseIP, ok, err := s.reserveGuestIPQuota(ctx, principal, info.Size)
+	if err != nil {
+		release()
+		return nil, err
+	}
+	if !ok {
+		_ = backend.Delete(ctx, key)
+		_ = s.repo.DeletePendingUpload(ctx, key)
+		release()
+		return nil, ErrGuestQuotaExceeded
+	}
 	committed := false
 	defer func() {
 		if !committed {
+			releaseIP()
 			release()
 		}
 	}()

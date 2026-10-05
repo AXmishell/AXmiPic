@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/AXmishell/axmipic/internal/store"
@@ -19,8 +20,8 @@ type Authenticator struct {
 	repo   *store.Repository
 	issuer *SessionIssuer
 	// guest 非 nil 时，未携带凭证的匿名请求会被赋予该访客主体，从而使访客上传
-	// 计入内置 Guest 账户的存储配额。仅在允许访客上传时设置。
-	guest *Principal
+	// 计入内置 Guest 账户的存储配额。仅在允许访客上传时设置；可在运行时热替换。
+	guest atomic.Pointer[Principal]
 }
 
 // NewAuthenticator 创建一个 Authenticator。
@@ -28,9 +29,15 @@ func NewAuthenticator(repo *store.Repository, issuer *SessionIssuer) *Authentica
 	return &Authenticator{repo: repo, issuer: issuer}
 }
 
-// SetGuestPrincipal 设置在匿名请求上附加的访客主体（可为 nil 以禁用）。
+// SetGuestPrincipal 设置在匿名请求上附加的访客主体（传 nil 以禁用）。它可在
+// 运行时安全调用，以支持「允许访客上传」的在线切换。
 func (a *Authenticator) SetGuestPrincipal(guest *Principal) {
-	a.guest = guest
+	if guest == nil {
+		a.guest.Store(nil)
+		return
+	}
+	g := *guest
+	a.guest.Store(&g)
 }
 
 // Authenticate 是可选认证：有效凭证会附加到请求上下文，无效凭证会被拒绝，
@@ -39,9 +46,9 @@ func (a *Authenticator) Authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		credential := bearerToken(r)
 		if credential == "" {
-			if a.guest != nil {
-				guest := *a.guest
-				next.ServeHTTP(w, r.WithContext(WithPrincipal(r.Context(), &guest)))
+			if guest := a.guest.Load(); guest != nil {
+				g := *guest
+				next.ServeHTTP(w, r.WithContext(WithPrincipal(r.Context(), &g)))
 				return
 			}
 			next.ServeHTTP(w, r)

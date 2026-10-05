@@ -101,6 +101,9 @@ auth:
   # Guest role limits (MiB). 0 means unlimited quota.
   guest_quota_mb: 64
   guest_upload_max_mb: 5
+  # 单个客户端 IP 在 24 小时窗口内的访客累计上传总量（MiB）。0 表示不限。
+  # 用于防止通过反复更换访客 cookie 绕过每访客配额。
+  guest_ip_quota_mb: 512
 
 install:
   # When this lock file exists the instance is considered installed. Remove it

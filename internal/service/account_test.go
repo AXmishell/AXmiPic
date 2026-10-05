@@ -75,8 +75,17 @@ func TestUsernameAllowsEmailStyle(t *testing.T) {
 
 func TestRegistrationDisabled(t *testing.T) {
 	svc, _ := newAccountService(t, false, 0)
-	if _, err := svc.RegisterCustomer(context.Background(), "bob", "password123"); !errors.Is(err, service.ErrRegistrationDisabled) {
+	ctx := context.Background()
+	if _, err := svc.RegisterCustomer(ctx, "bob", "password123"); !errors.Is(err, service.ErrRegistrationDisabled) {
 		t.Fatalf("error = %v, want ErrRegistrationDisabled", err)
+	}
+	// 在线开启后应立即允许注册。
+	svc.SetAllowRegistration(true)
+	if !svc.AllowRegistration() {
+		t.Fatalf("AllowRegistration = false after enabling")
+	}
+	if _, err := svc.RegisterCustomer(ctx, "bob", "password123"); err != nil {
+		t.Fatalf("register after enabling: %v", err)
 	}
 }
 

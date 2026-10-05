@@ -10,6 +10,7 @@ import (
 	"math/big"
 	"net/mail"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -150,7 +151,7 @@ type TokenDTO struct {
 type AccountService struct {
 	repo              *store.Repository
 	issuer            *auth.SessionIssuer
-	allowRegistration bool
+	allowRegistration atomic.Bool
 	defaultQuotaBytes int64
 	policies          *PolicyService
 	cipher            *secret.Cipher
@@ -163,13 +164,24 @@ type AccountService struct {
 
 // NewAccountService 构造一个 AccountService。
 func NewAccountService(repo *store.Repository, issuer *auth.SessionIssuer, allowRegistration bool, defaultQuotaBytes int64) *AccountService {
-	return &AccountService{
+	svc := &AccountService{
 		repo:              repo,
 		issuer:            issuer,
-		allowRegistration: allowRegistration,
 		defaultQuotaBytes: defaultQuotaBytes,
 		emailLimiter:      auth.NewRateLimiter(emailCodePerMinute, emailCodeBurst),
 	}
+	svc.allowRegistration.Store(allowRegistration)
+	return svc
+}
+
+// AllowRegistration 报告当前是否开放注册。
+func (s *AccountService) AllowRegistration() bool {
+	return s.allowRegistration.Load()
+}
+
+// SetAllowRegistration 在线切换是否开放注册；下次注册请求即生效。
+func (s *AccountService) SetAllowRegistration(allow bool) {
+	s.allowRegistration.Store(allow)
 }
 
 // SetCipher 安装加密主密钥，用于加密保存 TOTP 密钥。未安装时 TOTP 不可用。
@@ -211,7 +223,7 @@ func (s *AccountService) RegisterCustomer(ctx context.Context, username, passwor
 	if err := validateCredentials(username, password); err != nil {
 		return nil, err
 	}
-	if !s.allowRegistration {
+	if !s.AllowRegistration() {
 		return nil, ErrRegistrationDisabled
 	}
 	return s.createCustomer(ctx, username, password, "", false)
@@ -340,7 +352,7 @@ func (s *AccountService) RegisterCustomerWithEmail(ctx context.Context, username
 	if err := validateCredentials(username, password); err != nil {
 		return nil, err
 	}
-	if !s.allowRegistration {
+	if !s.AllowRegistration() {
 		return nil, ErrRegistrationDisabled
 	}
 	if _, err := mail.ParseAddress(email); err != nil {
@@ -368,7 +380,10 @@ const GuestUsername = "guest"
 // 当 allowGuestUpload 为 true 时，未登录访客将以该账户的身份上传。它返回创建
 // 的账户（已存在时返回 nil）。密码被设为随机值，因此该账户不能通过登录进入。
 func (s *AccountService) EnsureGuestAccount(ctx context.Context, guestRoleGroupID string, quotaBytes int64) (*store.Customer, error) {
-	if _, err := s.repo.GetAccountByUsername(ctx, store.RoleCustomer, GuestUsername); err == nil {
+	if existing, err := s.repo.GetAccountByUsername(ctx, store.RoleCustomer, GuestUsername); err == nil {
+		if !existing.IsGuest {
+			_ = s.repo.MarkCustomerGuest(ctx, existing.ID, true)
+		}
 		return nil, nil
 	} else if !errors.Is(err, store.ErrNotFound) {
 		return nil, fmt.Errorf("ensure guest: lookup: %w", err)
@@ -391,6 +406,7 @@ func (s *AccountService) EnsureGuestAccount(ctx context.Context, guestRoleGroupI
 		PasswordHash: hash,
 		QuotaBytes:   quotaBytes,
 		RoleGroupID:  roleGroupID,
+		IsGuest:      true,
 	}
 	if err := s.repo.CreateCustomer(ctx, customer); err != nil {
 		if strings.Contains(strings.ToLower(err.Error()), "unique") {
@@ -399,6 +415,55 @@ func (s *AccountService) EnsureGuestAccount(ctx context.Context, guestRoleGroupI
 		return nil, fmt.Errorf("ensure guest: create: %w", err)
 	}
 	return customer, nil
+}
+
+// CreateGuestVisitor 为单个匿名访客创建一个独立的 Guest 账户，使用 Guest 角色组
+// 的配额，并返回账户 id。调用方（API 层）负责把该 id 写入签名 cookie。
+func (s *AccountService) CreateGuestVisitor(ctx context.Context) (string, error) {
+	quotaBytes := s.defaultQuotaBytes
+	var roleGroupID *string
+	if s.policies != nil {
+		if effective, err := s.policies.ResolveGuest(ctx); err == nil {
+			quotaBytes = effective.QuotaBytes
+			if effective.RoleGroupID != "" {
+				id := effective.RoleGroupID
+				roleGroupID = &id
+			}
+		}
+	}
+	randomPassword, _, _, err := auth.GenerateAPIToken()
+	if err != nil {
+		return "", fmt.Errorf("guest visitor: generate password: %w", err)
+	}
+	hash, err := auth.HashPassword(randomPassword)
+	if err != nil {
+		return "", fmt.Errorf("guest visitor: hash password: %w", err)
+	}
+	customer := &store.Customer{
+		ID:           uuid.NewString(),
+		Username:     GuestUsername + "_" + uuid.NewString()[:12],
+		PasswordHash: hash,
+		QuotaBytes:   quotaBytes,
+		RoleGroupID:  roleGroupID,
+		IsGuest:      true,
+	}
+	if err := s.repo.CreateCustomer(ctx, customer); err != nil {
+		return "", fmt.Errorf("guest visitor: create: %w", err)
+	}
+	return customer.ID, nil
+}
+
+// GuestVisitorExists 报告给定 id 是否为一个现存的内置访客账户。用于在 cookie
+// 被伪造或账户已清理时拒绝复用身份。
+func (s *AccountService) GuestVisitorExists(ctx context.Context, id string) bool {
+	if strings.TrimSpace(id) == "" {
+		return false
+	}
+	account, err := s.repo.GetAccountByID(ctx, store.RoleCustomer, id)
+	if err != nil {
+		return false
+	}
+	return account.IsGuest
 }
 
 // GuestID 返回内置访客账户的 id；账户不存在时返回空字符串。

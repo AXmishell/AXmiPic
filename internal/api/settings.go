@@ -44,6 +44,34 @@ func (h *Handler) adminGetPayment(w http.ResponseWriter, r *http.Request) {
 	writeOK(w, h.settings.Payment())
 }
 
+// adminGetAuth 返回可在线切换的权限开关。
+func (h *Handler) adminGetAuth(w http.ResponseWriter, r *http.Request) {
+	if h.settings == nil {
+		writeOK(w, service.AuthConfig{})
+		return
+	}
+	writeOK(w, h.settings.Auth())
+}
+
+// adminUpdateAuth 更新权限开关并即时生效（无需重启）。
+func (h *Handler) adminUpdateAuth(w http.ResponseWriter, r *http.Request) {
+	var body service.AuthConfig
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxJSONBody)).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if h.settings == nil {
+		writeError(w, http.StatusServiceUnavailable, http.StatusServiceUnavailable, "settings service is unavailable")
+		return
+	}
+	cfg, err := h.settings.UpdateAuth(r.Context(), body)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeOK(w, cfg)
+}
+
 // adminUpdatePayment 更新支付设置并即时生效（无需重启）。
 func (h *Handler) adminUpdatePayment(w http.ResponseWriter, r *http.Request) {
 	var body service.PaymentSettingsInput

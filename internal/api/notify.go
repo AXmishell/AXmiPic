@@ -116,6 +116,25 @@ type RuntimeInfo struct {
 // adminRuntimeInfo 返回实例运行环境信息。
 func (h *Handler) adminRuntimeInfo(w http.ResponseWriter, r *http.Request) {
 	info := h.runtime
+	// 权限开关可在后台在线切换，优先反映当前生效值。
+	if h.settings != nil {
+		authCfg := h.settings.Auth()
+		info.AllowRegistration = authCfg.AllowRegistration
+		info.RequireAuth = authCfg.RequireAuth
+		info.AllowGuestUpload = authCfg.AllowGuestUpload
+	}
+	// 配额与单文件上限以角色组策略为准（配置仅作为兜底），避免展示与
+	// 「角色策略」页面的实际生效值不一致。
+	if h.policies != nil {
+		if def, err := h.policies.ResolveDefault(r.Context()); err == nil {
+			info.DefaultQuotaMB = int(def.QuotaBytes >> 20)
+			info.UploadMaxMB = int(def.UploadMaxBytes >> 20)
+		}
+		if guest, err := h.policies.ResolveGuest(r.Context()); err == nil {
+			info.GuestQuotaMB = int(guest.QuotaBytes >> 20)
+			info.GuestUploadMaxMB = int(guest.UploadMaxBytes >> 20)
+		}
+	}
 	if h.install != nil {
 		status := h.install.Status()
 		info.Installed = status.Installed

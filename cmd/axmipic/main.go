@@ -204,6 +204,8 @@ func run() error {
 	}
 
 	uploadSvc.SetPolicyResolver(policies)
+	// 匿名访客按 IP 的累计上传配额（24 小时窗口）；0 表示不限。
+	uploadSvc.SetGuestIPQuota(int64(cfg.Auth.GuestIPQuotaMB)<<20, guestIPQuotaWindow)
 	accounts.SetPolicyService(policies)
 	adminSvc.SetPolicyService(policies)
 
@@ -259,6 +261,13 @@ func run() error {
 		Password: cfg.Email.Password,
 		From:     cfg.Email.From,
 		UseTLS:   cfg.Email.UseTLS,
+	})
+	// 权限开关（开放注册、上传鉴权、访客上传）：以配置文件为兜底，首次启动写入
+	// 数据库并支持后台热更新。实际应用在 Authenticator 就绪后进行（见下）。
+	settingsSvc.SetAuthDefaults(service.AuthConfig{
+		AllowRegistration: cfg.Auth.AllowRegistration,
+		RequireAuth:       cfg.Auth.RequireAuth,
+		AllowGuestUpload:  cfg.Auth.AllowGuestUpload,
 	})
 	settingsCtx, cancelSettings := context.WithTimeout(context.Background(), 10*time.Second)
 	err = settingsSvc.Bootstrap(settingsCtx)
@@ -319,17 +328,39 @@ func run() error {
 	}
 
 	authenticator := auth.NewAuthenticator(repo, issuer)
-	// 允许访客上传时，为匿名请求附加内置 Guest 账户身份，使访客上传计入
-	// Guest 角色的存储配额。
-	if installed && cfg.Auth.AllowGuestUpload {
+	guestSigner := auth.NewGuestSigner(jwtKey)
+	// 内置 Guest 主体：安装完成后解析一次；是否附加由「允许访客上传」开关在
+	// 运行时决定，可在后台热切换。
+	var guestPrincipal *auth.Principal
+	if installed {
 		if guestID := accounts.GuestID(context.Background()); guestID != "" {
-			authenticator.SetGuestPrincipal(&auth.Principal{
+			guestPrincipal = &auth.Principal{
 				UserID:   guestID,
 				Username: service.GuestUsername,
 				Role:     auth.RoleUser,
 				Guest:    true,
-			})
+			}
 		}
+	}
+	if cfg.Auth.AllowGuestUpload && guestPrincipal == nil {
+		logger.Warn("allow_guest_upload is enabled but the guest account is missing; guest uploads will be unowned")
+	}
+	settingsSvc.SetAuthApplier(func(authCfg service.AuthConfig) {
+		accounts.SetAllowRegistration(authCfg.AllowRegistration)
+		if authCfg.AllowGuestUpload {
+			authenticator.SetGuestPrincipal(guestPrincipal)
+		} else {
+			authenticator.SetGuestPrincipal(nil)
+		}
+	})
+	// 应用数据库中的权限设置（无记录时用配置兜底写库），使运行值与后台一致。
+	authSettingsCtx, cancelAuthSettings := context.WithTimeout(context.Background(), 10*time.Second)
+	if installed {
+		err = settingsSvc.BootstrapAuth(authSettingsCtx)
+	}
+	cancelAuthSettings()
+	if err != nil {
+		return err
 	}
 
 	router := api.NewRouter(api.Deps{
@@ -350,15 +381,14 @@ func run() error {
 		InstallRepo:   store.Open,
 		InstallSeed:   installSeed,
 		Authenticator: authenticator,
+		GuestSigner:   guestSigner,
 		// 上传与图片读取限流按角色组策略动态解析（PolicyLimiter + Policies）。
-		PolicyLimiter:    auth.NewDynamicRateLimiter(),
-		ShareLimiter:     auth.NewRateLimiter(cfg.Limits.SharePerMinute, cfg.Limits.ShareBurst),
-		RequireAuth:      cfg.Auth.RequireAuth,
-		AllowGuestUpload: cfg.Auth.AllowGuestUpload,
-		TrustProxy:       cfg.Server.TrustProxy,
-		MaxUploadMB:      cfg.Upload.MaxSizeMB,
-		Static:           webui.Handler(),
-		Logger:           logger,
+		PolicyLimiter: auth.NewDynamicRateLimiter(),
+		ShareLimiter:  auth.NewRateLimiter(cfg.Limits.SharePerMinute, cfg.Limits.ShareBurst),
+		TrustProxy:    cfg.Server.TrustProxy,
+		MaxUploadMB:   cfg.Upload.MaxSizeMB,
+		Static:        webui.Handler(),
+		Logger:        logger,
 	})
 	srv := server.New(cfg, logger, router)
 
@@ -368,6 +398,7 @@ func run() error {
 	go runPendingUploadJanitor(ctx, uploadSvc, logger)
 	go runExpiredPlanJanitor(ctx, billingSvc, logger)
 	go runNotifyLogJanitor(ctx, repo, logger)
+	go runGuestJanitor(ctx, repo, logger)
 
 	return srv.Run(ctx)
 }
@@ -633,6 +664,39 @@ func runNotifyLogJanitor(ctx context.Context, repo *store.Repository, logger *sl
 		}
 		if removed > 0 {
 			logger.Info("cleaned up old notify logs", slog.Int64("count", removed))
+		}
+	}
+	cleanup()
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			cleanup()
+		}
+	}
+}
+
+// guestIPQuotaWindow 是访客按 IP 配额的重置窗口。
+const guestIPQuotaWindow = 24 * time.Hour
+
+// runGuestJanitor 定期清理过期的访客 IP 用量记录与空的访客账户，避免无界增长。
+func runGuestJanitor(ctx context.Context, repo *store.Repository, logger *slog.Logger) {
+	const interval = time.Hour
+	cleanup := func() {
+		cleanupCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		if removed, err := repo.DeleteStaleGuestIPUsage(cleanupCtx, time.Now().Add(-7*24*time.Hour)); err != nil {
+			logger.Warn("guest ip usage cleanup failed", slog.Any("error", err))
+		} else if removed > 0 {
+			logger.Info("cleaned up stale guest ip usage", slog.Int64("count", removed))
+		}
+		if removed, err := repo.DeleteEmptyGuestAccounts(cleanupCtx, time.Now().Add(-30*24*time.Hour)); err != nil {
+			logger.Warn("empty guest account cleanup failed", slog.Any("error", err))
+		} else if removed > 0 {
+			logger.Info("cleaned up empty guest accounts", slog.Int64("count", removed))
 		}
 	}
 	cleanup()

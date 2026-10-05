@@ -73,7 +73,12 @@ func (h *Handler) uploadImage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	mimeType := http.DetectContentType(data)
-	dto, err := h.svc.Upload(r.Context(), principalOf(r), service.UploadInput{
+	principal := principalOf(r)
+	ctx := r.Context()
+	if principal.IsGuest() {
+		ctx = service.WithClientIP(ctx, requestClientIP(r))
+	}
+	dto, err := h.svc.Upload(ctx, principal, service.UploadInput{
 		Data:         data,
 		MimeType:     mimeType,
 		OriginalName: originalName,
@@ -116,7 +121,12 @@ func (h *Handler) confirmUpload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	dto, err := h.svc.Confirm(r.Context(), principalOf(r), body.Key)
+	principal := principalOf(r)
+	ctx := r.Context()
+	if principal.IsGuest() {
+		ctx = service.WithClientIP(ctx, requestClientIP(r))
+	}
+	dto, err := h.svc.Confirm(ctx, principal, body.Key)
 	if err != nil {
 		h.fail(w, r, err)
 		return

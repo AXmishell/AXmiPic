@@ -36,8 +36,10 @@ type Account struct {
 	EmailVerified bool
 	TOTPSecret    string
 	TOTPEnabled   bool
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	// IsGuest 标记内置访客账户（匿名上传）。
+	IsGuest   bool
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // table 返回支撑给定角色的 gorm 模型。
@@ -134,7 +136,7 @@ func (r *Repository) GetAccountByEmail(ctx context.Context, role AccountRole, em
 // ListCustomers 返回按创建时间排序的所有客户账户。
 func (r *Repository) ListCustomers(ctx context.Context) ([]Account, error) {
 	var customers []Customer
-	if err := r.db.WithContext(ctx).Order("created_at ASC").Find(&customers).Error; err != nil {
+	if err := r.db.WithContext(ctx).Where("is_guest = ?", false).Order("created_at ASC").Find(&customers).Error; err != nil {
 		return nil, fmt.Errorf("store: list customers: %w", err)
 	}
 	accounts := make([]Account, 0, len(customers))
@@ -201,13 +203,22 @@ func (r *Repository) CountEnabledAdmins(ctx context.Context) (int64, error) {
 	return count, nil
 }
 
-// CountCustomers 返回客户账户的数量。
+// CountCustomers 返回客户账户的数量（不含内置访客账户）。
 func (r *Repository) CountCustomers(ctx context.Context) (int64, error) {
 	var count int64
-	if err := r.db.WithContext(ctx).Model(&Customer{}).Count(&count).Error; err != nil {
+	if err := r.db.WithContext(ctx).Model(&Customer{}).Where("is_guest = ?", false).Count(&count).Error; err != nil {
 		return 0, fmt.Errorf("store: count customers: %w", err)
 	}
 	return count, nil
+}
+
+// MarkCustomerGuest 把某个客户标记（或取消标记）为内置访客账户。
+func (r *Repository) MarkCustomerGuest(ctx context.Context, id string, isGuest bool) error {
+	if err := r.db.WithContext(ctx).Model(&Customer{}).Where("id = ?", id).
+		UpdateColumn("is_guest", isGuest).Error; err != nil {
+		return fmt.Errorf("store: mark customer %q guest: %w", id, err)
+	}
+	return nil
 }
 
 // UpdateCustomer 更新客户的禁用标志与角色组并返回结果。
@@ -324,6 +335,7 @@ func accountFromCustomer(customer *Customer) *Account {
 		EmailVerified: customer.EmailVerified,
 		TOTPSecret:    customer.TOTPSecret,
 		TOTPEnabled:   customer.TOTPEnabled,
+		IsGuest:       customer.IsGuest,
 		CreatedAt:     customer.CreatedAt,
 		UpdatedAt:     customer.UpdatedAt,
 	}

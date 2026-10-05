@@ -33,6 +33,7 @@ type testEnv struct {
 	repo     *store.Repository
 	accounts *service.AccountService
 	mail     *notify.MockSender
+	settings *service.SettingsService
 }
 
 func newTestEnv(t *testing.T, requireAuth bool, quotaBytes int64) *testEnv {
@@ -76,6 +77,10 @@ func newTestEnv(t *testing.T, requireAuth bool, quotaBytes int64) *testEnv {
 	accounts.SetNotifyService(service.NewNotifyService(nil, mail))
 	notifySvc := service.NewNotifyService(nil, notify.NewMockSender("email"))
 	notifySvc.SetRepository(repo)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	settingsSvc := service.NewSettingsService(repo, cipher, notifySvc, logger, service.SMTPConfig{})
+	settingsSvc.SetAuthDefaults(service.AuthConfig{AllowRegistration: true, RequireAuth: requireAuth})
+	settingsSvc.SetAuthApplier(func(cfg service.AuthConfig) { accounts.SetAllowRegistration(cfg.AllowRegistration) })
 	router := api.NewRouter(api.Deps{
 		Upload:        uploadSvc,
 		Imaging:       imagingSvc,
@@ -84,16 +89,16 @@ func newTestEnv(t *testing.T, requireAuth bool, quotaBytes int64) *testEnv {
 		Albums:        service.NewAlbumService(repo),
 		Storage:       storageSvc,
 		Notify:        notifySvc,
+		Settings:      settingsSvc,
 		Authenticator: auth.NewAuthenticator(repo, issuer),
 		UploadLimiter: &auth.UploadLimiter{
 			User:  auth.NewRateLimiter(10000, 1000),
 			Guest: auth.NewRateLimiter(10000, 1000),
 		},
-		RequireAuth: requireAuth,
 		MaxUploadMB: 1,
-		Logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Logger:      logger,
 	})
-	return &testEnv{router: router, repo: repo, accounts: accounts, mail: mail}
+	return &testEnv{router: router, repo: repo, accounts: accounts, mail: mail, settings: settingsSvc}
 }
 
 // lastEmailCode 从最近一封邮件正文中提取 6 位验证码。
@@ -365,6 +370,80 @@ func TestAdminRequiresAdminRole(t *testing.T) {
 	status, body := do(t, env.router, http.MethodGet, "/api/v1/admin/stats", "", userToken)
 	if status != http.StatusForbidden {
 		t.Fatalf("status = %d (%s), want 403", status, body)
+	}
+}
+
+func TestAdminAuthRegistrationToggle(t *testing.T) {
+	env := newTestEnv(t, false, 1<<20)
+	adminToken, _ := env.adminToken(t, "root")
+	// 先创建普通用户，稍后用于验证权限（关闭注册不影响用户创建）。
+	userToken := env.token(t, "normal")
+
+	// 初始开放注册。
+	status, body := do(t, env.router, http.MethodGet, "/api/v1/admin/auth", "", adminToken)
+	if status != http.StatusOK {
+		t.Fatalf("get auth status = %d (%s)", status, body)
+	}
+	var got struct {
+		Data struct {
+			AllowRegistration bool `json:"allow_registration"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &got); err != nil || !got.Data.AllowRegistration {
+		t.Fatalf("initial auth = %s", body)
+	}
+
+	// 在线关闭注册。
+	status, body = do(t, env.router, http.MethodPut, "/api/v1/admin/auth", `{"allow_registration":false}`, adminToken)
+	if status != http.StatusOK {
+		t.Fatalf("put auth status = %d (%s)", status, body)
+	}
+	if err := json.Unmarshal(body, &got); err != nil || got.Data.AllowRegistration {
+		t.Fatalf("updated auth = %s", body)
+	}
+	// 运行中的账户服务应立即生效，无需重启。
+	if env.accounts.AllowRegistration() {
+		t.Fatalf("account service still allows registration after disabling")
+	}
+	// 运行时信息也应反映关闭状态。
+	status, body = do(t, env.router, http.MethodGet, "/api/v1/admin/runtime", "", adminToken)
+	if status != http.StatusOK || !bytes.Contains(body, []byte(`"allow_registration":false`)) {
+		t.Fatalf("runtime info = %d (%s)", status, body)
+	}
+
+	// 普通用户无权访问该管理接口。
+	if status, _ := do(t, env.router, http.MethodGet, "/api/v1/admin/auth", "", userToken); status != http.StatusForbidden {
+		t.Fatalf("non-admin get auth status = %d, want 403", status)
+	}
+}
+
+func TestAdminAuthUploadToggles(t *testing.T) {
+	env := newTestEnv(t, true, 1<<20) // 初始「上传需要登录」。
+	adminToken, _ := env.adminToken(t, "root")
+
+	// 匿名上传被拒（未通过 multipart 解析前先被鉴权拦截）。
+	if status, _ := do(t, env.router, http.MethodPost, "/api/v1/upload", "", ""); status != http.StatusUnauthorized {
+		t.Fatalf("anonymous upload status = %d, want 401", status)
+	}
+
+	// 开启「允许访客上传」后，上传鉴权放行（缺少 multipart 时为 400，而非 401）。
+	status, body := do(t, env.router, http.MethodPut, "/api/v1/admin/auth",
+		`{"allow_registration":true,"require_auth":true,"allow_guest_upload":true}`, adminToken)
+	if status != http.StatusOK {
+		t.Fatalf("enable guest upload status = %d (%s)", status, body)
+	}
+	if status, _ := do(t, env.router, http.MethodPost, "/api/v1/upload", "", ""); status != http.StatusBadRequest {
+		t.Fatalf("guest upload status = %d, want 400 (guard passed)", status)
+	}
+
+	// 关闭「上传需要登录」后，匿名同样放行。
+	status, body = do(t, env.router, http.MethodPut, "/api/v1/admin/auth",
+		`{"allow_registration":true,"require_auth":false,"allow_guest_upload":false}`, adminToken)
+	if status != http.StatusOK {
+		t.Fatalf("disable require_auth status = %d (%s)", status, body)
+	}
+	if status, _ := do(t, env.router, http.MethodPost, "/api/v1/upload", "", ""); status != http.StatusBadRequest {
+		t.Fatalf("open upload status = %d, want 400 (guard passed)", status)
 	}
 }
 

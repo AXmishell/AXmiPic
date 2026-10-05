@@ -178,3 +178,92 @@ func TestPaymentUpdateAndHotReload(t *testing.T) {
 		t.Fatalf("missing epay creds err = %v, want ErrSettingsConfig", err)
 	}
 }
+
+func TestAuthUpdateAndHotReload(t *testing.T) {
+	repo := newRepo(t)
+	cipher, err := secret.New([]byte("test-encryption-key"))
+	if err != nil {
+		t.Fatalf("secret.New: %v", err)
+	}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	svc := service.NewSettingsService(repo, cipher, service.NewNotifyService(nil, nil), logger, service.SMTPConfig{})
+	var applied []service.AuthConfig
+	svc.SetAuthDefaults(service.AuthConfig{AllowRegistration: true, RequireAuth: true})
+	svc.SetAuthApplier(func(cfg service.AuthConfig) { applied = append(applied, cfg) })
+
+	ctx := context.Background()
+	if !svc.Auth().AllowRegistration || !svc.Auth().RequireAuth || svc.Auth().AllowGuestUpload {
+		t.Fatalf("defaults = %+v", svc.Auth())
+	}
+
+	// 首次 Bootstrap 将配置兜底写入数据库并应用。
+	if err := svc.BootstrapAuth(ctx); err != nil {
+		t.Fatalf("BootstrapAuth: %v", err)
+	}
+	if !svc.Auth().AllowRegistration || !svc.Auth().RequireAuth {
+		t.Fatalf("after bootstrap = %+v", svc.Auth())
+	}
+
+	// 在线切换应立即生效。
+	updated, err := svc.UpdateAuth(ctx, service.AuthConfig{AllowRegistration: false, RequireAuth: false, AllowGuestUpload: true})
+	if err != nil {
+		t.Fatalf("UpdateAuth: %v", err)
+	}
+	if updated.AllowRegistration || updated.RequireAuth || !updated.AllowGuestUpload {
+		t.Fatalf("updated = %+v", updated)
+	}
+	if len(applied) == 0 || applied[len(applied)-1].RequireAuth || !applied[len(applied)-1].AllowGuestUpload {
+		t.Fatalf("applier did not receive updated config: %+v", applied)
+	}
+
+	// 新的服务实例应能从数据库恢复，而不是回退到配置默认。
+	reloaded := service.NewSettingsService(repo, cipher, service.NewNotifyService(nil, nil), logger, service.SMTPConfig{})
+	reloaded.SetAuthDefaults(service.AuthConfig{AllowRegistration: true, RequireAuth: true})
+	if err := reloaded.BootstrapAuth(ctx); err != nil {
+		t.Fatalf("BootstrapAuth reload: %v", err)
+	}
+	if got := reloaded.Auth(); got.AllowRegistration || got.RequireAuth || !got.AllowGuestUpload {
+		t.Fatalf("reloaded = %+v, want persisted {false,false,true}", got)
+	}
+}
+
+func TestAuthBootstrapMergesLegacyRecord(t *testing.T) {
+	repo := newRepo(t)
+	cipher, err := secret.New([]byte("test-encryption-key"))
+	if err != nil {
+		t.Fatalf("secret.New: %v", err)
+	}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	ctx := context.Background()
+
+	// 模拟旧版本写入的记录：只有 allow_registration，缺少后来新增的字段。
+	if err := repo.SetSetting(ctx, "auth", `{"allow_registration":false}`); err != nil {
+		t.Fatalf("SetSetting: %v", err)
+	}
+
+	svc := service.NewSettingsService(repo, cipher, service.NewNotifyService(nil, nil), logger, service.SMTPConfig{})
+	svc.SetAuthDefaults(service.AuthConfig{AllowRegistration: true, RequireAuth: true})
+	if err := svc.BootstrapAuth(ctx); err != nil {
+		t.Fatalf("BootstrapAuth: %v", err)
+	}
+	if got := svc.Auth(); got.AllowRegistration || !got.RequireAuth || got.AllowGuestUpload {
+		t.Fatalf("merged = %+v, want {false,true,false}", got)
+	}
+
+	// 启动时应把缺失字段补齐回写。
+	raw, err := repo.GetSetting(ctx, "auth")
+	if err != nil {
+		t.Fatalf("GetSetting: %v", err)
+	}
+	var stored map[string]any
+	if err := json.Unmarshal([]byte(raw), &stored); err != nil {
+		t.Fatalf("unmarshal stored auth: %v", err)
+	}
+	if _, ok := stored["require_auth"]; !ok {
+		t.Fatalf("normalized record missing require_auth: %s", raw)
+	}
+	if _, ok := stored["allow_guest_upload"]; !ok {
+		t.Fatalf("normalized record missing allow_guest_upload: %s", raw)
+	}
+}

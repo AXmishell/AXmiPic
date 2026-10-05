@@ -21,6 +21,19 @@ var ErrSettingsConfig = errors.New("service: invalid settings")
 // smtpSettingKey 是 SMTP 设置在数据库中的键。
 const smtpSettingKey = "smtp"
 
+// authSettingKey 是权限开关在数据库中的键。
+const authSettingKey = "auth"
+
+// AuthConfig 是可在线切换的权限开关。
+type AuthConfig struct {
+	// AllowRegistration 控制是否开放自助注册。
+	AllowRegistration bool `json:"allow_registration"`
+	// RequireAuth 控制上传接口是否强制登录。
+	RequireAuth bool `json:"require_auth"`
+	// AllowGuestUpload 允许未登录访客以 Guest 角色上传；为真时覆盖 RequireAuth。
+	AllowGuestUpload bool `json:"allow_guest_upload"`
+}
+
 // SMTPConfig 是 SMTP 邮件渠道的完整配置（含明文密码，仅驻留内存）。
 type SMTPConfig struct {
 	Enabled  bool
@@ -78,6 +91,10 @@ type SettingsService struct {
 	paymentDefaults config.PaymentConfig
 	currentPayment  config.PaymentConfig
 	paymentApplier  func(config.PaymentConfig) error
+	// 权限设置：默认值来自配置文件，运行值来自数据库，可热替换。
+	authDefaults AuthConfig
+	currentAuth  AuthConfig
+	authApplier  func(AuthConfig)
 }
 
 // NewSettingsService 构建设置服务。fallback 为配置文件中的 SMTP 配置，在数据库
@@ -296,5 +313,106 @@ func toSMTPDTO(cfg SMTPConfig) SMTPConfigDTO {
 		From:        cfg.From,
 		UseTLS:      cfg.UseTLS,
 		PasswordSet: strings.TrimSpace(cfg.Password) != "",
+	}
+}
+
+// storedAuth 是权限设置的落库形态。字段使用指针以区分「未设置」与「显式 false」，
+// 从而让旧版本写入的、缺少新增字段的记录能回退到配置默认值。
+type storedAuth struct {
+	AllowRegistration *bool `json:"allow_registration,omitempty"`
+	RequireAuth       *bool `json:"require_auth,omitempty"`
+	AllowGuestUpload  *bool `json:"allow_guest_upload,omitempty"`
+}
+
+// SetAuthDefaults 记录权限开关的配置兜底值，并作为 BootstrapAuth 之前的当前值。
+func (s *SettingsService) SetAuthDefaults(cfg AuthConfig) {
+	s.mu.Lock()
+	s.authDefaults = cfg
+	s.currentAuth = cfg
+	s.mu.Unlock()
+}
+
+// SetAuthApplier 安装一个回调，用于在权限开关变化时即时应用到运行中的服务。
+func (s *SettingsService) SetAuthApplier(fn func(AuthConfig)) {
+	s.mu.Lock()
+	s.authApplier = fn
+	s.mu.Unlock()
+}
+
+// BootstrapAuth 加载数据库中保存的权限设置；首次启动时用配置兜底写库，使其可在
+// 后台在线切换。缺失字段沿用配置默认，记录损坏时保留配置兜底。
+func (s *SettingsService) BootstrapAuth(ctx context.Context) error {
+	s.mu.RLock()
+	fallback := s.authDefaults
+	s.mu.RUnlock()
+
+	raw, err := s.repo.GetSetting(ctx, authSettingKey)
+	if err != nil {
+		if !errors.Is(err, store.ErrNotFound) {
+			return fmt.Errorf("settings: load auth: %w", err)
+		}
+		return s.persistAuth(ctx, fallback)
+	}
+	var stored storedAuth
+	if err := json.Unmarshal([]byte(raw), &stored); err != nil {
+		s.logger.Warn("ignoring corrupt auth settings", slog.Any("error", err))
+		return nil
+	}
+	cfg := fallback
+	if stored.AllowRegistration != nil {
+		cfg.AllowRegistration = *stored.AllowRegistration
+	}
+	if stored.RequireAuth != nil {
+		cfg.RequireAuth = *stored.RequireAuth
+	}
+	if stored.AllowGuestUpload != nil {
+		cfg.AllowGuestUpload = *stored.AllowGuestUpload
+	}
+	s.applyAuth(cfg)
+	// 旧版记录可能缺少新增字段，补齐后回写，避免每次启动都走合并逻辑。
+	if stored.AllowRegistration == nil || stored.RequireAuth == nil || stored.AllowGuestUpload == nil {
+		if err := s.persistAuth(ctx, cfg); err != nil {
+			s.logger.Warn("failed to normalize auth settings", slog.Any("error", err))
+		}
+	}
+	return nil
+}
+
+// Auth 返回当前生效的权限开关。
+func (s *SettingsService) Auth() AuthConfig {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.currentAuth
+}
+
+// UpdateAuth 保存权限开关并即时生效，无需重启。
+func (s *SettingsService) UpdateAuth(ctx context.Context, in AuthConfig) (AuthConfig, error) {
+	if err := s.persistAuth(ctx, in); err != nil {
+		return AuthConfig{}, err
+	}
+	return in, nil
+}
+
+// persistAuth 将权限设置写入数据库并应用到运行中的服务。
+func (s *SettingsService) persistAuth(ctx context.Context, cfg AuthConfig) error {
+	encoded, err := json.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("settings: encode auth: %w", err)
+	}
+	if err := s.repo.SetSetting(ctx, authSettingKey, string(encoded)); err != nil {
+		return err
+	}
+	s.applyAuth(cfg)
+	return nil
+}
+
+// applyAuth 把权限设置切换到运行中的服务并更新缓存。
+func (s *SettingsService) applyAuth(cfg AuthConfig) {
+	s.mu.Lock()
+	applier := s.authApplier
+	s.currentAuth = cfg
+	s.mu.Unlock()
+	if applier != nil {
+		applier(cfg)
 	}
 }

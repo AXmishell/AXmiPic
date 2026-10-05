@@ -1,11 +1,14 @@
 package api_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
+	"mime/multipart"
 	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"testing"
 	"time"
@@ -77,6 +80,9 @@ func newPolicyTestEnv(t *testing.T) (*testEnv, *service.PolicyService) {
 	issuer := auth.NewSessionIssuer([]byte("test-secret"), time.Hour)
 	accounts := service.NewAccountService(repo, issuer, true, 1<<20)
 	accounts.SetPolicyService(policies)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	settingsSvc := service.NewSettingsService(repo, cipher, service.NewNotifyService(nil, nil), logger, service.SMTPConfig{})
+	settingsSvc.SetAuthDefaults(service.AuthConfig{AllowRegistration: true, RequireAuth: true})
 	router := api.NewRouter(api.Deps{
 		Upload:        uploadSvc,
 		Imaging:       imagingSvc,
@@ -86,17 +92,18 @@ func newPolicyTestEnv(t *testing.T) (*testEnv, *service.PolicyService) {
 		Storage:       storageSvc,
 		Policies:      policies,
 		Shares:        service.NewShareService(repo, "http://localhost:8080"),
+		Settings:      settingsSvc,
 		Authenticator: auth.NewAuthenticator(repo, issuer),
+		GuestSigner:   auth.NewGuestSigner([]byte("test-guest-secret")),
 		UploadLimiter: &auth.UploadLimiter{
 			User:  auth.NewRateLimiter(10000, 1000),
 			Guest: auth.NewRateLimiter(10000, 1000),
 		},
 		ShareLimiter: auth.NewRateLimiter(1, 1),
-		RequireAuth:  true,
 		MaxUploadMB:  1,
-		Logger:       slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Logger:       logger,
 	})
-	return &testEnv{router: router, repo: repo, accounts: accounts}, policies
+	return &testEnv{router: router, repo: repo, accounts: accounts, settings: settingsSvc}, policies
 }
 
 // restrictFeatures 为 userID 新建一个仅启用给定功能点的角色组并分配给它。
@@ -183,5 +190,112 @@ func TestAdminBypassesFeatureSwitches(t *testing.T) {
 	adminToken, _ := env.adminToken(t, "root")
 	if status, body := do(t, env.router, http.MethodPost, "/api/v1/tokens", `{"name":"cli"}`, adminToken); status != http.StatusCreated {
 		t.Fatalf("admin tokens status = %d (%s), want 201", status, body)
+	}
+}
+
+// TestRuntimeGuestLimitsReflectPolicies 验证运行环境信息里的访客配额与单文件
+// 上限取自 Guest 角色组策略，而不是配置文件的 auth.guest_* 兜底值。
+func TestRuntimeGuestLimitsReflectPolicies(t *testing.T) {
+	env, policies := newPolicyTestEnv(t)
+	adminToken, _ := env.adminToken(t, "root")
+	ctx := context.Background()
+
+	if _, err := policies.SeedGuestRoleGroup(ctx, 64<<20, 5<<20); err != nil {
+		t.Fatalf("SeedGuestRoleGroup: %v", err)
+	}
+
+	status, body := do(t, env.router, http.MethodGet, "/api/v1/admin/runtime", "", adminToken)
+	if status != http.StatusOK {
+		t.Fatalf("runtime status = %d (%s)", status, body)
+	}
+	var got struct {
+		Data struct {
+			GuestQuotaMB     int `json:"guest_quota_mb"`
+			GuestUploadMaxMB int `json:"guest_upload_max_mb"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("decode runtime: %v", err)
+	}
+	if got.Data.GuestQuotaMB != 64 || got.Data.GuestUploadMaxMB != 5 {
+		t.Fatalf("guest limits = %d/%d, want 64/5 (%s)", got.Data.GuestQuotaMB, got.Data.GuestUploadMaxMB, body)
+	}
+}
+
+// TestGuestUploadPerVisitorAccounts 验证开启访客上传后，每个匿名访客（按签名
+// cookie）会获得独立的 Guest 账户，且这些账户不出现在用户管理中。
+func TestGuestUploadPerVisitorAccounts(t *testing.T) {
+	env, _ := newPolicyTestEnv(t)
+	ctx := context.Background()
+	adminToken, _ := env.adminToken(t, "root")
+
+	status, body := do(t, env.router, http.MethodPut, "/api/v1/admin/auth",
+		`{"allow_registration":true,"require_auth":true,"allow_guest_upload":true}`, adminToken)
+	if status != http.StatusOK {
+		t.Fatalf("enable guest upload status = %d (%s)", status, body)
+	}
+
+	data := testPNG(t, 8)
+	doGuestUpload := func(cookie *http.Cookie) (int, *http.Cookie) {
+		var buf bytes.Buffer
+		mw := multipart.NewWriter(&buf)
+		part, err := mw.CreateFormFile("file", "guest.png")
+		if err != nil {
+			t.Fatalf("CreateFormFile: %v", err)
+		}
+		if _, err := part.Write(data); err != nil {
+			t.Fatalf("write part: %v", err)
+		}
+		if err := mw.Close(); err != nil {
+			t.Fatalf("close writer: %v", err)
+		}
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/upload", &buf)
+		req.Header.Set("Content-Type", mw.FormDataContentType())
+		if cookie != nil {
+			req.AddCookie(cookie)
+		}
+		rec := httptest.NewRecorder()
+		env.router.ServeHTTP(rec, req)
+		var issued *http.Cookie
+		for _, c := range rec.Result().Cookies() {
+			if c.Name == auth.GuestCookieName {
+				issued = c
+			}
+		}
+		return rec.Code, issued
+	}
+
+	// 首次匿名上传：新建访客账户并下发签名 cookie。
+	status, cookie1 := doGuestUpload(nil)
+	if status != http.StatusOK || cookie1 == nil {
+		t.Fatalf("first guest upload status = %d, cookie = %v", status, cookie1)
+	}
+	// 携带同一 cookie：复用同一访客账户。
+	if status, _ := doGuestUpload(cookie1); status != http.StatusOK {
+		t.Fatalf("cookie guest upload status = %d", status)
+	}
+	// 不带 cookie：应创建独立的新访客账户。
+	status, cookie2 := doGuestUpload(nil)
+	if status != http.StatusOK || cookie2 == nil {
+		t.Fatalf("second visitor upload status = %d, cookie = %v", status, cookie2)
+	}
+	if cookie1.Value == cookie2.Value {
+		t.Fatal("two visitors received the same guest cookie")
+	}
+
+	guests, err := env.repo.CountGuestAccounts(ctx)
+	if err != nil {
+		t.Fatalf("CountGuestAccounts: %v", err)
+	}
+	if guests != 2 {
+		t.Fatalf("guest accounts = %d, want 2", guests)
+	}
+
+	status, body = do(t, env.router, http.MethodGet, "/api/v1/admin/customers", "", adminToken)
+	if status != http.StatusOK {
+		t.Fatalf("customers status = %d (%s)", status, body)
+	}
+	if bytes.Contains(body, []byte("guest_")) {
+		t.Fatalf("admin customers should exclude guest accounts: %s", body)
 	}
 }

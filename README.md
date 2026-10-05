@@ -195,9 +195,11 @@ limits:
 auth:
   # 允许未登录访客上传（使用 Guest 低权角色组）。
   allow_guest_upload: true
-  # Guest 角色的配额（MiB）与单文件上限（MiB）。
+  # 每个访客（按签名 cookie）的配额（MiB）与单文件上限（MiB）。
   guest_quota_mb: 64
   guest_upload_max_mb: 5
+  # 单个客户端 IP 在 24 小时窗口内的访客累计上传总量（MiB，0 表示不限）。
+  guest_ip_quota_mb: 512
 
 install:
   # 该锁文件存在即视为已安装；删除它并重启可重新进入安装向导。
@@ -274,7 +276,15 @@ processing:
 
 ### Guest 访客
 
-系统内置一个低权 `guest` 账户与 `Guest 访客` 角色组（更小的配额与上传体积，且默认关闭广场、分享、令牌等功能）。当 `auth.allow_guest_upload` 为 `true` 时，未登录访客可在首页上传，此时按 Guest 角色组的策略限流与限量；该账户使用随机密码，无法用于登录。
+系统内置 `Guest 访客` 角色组（更小的配额与上传体积，且默认关闭广场、分享、令牌等功能）。当 `auth.allow_guest_upload` 为 `true` 时，未登录访客可在首页上传，此时按 Guest 角色组的策略限流与限量。
+
+为避免所有陌生访客共用一个配额池而被迅速耗尽，访客采用**按浏览器隔离**的身份：
+
+- 首次上传时，服务端为访客创建一个**独立的 Guest 账户**并下发签名 cookie（`axmipic_guest`，HttpOnly）；同一浏览器后续上传复用该账户，各自独立享有 `guest_quota_mb` 配额。
+- 更换 cookie 会得到新账户，因此另设**按 IP 的窗口配额** `auth.guest_ip_quota_mb`（默认窗口 24 小时，0 表示不限）：同一客户端 IP 在窗口内的访客上传总量超过该值即被拒绝（HTTP 429）。它可防止通过反复更换 cookie 绕过每访客配额。
+- 访客账户不出现在「用户管理」中，也不计入用户数统计；后台任务会定期清理过期的 IP 用量记录与未使用的空访客账户。
+
+> 说明：内置的历史 `guest` 账户仅用于兼容与匿名只读接口的策略解析，匿名上传不再使用它。调整 Guest 组配额请到「运营 → 角色策略」的 Guest 访客组，改后关联账户的配额会自动同步。
 
 ### 安装向导
 
@@ -538,6 +548,7 @@ curl -X POST http://localhost:8080/api/v1/upload \
 | GET | `/admin/notify/logs` | 通知发送日志（`?channel=email\|sms&page=&page_size=`，按时间倒序） |
 | GET | `/admin/notify/smtp` | 读取 SMTP 邮件渠道设置（密码仅返回是否已设置） |
 | PUT | `/admin/notify/smtp` | 保存 SMTP 设置并即时生效（`password` 为空表示保持原密码） |
+| GET/PUT | `/admin/auth` | 在线读取/切换权限开关（`allow_registration`、`require_auth`、`allow_guest_upload`），保存即时生效、无需重启 |
 | GET | `/admin/payment` | 读取支付设置（密钥仅返回是否已设置） |
 | PUT | `/admin/payment` | 保存支付设置并即时生效（密钥为空表示保持原值） |
 

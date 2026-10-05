@@ -42,7 +42,12 @@ func newPolicyLimits(policies *service.PolicyService) *policyLimits {
 func (p *policyLimits) forPrincipal(ctx context.Context, principal *auth.Principal) (service.RateSettings, error) {
 	key := "anonymous"
 	if principal != nil && principal.UserID != "" {
-		key = string(principal.Role) + ":" + principal.UserID
+		if principal.IsGuest() {
+			// 所有访客共用 Guest 角色组策略，按 IP 限流，无需按访客账户区分缓存。
+			key = "guest"
+		} else {
+			key = string(principal.Role) + ":" + principal.UserID
+		}
 	}
 	now := time.Now()
 	p.mu.Lock()

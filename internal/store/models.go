@@ -114,7 +114,19 @@ type Customer struct {
 	// TOTPSecret 为 TOTP 密钥的密文；TOTPEnabled 表示二次验证是否已启用。
 	TOTPSecret  string `gorm:"type:text;not null;default:''"`
 	TOTPEnabled bool   `gorm:"not null;default:false"`
-	CreatedAt   time.Time
+	// IsGuest 标记内置访客账户（匿名上传）。这类账户不出现在用户管理中。
+	IsGuest   bool `gorm:"not null;default:false;index"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// GuestIPUsage 记录某个客户端 IP 在固定时间窗口内的访客上传用量，用于按 IP
+// 限制匿名访客的累计上传量（窗口到期后重置）。
+type GuestIPUsage struct {
+	// IPHash 是客户端 IP 的 sha256 十六进制摘要，避免明文存储 IP。
+	IPHash      string    `gorm:"primaryKey;size:64"`
+	UsedBytes   int64     `gorm:"not null;default:0"`
+	WindowStart time.Time `gorm:"not null"`
 	UpdatedAt   time.Time
 }
 

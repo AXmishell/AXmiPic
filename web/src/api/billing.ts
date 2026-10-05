@@ -309,3 +309,20 @@ export interface ProcessInfo {
 export function getProcessInfo(): Promise<ProcessInfo> {
   return request<ProcessInfo>({ method: 'GET', url: '/admin/process' })
 }
+
+/** 可在线切换的权限开关。 */
+export interface AuthConfig {
+  allow_registration: boolean
+  require_auth: boolean
+  allow_guest_upload: boolean
+}
+
+/** 管理端：读取权限开关。 */
+export function getAuthSettings(): Promise<AuthConfig> {
+  return request<AuthConfig>({ method: 'GET', url: '/admin/auth' })
+}
+
+/** 管理端：保存权限开关并即时生效。 */
+export function updateAuthSettings(payload: AuthConfig): Promise<AuthConfig> {
+  return request<AuthConfig>({ method: 'PUT', url: '/admin/auth', data: payload })
+}

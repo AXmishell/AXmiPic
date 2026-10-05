@@ -458,3 +458,36 @@ func TestConfirmRejectsSpoofedContent(t *testing.T) {
 		t.Fatal("spoofed object was not removed from storage")
 	}
 }
+
+// TestUploadGuestIPQuota 验证匿名访客按 IP 的窗口配额：同一 IP 超出后拒绝，
+// 其他 IP 不受影响，非访客主体不受该限制。
+func TestUploadGuestIPQuota(t *testing.T) {
+	repo := newRepo(t)
+	svc := service.NewUploadService(repo, managerWithFallback(t, newFakeStorage()), pngPolicy())
+
+	data := testPNGSize(t, 8)
+	other := testPNGSize(t, 9)
+	svc.SetGuestIPQuota(int64(len(data)), time.Hour)
+
+	guest := &auth.Principal{Guest: true}
+	ipA := service.WithClientIP(context.Background(), "203.0.113.9")
+
+	if _, err := svc.Upload(ipA, guest, service.UploadInput{Data: data, MimeType: "image/png"}); err != nil {
+		t.Fatalf("first upload: %v", err)
+	}
+	if _, err := svc.Upload(ipA, guest, service.UploadInput{Data: other, MimeType: "image/png"}); !errors.Is(err, service.ErrGuestQuotaExceeded) {
+		t.Fatalf("second upload error = %v, want ErrGuestQuotaExceeded", err)
+	}
+
+	// 另一个 IP 仍有独立额度。
+	ipB := service.WithClientIP(context.Background(), "203.0.113.10")
+	if _, err := svc.Upload(ipB, guest, service.UploadInput{Data: data, MimeType: "image/png"}); err != nil {
+		t.Fatalf("upload from another ip: %v", err)
+	}
+
+	// 非访客主体不受 IP 配额限制。
+	user := &auth.Principal{Role: auth.RoleUser}
+	if _, err := svc.Upload(ipA, user, service.UploadInput{Data: other, MimeType: "image/png"}); err != nil {
+		t.Fatalf("non-guest upload: %v", err)
+	}
+}

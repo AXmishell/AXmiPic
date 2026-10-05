@@ -5,6 +5,7 @@ import { DataLine, Monitor, Odometer, Refresh, SetUp } from '@element-plus/icons
 
 import { fetchStats } from '@/api/admin'
 import {
+  getAuthSettings,
   getImagingDrivers,
   getNotifyChannels,
   getPaymentSettings,
@@ -14,8 +15,10 @@ import {
   getSMTPConfig,
   listPaymentGateways,
   sendTestNotify,
+  updateAuthSettings,
   updatePaymentSettings,
   updateSMTPConfig,
+  type AuthConfig,
   type PaymentSettings,
   type PaymentSettingsInput,
   type ProcessInfo,
@@ -38,6 +41,12 @@ const process = ref<ProcessInfo | null>(null)
 const channels = ref<{ sms: string; email: string }>({ sms: '', email: '' })
 const scannerName = ref('')
 const drivers = ref<{ available: string[]; active: string }>({ available: [], active: '' })
+
+// 可在线切换的权限开关（开放注册、上传鉴权、访客上传）。
+const authSaving = ref(false)
+const allowRegistration = ref(true)
+const requireAuth = ref(true)
+const allowGuestUpload = ref(false)
 
 let processTimer: number | undefined
 
@@ -75,9 +84,6 @@ const policyRows = computed(() => {
   const info = runtime.value
   if (!info) return []
   return [
-    { label: '开放注册', value: info.allow_registration ? '允许' : '禁止' },
-    { label: '上传需要登录', value: info.require_auth ? '是' : '否' },
-    { label: '允许访客上传', value: info.allow_guest_upload ? '允许' : '禁止' },
     { label: '默认配额', value: formatMiB(info.default_quota_mb) },
     { label: '单文件上限', value: formatMiB(info.upload_max_mb) },
     { label: '访客配额', value: formatMiB(info.guest_quota_mb) },
@@ -293,11 +299,48 @@ async function sendTest(): Promise<void> {
   }
 }
 
+/** 用服务端返回的权限配置刷新本地状态与运行环境展示。 */
+function applyAuth(cfg: AuthConfig): void {
+  allowRegistration.value = cfg.allow_registration
+  requireAuth.value = cfg.require_auth
+  allowGuestUpload.value = cfg.allow_guest_upload
+  if (runtime.value) {
+    runtime.value.allow_registration = cfg.allow_registration
+    runtime.value.require_auth = cfg.require_auth
+    runtime.value.allow_guest_upload = cfg.allow_guest_upload
+  }
+}
+
+/** 在线保存权限开关；失败时回滚为最近一次服务端生效值。 */
+async function saveAuth(): Promise<void> {
+  authSaving.value = true
+  try {
+    const updated = await updateAuthSettings({
+      allow_registration: allowRegistration.value,
+      require_auth: requireAuth.value,
+      allow_guest_upload: allowGuestUpload.value,
+    })
+    applyAuth(updated)
+    ElMessage.success('权限设置已保存')
+  } catch (error) {
+    if (runtime.value) {
+      applyAuth({
+        allow_registration: runtime.value.allow_registration,
+        require_auth: runtime.value.require_auth,
+        allow_guest_upload: runtime.value.allow_guest_upload,
+      })
+    }
+    ElMessage.error(toApiError(error).message)
+  } finally {
+    authSaving.value = false
+  }
+}
+
 async function load(): Promise<void> {
   loading.value = true
   errorMessage.value = ''
   try {
-    const [statsData, runtimeData, processData, smtpData, ch, sec, drv, paymentData, gatewayList] = await Promise.all([
+    const [statsData, runtimeData, processData, smtpData, ch, sec, drv, paymentData, gatewayList, authData] = await Promise.all([
       fetchStats(),
       getRuntimeInfo(),
       getProcessInfo(),
@@ -307,6 +350,7 @@ async function load(): Promise<void> {
       getImagingDrivers().catch(() => ({ available: [], active: '' })),
       getPaymentSettings().catch(() => null),
       listPaymentGateways().catch(() => []),
+      getAuthSettings().catch(() => null),
     ])
     stats.value = statsData
     runtime.value = runtimeData
@@ -317,6 +361,15 @@ async function load(): Promise<void> {
     scannerName.value = sec?.scanner ?? ''
     drivers.value = drv ?? { available: [], active: '' }
     paymentGateways.value = gatewayList ?? []
+    if (authData) {
+      applyAuth(authData)
+    } else {
+      applyAuth({
+        allow_registration: runtimeData.allow_registration,
+        require_auth: runtimeData.require_auth,
+        allow_guest_upload: runtimeData.allow_guest_upload,
+      })
+    }
     if (paymentData) {
       paymentMeta.value = paymentData
       fillPayment(paymentData)
@@ -396,6 +449,27 @@ onBeforeUnmount(() => {
               </div>
             </header>
             <div class="ax-card__body">
+              <div class="policy-switch">
+                <div class="policy-switch__text">
+                  <span class="policy-switch__label">开放注册</span>
+                  <span class="policy-switch__hint">关闭后新用户无法自助注册，已注册用户与管理员不受影响。</span>
+                </div>
+                <el-switch v-model="allowRegistration" :loading="authSaving" @change="saveAuth" />
+              </div>
+              <div class="policy-switch">
+                <div class="policy-switch__text">
+                  <span class="policy-switch__label">上传需要登录</span>
+                  <span class="policy-switch__hint">开启后未登录访客不能调用上传接口。</span>
+                </div>
+                <el-switch v-model="requireAuth" :loading="authSaving" @change="saveAuth" />
+              </div>
+              <div class="policy-switch">
+                <div class="policy-switch__text">
+                  <span class="policy-switch__label">允许访客上传</span>
+                  <span class="policy-switch__hint">开启后未登录访客以 Guest 角色上传，会覆盖「上传需要登录」。</span>
+                </div>
+                <el-switch v-model="allowGuestUpload" :loading="authSaving" @change="saveAuth" />
+              </div>
               <dl class="info-list">
                 <div v-for="row in policyRows" :key="row.label" class="info-list__row">
                   <dt>{{ row.label }}</dt>
@@ -812,12 +886,43 @@ onBeforeUnmount(() => {
 
 .overview-grid > .ax-card > .ax-card__body {
   display: flex;
+  flex-direction: column;
   flex: 1;
 }
 
 .overview-grid .info-list {
   flex: 1;
   justify-content: space-between;
+}
+
+/* 策略概览中的在线开关行。 */
+.policy-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ax-space-3);
+  margin-bottom: var(--ax-space-3);
+  padding-bottom: var(--ax-space-3);
+  border-bottom: 1px solid var(--ax-border-subtle);
+}
+
+.policy-switch__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.policy-switch__label {
+  color: var(--ax-text);
+  font-size: var(--ax-text-sm);
+  font-weight: var(--ax-weight-medium);
+}
+
+.policy-switch__hint {
+  color: var(--ax-text-4);
+  font-size: var(--ax-text-xs);
+  line-height: 1.5;
 }
 
 .gateway-grid {
