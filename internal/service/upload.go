@@ -794,16 +794,16 @@ func (s *UploadService) Delete(ctx context.Context, principal *auth.Principal, i
 	if !canAccess(principal, image.UserID) {
 		return ErrForbidden
 	}
-	backend := s.backendFor(image)
-	if err := backend.Delete(ctx, image.Key); err != nil {
-		return fmt.Errorf("delete image object: %w", err)
-	}
+	// 先删元数据，避免对象已删除但记录仍指向缺失对象；随后对象删除为尽力而为
+	// （失败最多残留一个孤立对象，不影响已删除的结果）。
 	if err := s.repo.Delete(ctx, id); err != nil {
 		return fmt.Errorf("delete image record: %w", err)
 	}
+	backend := s.backendFor(image)
+	_ = backend.Delete(context.WithoutCancel(ctx), image.Key)
 	_ = s.repo.DeleteSharesForTarget(context.WithoutCancel(ctx), store.ShareTargetImage, id)
 	if image.UserID != nil {
-		if err := s.repo.ReleaseQuota(ctx, *image.UserID, image.Size); err != nil {
+		if err := s.repo.ReleaseQuota(context.WithoutCancel(ctx), *image.UserID, image.Size); err != nil {
 			return fmt.Errorf("delete image: release quota: %w", err)
 		}
 	}

@@ -11,7 +11,7 @@
 //	    log.Fatal(err)
 //	}
 //	client.SetToken("登录或 API 令牌")
-//	image, err := client.Upload(ctx, file)
+//	image, err := client.Upload(ctx, "photo.png", data)
 package axmipic
 
 import (
@@ -74,8 +74,9 @@ func New(baseURL string, opts ...Option) (*Client, error) {
 	if trimmed == "" {
 		return nil, fmt.Errorf("axmipic: base URL must not be empty")
 	}
-	if _, err := url.Parse(trimmed); err != nil {
-		return nil, fmt.Errorf("axmipic: invalid base URL: %w", err)
+	parsed, err := url.Parse(trimmed)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+		return nil, fmt.Errorf("axmipic: invalid base URL %q", baseURL)
 	}
 	c := &Client{
 		baseURL:    trimmed,

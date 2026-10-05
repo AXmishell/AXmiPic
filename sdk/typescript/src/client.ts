@@ -89,6 +89,9 @@ export class AxmipicClient {
     if (!base) {
       throw new Error('axmipic: baseUrl must not be empty')
     }
+    if (!/^https?:\/\/[^/]+/i.test(base)) {
+      throw new Error('axmipic: baseUrl must start with http:// or https://')
+    }
     this.baseUrl = base
     this.token = options.token ?? ''
     this.fetcher = options.fetch ?? globalThis.fetch
