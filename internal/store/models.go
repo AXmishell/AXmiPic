@@ -499,3 +499,34 @@ type TicketMessage struct {
 func (TicketMessage) TableName() string {
 	return "ticket_messages"
 }
+
+// EmailCode 是一条待验证的邮箱验证码。邮箱绑定与密码重置共用此表，key 区分
+// 用途（如 "user:user:<id>" 或 "reset:<email>"）。持久化后可在重启与多实例
+// 部署中保持有效。
+type EmailCode struct {
+	Key       string    `gorm:"primaryKey;size:160"`
+	Email     string    `gorm:"size:255;not null;default:''"`
+	Code      string    `gorm:"size:16;not null"`
+	Attempts  int       `gorm:"not null;default:0"`
+	ExpiresAt time.Time `gorm:"index;not null"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// TableName 返回存储 EmailCode 的表名。
+func (EmailCode) TableName() string {
+	return "email_codes"
+}
+
+// EmailCodeStat 记录某个 key 在一个自然日内的验证码发送次数，用于每日上限。
+type EmailCodeStat struct {
+	Key       string `gorm:"primaryKey;size:160"`
+	Day       string `gorm:"primaryKey;size:10"`
+	Count     int    `gorm:"not null;default:0"`
+	UpdatedAt time.Time
+}
+
+// TableName 返回存储 EmailCodeStat 的表名。
+func (EmailCodeStat) TableName() string {
+	return "email_code_stats"
+}

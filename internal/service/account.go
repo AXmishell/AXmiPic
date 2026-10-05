@@ -10,7 +10,6 @@ import (
 	"math/big"
 	"net/mail"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -157,26 +156,9 @@ type AccountService struct {
 	cipher            *secret.Cipher
 	notify            *NotifyService
 
-	codeMu     sync.Mutex
-	emailCodes map[string]pendingEmailCode
-	// emailDaily 记录每个账户当天的验证码发送次数（键为 role:id）。
-	emailDaily map[string]emailDailyCounts
-	// emailLimiter 限制单账户的验证码发送频率。
+	// emailLimiter 限制单账户的验证码发送频率（每分钟/突发）。每日上限与
+	// 验证码本身持久化在数据库中，可跨重启与多实例生效。
 	emailLimiter *auth.RateLimiter
-}
-
-// pendingEmailCode 是一条待验证的邮箱验证码。
-type pendingEmailCode struct {
-	email    string
-	code     string
-	expires  time.Time
-	attempts int
-}
-
-// emailDailyCounts 记录某个账户在一个自然日内的验证码发送次数。
-type emailDailyCounts struct {
-	day   string
-	count int
 }
 
 // NewAccountService 构造一个 AccountService。
@@ -186,8 +168,6 @@ func NewAccountService(repo *store.Repository, issuer *auth.SessionIssuer, allow
 		issuer:            issuer,
 		allowRegistration: allowRegistration,
 		defaultQuotaBytes: defaultQuotaBytes,
-		emailCodes:        map[string]pendingEmailCode{},
-		emailDaily:        map[string]emailDailyCounts{},
 		emailLimiter:      auth.NewRateLimiter(emailCodePerMinute, emailCodeBurst),
 	}
 }
@@ -523,7 +503,7 @@ func (s *AccountService) SendEmailVerification(ctx context.Context, principal *a
 	if s.notify == nil {
 		return ErrEmailNotConfigured
 	}
-	if !s.allowEmailSend(principal) {
+	if !s.allowEmailSendForKey(ctx, emailCodeKey(principal)) {
 		return ErrEmailRateLimited
 	}
 	inUse, err := s.repo.EmailInUse(ctx, email, principal.UserID)
@@ -541,8 +521,10 @@ func (s *AccountService) SendEmailVerification(ctx context.Context, principal *a
 	if err := s.notify.SendEmail(ctx, email, "AXmiPic 邮箱验证码", body); err != nil {
 		return err
 	}
-	s.storeEmailCode(principal, email, code)
-	s.recordEmailSend(principal)
+	if err := s.storeEmailCodeForKey(ctx, emailCodeKey(principal), email, code); err != nil {
+		return err
+	}
+	s.recordEmailSendForKey(ctx, emailCodeKey(principal))
 	return nil
 }
 
@@ -565,8 +547,14 @@ func (s *AccountService) VerifyEmail(ctx context.Context, principal *auth.Princi
 			return nil, ErrInvalidCredentials
 		}
 	}
-	if !s.consumeEmailCode(principal, email, code) {
+	if !s.consumeEmailCodeForKey(ctx, emailCodeKey(principal), email, code) {
 		return nil, ErrEmailCodeInvalid
+	}
+	// 在写入前复查邮箱是否已被其他账户占用，缩小并发换绑的竞态窗口。
+	if inUse, err := s.repo.EmailInUse(ctx, email, principal.UserID); err != nil {
+		return nil, err
+	} else if inUse {
+		return nil, ErrEmailInUse
 	}
 	updated, err := s.repo.UpdateAccountSecurity(ctx, principal.StoreRole(), principal.UserID, map[string]any{
 		"email":          email,
@@ -650,13 +638,13 @@ func (s *AccountService) SendPasswordResetCode(ctx context.Context, email string
 		return ErrEmailNotConfigured
 	}
 	key := passwordResetKey(email)
-	if !s.allowEmailSendForKey(key) {
+	if !s.allowEmailSendForKey(ctx, key) {
 		return ErrEmailRateLimited
 	}
 	if _, _, err := s.repo.FindVerifiedAccountByEmail(ctx, email); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			// 不泄露该邮箱是否已注册；仍然按频率限制计数以避免探测。
-			s.recordEmailSendForKey(key)
+			s.recordEmailSendForKey(ctx, key)
 			return nil
 		}
 		return err
@@ -669,8 +657,10 @@ func (s *AccountService) SendPasswordResetCode(ctx context.Context, email string
 	if err := s.notify.SendEmail(ctx, email, "AXmiPic 密码重置", body); err != nil {
 		return err
 	}
-	s.storeEmailCodeForKey(key, email, code)
-	s.recordEmailSendForKey(key)
+	if err := s.storeEmailCodeForKey(ctx, key, email, code); err != nil {
+		return err
+	}
+	s.recordEmailSendForKey(ctx, key)
 	return nil
 }
 
@@ -688,7 +678,7 @@ func (s *AccountService) ResetPassword(ctx context.Context, email, code, newPass
 		}
 		return fmt.Errorf("reset password: %w", err)
 	}
-	if !s.consumeEmailCodeForKey(passwordResetKey(email), email, code) {
+	if !s.consumeEmailCodeForKey(ctx, passwordResetKey(email), email, code) {
 		return ErrEmailCodeInvalid
 	}
 	hash, err := auth.HashPassword(newPassword)
@@ -725,101 +715,48 @@ func (s *AccountService) decryptTOTPSecret(encrypted string) (string, error) {
 	return secret, nil
 }
 
-func (s *AccountService) storeEmailCode(principal *auth.Principal, email, code string) {
-	s.storeEmailCodeForKey(emailCodeKey(principal), email, code)
+// storeEmailCodeForKey 按 key 持久化一条验证码（覆盖同 key 的旧验证码）。
+func (s *AccountService) storeEmailCodeForKey(ctx context.Context, key, email, code string) error {
+	return s.repo.UpsertEmailCode(ctx, key, email, code, time.Now().Add(emailCodeTTL))
 }
 
-// storeEmailCodeForKey 按 key 暂存一条验证码。
-func (s *AccountService) storeEmailCodeForKey(key, email, code string) {
-	s.codeMu.Lock()
-	defer s.codeMu.Unlock()
-	s.pruneEmailState(time.Now())
-	s.emailCodes[key] = pendingEmailCode{
-		email:   email,
-		code:    code,
-		expires: time.Now().Add(emailCodeTTL),
-	}
-}
-
-// pruneEmailState 清理已过期或非当日的内存状态，避免 map 无界增长。
-func (s *AccountService) pruneEmailState(now time.Time) {
-	today := now.Format("2006-01-02")
-	for key, pending := range s.emailCodes {
-		if now.After(pending.expires) {
-			delete(s.emailCodes, key)
-		}
-	}
-	for key, counts := range s.emailDaily {
-		if counts.day != today {
-			delete(s.emailDaily, key)
-		}
-	}
-}
-
-// allowEmailSend 判断账户是否还能请求验证码：先看当日额度，再消耗频率令牌。
-func (s *AccountService) allowEmailSend(principal *auth.Principal) bool {
-	return s.allowEmailSendForKey(emailCodeKey(principal))
-}
-
-// allowEmailSendForKey 判断某个 key（账户或重置邮箱）是否还能请求验证码。
-func (s *AccountService) allowEmailSendForKey(key string) bool {
+// allowEmailSendForKey 判断某个 key（账户或重置邮箱）是否还能请求验证码：先查
+// 数据库中的当日额度，再消耗内存中的每分钟频率令牌。
+func (s *AccountService) allowEmailSendForKey(ctx context.Context, key string) bool {
 	today := time.Now().Format("2006-01-02")
-	s.codeMu.Lock()
-	entry := s.emailDaily[key]
-	overDaily := entry.day == today && entry.count >= emailCodeDailyMax
-	s.codeMu.Unlock()
-	if overDaily {
+	count, err := s.repo.EmailDailyCount(ctx, key, today)
+	if err == nil && count >= emailCodeDailyMax {
 		return false
 	}
 	return s.emailLimiter.Allow("user:" + key)
 }
 
-// recordEmailSend 在成功发送后累加账户当日发送次数。
-func (s *AccountService) recordEmailSend(principal *auth.Principal) {
-	s.recordEmailSendForKey(emailCodeKey(principal))
-}
-
 // recordEmailSendForKey 在成功发送后累加某个 key 的当日发送次数。
-func (s *AccountService) recordEmailSendForKey(key string) {
+func (s *AccountService) recordEmailSendForKey(ctx context.Context, key string) {
 	today := time.Now().Format("2006-01-02")
-	s.codeMu.Lock()
-	defer s.codeMu.Unlock()
-	entry := s.emailDaily[key]
-	if entry.day != today {
-		entry = emailDailyCounts{day: today}
-	}
-	entry.count++
-	s.emailDaily[key] = entry
-}
-
-// consumeEmailCode 校验并消费验证码，防止重放。校验失败会增加尝试次数。
-func (s *AccountService) consumeEmailCode(principal *auth.Principal, email, code string) bool {
-	return s.consumeEmailCodeForKey(emailCodeKey(principal), email, code)
+	_, _ = s.repo.IncrementEmailDaily(ctx, key, today)
 }
 
 // consumeEmailCodeForKey 校验并消费某个 key 下的验证码，防止重放。校验失败会
 // 增加尝试次数。
-func (s *AccountService) consumeEmailCodeForKey(key, email, code string) bool {
-	s.codeMu.Lock()
-	defer s.codeMu.Unlock()
-	pending, ok := s.emailCodes[key]
-	if !ok {
+func (s *AccountService) consumeEmailCodeForKey(ctx context.Context, key, email, code string) bool {
+	pending, err := s.repo.EmailCode(ctx, key)
+	if err != nil {
 		return false
 	}
-	if time.Now().After(pending.expires) || pending.email != email {
-		delete(s.emailCodes, key)
+	if time.Now().After(pending.ExpiresAt) || pending.Email != email {
+		_ = s.repo.DeleteEmailCode(ctx, key)
 		return false
 	}
-	if pending.attempts >= emailCodeMaxAttempts {
-		delete(s.emailCodes, key)
+	if pending.Attempts >= emailCodeMaxAttempts {
+		_ = s.repo.DeleteEmailCode(ctx, key)
 		return false
 	}
-	if subtle.ConstantTimeCompare([]byte(pending.code), []byte(strings.TrimSpace(code))) == 1 {
-		delete(s.emailCodes, key)
-		return true
+	if subtle.ConstantTimeCompare([]byte(pending.Code), []byte(strings.TrimSpace(code))) == 1 {
+		consumed, err := s.repo.DeleteEmailCodeIfMatches(ctx, key, pending.Code)
+		return err == nil && consumed
 	}
-	pending.attempts++
-	s.emailCodes[key] = pending
+	_ = s.repo.SaveEmailCodeAttempts(ctx, key, pending.Attempts+1)
 	return false
 }
 

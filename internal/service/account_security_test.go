@@ -229,6 +229,48 @@ func TestEmailRebindPolicy(t *testing.T) {
 	}
 }
 
+// TestEmailCodePersistsAcrossInstances 验证验证码与每日计数持久化在数据库中，
+// 因此跨服务实例（或多实例部署/重启）仍然有效。
+func TestEmailCodePersistsAcrossInstances(t *testing.T) {
+	svc, repo := newAccountService(t, true, 1<<20)
+	issuer := auth.NewSessionIssuer([]byte("test-secret"), time.Hour)
+	other := service.NewAccountService(repo, issuer, true, 1<<20)
+	mockA := notify.NewMockSender("email")
+	mockB := notify.NewMockSender("email")
+	svc.SetNotifyService(service.NewNotifyService(nil, mockA))
+	other.SetNotifyService(service.NewNotifyService(nil, mockB))
+
+	ctx := context.Background()
+	user, err := svc.RegisterCustomer(ctx, "persistuser", "password123")
+	if err != nil {
+		t.Fatalf("RegisterCustomer: %v", err)
+	}
+	principal := &auth.Principal{UserID: user.ID, Role: auth.RoleUser}
+
+	// 实例 A 发送绑定验证码。
+	if err := svc.SendEmailVerification(ctx, principal, "persist@example.com"); err != nil {
+		t.Fatalf("SendEmailVerification: %v", err)
+	}
+	bindCode := extractCode(t, mockA.Sent[len(mockA.Sent)-1].Body)
+
+	// 实例 B 校验绑定验证码：验证码来自数据库，跨实例可用。
+	if _, err := other.VerifyEmail(ctx, principal, "persist@example.com", bindCode, ""); err != nil {
+		t.Fatalf("cross-instance VerifyEmail: %v", err)
+	}
+
+	// 实例 B 发送重置验证码，实例 A 完成重置。
+	if err := other.SendPasswordResetCode(ctx, "persist@example.com"); err != nil {
+		t.Fatalf("SendPasswordResetCode: %v", err)
+	}
+	resetCode := extractCode(t, mockB.Sent[len(mockB.Sent)-1].Body)
+	if err := svc.ResetPassword(ctx, "persist@example.com", resetCode, "brandnew123"); err != nil {
+		t.Fatalf("cross-instance ResetPassword: %v", err)
+	}
+	if _, err := other.LoginCustomer(ctx, "persistuser", "brandnew123"); err != nil {
+		t.Fatalf("login with reset password: %v", err)
+	}
+}
+
 func TestChangePassword(t *testing.T) {
 	svc := newSecurityService(t)
 	ctx := context.Background()
