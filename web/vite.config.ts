@@ -35,7 +35,7 @@ export default defineConfig({
         target: 'http://localhost:8080',
         changeOrigin: true,
       },
-      '/i': {
+      '^/i/': {
         target: 'http://localhost:8080',
         changeOrigin: true,
       },
@@ -48,7 +48,7 @@ export default defineConfig({
         target: 'http://localhost:8080',
         changeOrigin: true,
       },
-      '/i': {
+      '^/i/': {
         target: 'http://localhost:8080',
         changeOrigin: true,
       },
