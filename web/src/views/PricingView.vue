@@ -87,12 +87,14 @@ async function buy(plan: Plan): Promise<void> {
   try {
     const coupon = couponPlanId.value === plan.id ? couponCode.value.trim() : ''
     const order = await createOrder(plan.id, coupon, provider.value)
-    if (order.status === 'pending' && order.pay_url) {
-      // 模拟渠道：直接完成支付（真实环境应跳转到支付收银台）。
+    if (order.status === 'paid') {
+      ElMessage.success('套餐已生效')
+    } else if (order.status === 'pending' && order.pay_url && order.provider === 'mock') {
+      // 仅模拟渠道可自助完成支付；真实渠道与人工核销需等待支付/管理员确认。
       await payOrder(order.id)
       ElMessage.success('支付成功，套餐已生效')
     } else {
-      ElMessage.success('订单已创建')
+      ElMessage.success('订单已创建，请完成支付')
     }
     couponDiscount.value = 0
     couponPlanId.value = ''

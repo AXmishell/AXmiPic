@@ -135,11 +135,13 @@ func (s *StorageService) Create(ctx context.Context, in StorageInput, makeCurren
 	if err != nil {
 		return nil, err
 	}
-	// 先构建实例，验证配置可用（连通性由 buildStorage 内部完成）。
-	if _, err := s.manager.Register("__validate__", in.Name, s.baseURL, cfg); err != nil {
+	// 先构建实例，验证配置可用（连通性由 buildStorage 内部完成）。使用唯一
+	// 临时 id，避免并发创建/更新时相互覆盖或误删。
+	validateID := "__validate__-" + uuid.NewString()
+	if _, err := s.manager.Register(validateID, in.Name, s.baseURL, cfg); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrStorageConfig, err)
 	}
-	s.manager.Remove("__validate__")
+	s.manager.Remove(validateID)
 
 	secretsJSON, err := json.Marshal(secrets)
 	if err != nil {
@@ -187,10 +189,11 @@ func (s *StorageService) Update(ctx context.Context, id string, in StorageInput)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := s.manager.Register("__validate__", in.Name, s.baseURL, cfg); err != nil {
+	validateID := "__validate__-" + uuid.NewString()
+	if _, err := s.manager.Register(validateID, in.Name, s.baseURL, cfg); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrStorageConfig, err)
 	}
-	s.manager.Remove("__validate__")
+	s.manager.Remove(validateID)
 
 	// 合并旧密钥与新密钥。
 	merged := s.decryptSecrets(existing)

@@ -247,6 +247,9 @@ func NewRouter(d Deps) http.Handler {
 				r.Put("/admin/coupons/{id}", h.adminUpdateCoupon)
 				r.Delete("/admin/coupons/{id}", h.adminDeleteCoupon)
 
+				// 管理员核销 manual 等非自动完成的订单。
+				r.Post("/admin/orders/{id}/pay", h.payOrder)
+
 				r.Get("/admin/tickets/{id}", h.getTicket)
 				r.Patch("/admin/tickets/{id}", h.adminSetTicketStatus)
 				r.Post("/admin/tickets/{id}/reply", h.replyTicket)

@@ -91,7 +91,11 @@ func (g *MockGateway) Name() string { return "mock" }
 
 // Create 生成一个假的支付链接。
 func (g *MockGateway) Create(_ context.Context, order Order) (*CreateResult, error) {
-	tradeNo := "mock-" + randomHex(8)
+	suffix, err := randomHex(8)
+	if err != nil {
+		return nil, err
+	}
+	tradeNo := "mock-" + suffix
 	payURL := fmt.Sprintf("%s/pay/mock?order=%s&amount=%d", g.BaseURL, order.ID, order.AmountCents)
 	if g.logger != nil {
 		g.logger.Info("mock payment created",
@@ -108,10 +112,10 @@ func (g *MockGateway) VerifyCallback(_ context.Context, _ []byte) (*Callback, er
 }
 
 // randomHex 返回 n 字节的随机十六进制字符串。
-func randomHex(n int) string {
+func randomHex(n int) (string, error) {
 	buf := make([]byte, n)
 	if _, err := rand.Read(buf); err != nil {
-		return "0000000000000000"
+		return "", fmt.Errorf("payment: read random bytes: %w", err)
 	}
-	return hex.EncodeToString(buf)
+	return hex.EncodeToString(buf), nil
 }

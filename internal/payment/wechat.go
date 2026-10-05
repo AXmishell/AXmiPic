@@ -191,7 +191,10 @@ func (g *WechatGateway) VerifyCallback(ctx context.Context, raw []byte) (*Callba
 // signRequest 为请求计算微信支付 v3 的 Authorization 头。
 func (g *WechatGateway) signRequest(req *http.Request, body []byte) error {
 	timestamp := fmt.Sprintf("%d", time.Now().Unix())
-	nonce := randomHex(16)
+	nonce, err := randomHex(16)
+	if err != nil {
+		return err
+	}
 	message := strings.Join([]string{
 		req.Method,
 		req.URL.Path,

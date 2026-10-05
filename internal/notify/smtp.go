@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"mime"
 	"net"
 	"net/smtp"
 	"strings"
@@ -140,18 +141,26 @@ func (s *SMTPSender) deliver(client *smtp.Client, auth smtp.Auth, to string, bod
 	return client.Quit()
 }
 
-// buildEmail 组装一封 UTF-8 纯文本邮件。
+// buildEmail 组装一封 UTF-8 纯文本邮件。头部字段会去除换行并按 RFC 2047
+// 编码主题，避免头注入与中文主题乱码。
 func buildEmail(from string, msg Message) []byte {
 	subject := msg.Subject
 	if subject == "" {
 		subject = "AXmiPic 通知"
 	}
 	headers := []string{
-		"From: " + from,
-		"To: " + msg.To,
-		"Subject: " + subject,
+		"From: " + sanitizeHeader(from),
+		"To: " + sanitizeHeader(msg.To),
+		"Subject: " + mime.QEncoding.Encode("UTF-8", sanitizeHeader(subject)),
 		"MIME-Version: 1.0",
 		"Content-Type: text/plain; charset=UTF-8",
 	}
 	return []byte(strings.Join(headers, "\r\n") + "\r\n\r\n" + msg.Body + "\r\n")
+}
+
+// sanitizeHeader 去除头部字段中的换行，防止 SMTP 头注入。
+func sanitizeHeader(value string) string {
+	value = strings.ReplaceAll(value, "\r", "")
+	value = strings.ReplaceAll(value, "\n", "")
+	return strings.TrimSpace(value)
 }

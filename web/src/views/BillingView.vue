@@ -12,6 +12,7 @@ import {
   deleteCoupon,
   deletePlan,
   listOrders,
+  payOrder,
   setTicketStatus,
   updateCoupon,
   updatePlan,
@@ -67,6 +68,26 @@ async function load(): Promise<void> {
     errorMessage.value = toApiError(error).message
   } finally {
     loading.value = false
+  }
+}
+
+// 管理员核销 manual 等人工渠道的待支付订单。
+async function confirmOrder(row: Order): Promise<void> {
+  try {
+    await ElMessageBox.confirm(
+      `确认已收到「${row.plan_name}」的 ${priceLabel(row.amount_cents)} 款项并核销该订单？`,
+      '核销订单',
+      { type: 'warning' },
+    )
+  } catch {
+    return
+  }
+  try {
+    await payOrder(row.id)
+    ElMessage.success('订单已核销')
+    await load()
+  } catch (error) {
+    ElMessage.error(toApiError(error).message)
   }
 }
 
@@ -365,6 +386,18 @@ onMounted(load)
               </el-table-column>
               <el-table-column label="创建时间" min-width="170">
                 <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
+              </el-table-column>
+              <el-table-column label="操作" width="100" align="right">
+                <template #default="{ row }">
+                  <el-button
+                    v-if="row.status === 'pending'"
+                    link
+                    type="primary"
+                    @click="confirmOrder(row)"
+                  >
+                    核销
+                  </el-button>
+                </template>
               </el-table-column>
             </el-table>
           </div>

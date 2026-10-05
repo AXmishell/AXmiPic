@@ -15,7 +15,7 @@ func newBilling(t *testing.T) (*service.BillingService, *store.Repository) {
 	t.Helper()
 	repo := newRepo(t)
 	svc := service.NewBillingService(repo, "http://example.test",
-		[]payment.Gateway{payment.ManualGateway{}}, "manual")
+		[]payment.Gateway{payment.ManualGateway{}, payment.NewMockGateway("http://example.test", nil)}, "manual")
 	return svc, repo
 }
 
@@ -75,7 +75,7 @@ func TestCouponDiscountAndLimits(t *testing.T) {
 		t.Fatalf("ValidateCoupon = %+v, %d, %v", dto, discount, err)
 	}
 
-	order, err := svc.CreateOrder(ctx, u1, plan.ID, "save100", "")
+	order, err := svc.CreateOrder(ctx, u1, plan.ID, "save100", "mock")
 	if err != nil {
 		t.Fatalf("CreateOrder: %v", err)
 	}
@@ -172,5 +172,54 @@ func TestTicketLifecycle(t *testing.T) {
 
 	if _, err := svc.CreateTicket(ctx, user, "", "x", "b", ""); !errors.Is(err, service.ErrInvalidInput) {
 		t.Fatalf("empty subject err = %v, want ErrInvalidInput", err)
+	}
+}
+
+// stubGateway 是一个仅用于测试的支付渠道。
+type stubGateway struct{ name string }
+
+func (g stubGateway) Name() string { return g.name }
+
+func (g stubGateway) Create(context.Context, payment.Order) (*payment.CreateResult, error) {
+	return &payment.CreateResult{TradeNo: "stub-" + g.name}, nil
+}
+
+func (g stubGateway) VerifyCallback(context.Context, []byte) (*payment.Callback, error) {
+	return nil, payment.ErrUnsupported
+}
+
+// TestPayOrderProviderRestrictions 验证普通用户不能自助完成非 mock 订单，
+// 从而避免绕过真实支付；管理员仍可核销 manual 订单。
+func TestPayOrderProviderRestrictions(t *testing.T) {
+	repo := newRepo(t)
+	ctx := context.Background()
+	newCustomer(t, repo, "u1")
+	u1 := &auth.Principal{UserID: "u1", Username: "u1", Role: auth.RoleUser}
+	admin := &auth.Principal{UserID: "a1", Username: "a1", Role: auth.RoleAdmin}
+
+	svc := service.NewBillingService(repo, "http://example.test",
+		[]payment.Gateway{payment.ManualGateway{}, stubGateway{name: "alipay"}}, "manual")
+	plan, err := svc.CreatePlan(ctx, service.PlanInput{Name: "付费套餐", PriceCents: 1000, QuotaMB: 128, Active: true})
+	if err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+
+	manualOrder, err := svc.CreateOrder(ctx, u1, plan.ID, "", "manual")
+	if err != nil {
+		t.Fatalf("CreateOrder manual: %v", err)
+	}
+	if _, err := svc.PayOrder(ctx, u1, manualOrder.ID); !errors.Is(err, service.ErrForbidden) {
+		t.Fatalf("self-complete manual err = %v, want ErrForbidden", err)
+	}
+	if _, err := svc.PayOrder(ctx, admin, manualOrder.ID); err != nil {
+		t.Fatalf("admin confirm manual: %v", err)
+	}
+
+	realOrder, err := svc.CreateOrder(ctx, u1, plan.ID, "", "alipay")
+	if err != nil {
+		t.Fatalf("CreateOrder alipay: %v", err)
+	}
+	if _, err := svc.PayOrder(ctx, u1, realOrder.ID); !errors.Is(err, service.ErrForbidden) {
+		t.Fatalf("self-complete alipay err = %v, want ErrForbidden", err)
 	}
 }

@@ -15,6 +15,7 @@ import (
 	"path"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	_ "image/gif"
 	_ "image/jpeg"
@@ -419,6 +420,10 @@ func (s *UploadService) Confirm(ctx context.Context, principal *auth.Principal, 
 		return nil, fmt.Errorf("%w: key must not be empty", ErrInvalidInput)
 	}
 	if existing, err := s.repo.GetByKey(ctx, key); err == nil {
+		// 幂等：该对象已入库时直接返回记录，但仅限其所有者（或管理员）。
+		if !canAccess(principal, existing.UserID) {
+			return nil, ErrForbidden
+		}
 		return toDTO(existing), nil
 	} else if !errors.Is(err, store.ErrNotFound) {
 		return nil, fmt.Errorf("confirm: lookup existing image: %w", err)
@@ -834,9 +839,10 @@ func (s *UploadService) reserveQuota(ctx context.Context, principal *auth.Princi
 	}, true, nil
 }
 
-// ownerIDOf 返回 principal 所代表的用户 id，访客则返回 nil。
+// ownerIDOf 返回 principal 所代表的用户 id。匿名请求（无用户 id）返回 nil；
+// 已配置的访客主体带有内置 Guest 账户 id，因此访客上传会计入其配额。
 func ownerIDOf(principal *auth.Principal) *string {
-	if principal.IsGuest() || principal.UserID == "" {
+	if principal == nil || principal.UserID == "" {
 		return nil
 	}
 	id := principal.UserID
@@ -921,8 +927,12 @@ func hashKey(hash, mimeType string) string {
 	return path.Join(hash[0:2], hash[2:4], hash+extensionForMIME(mimeType))
 }
 
+// maxOriginalNameBytes 限制原始文件名的字节长度，与数据库列宽保持一致。
+const maxOriginalNameBytes = 255
+
 // sanitizeOriginalName 规范化上传时的原始文件名：仅保留基础名、去除路径分隔与
-// 控制字符，并限制长度，避免回显危险内容。
+// 控制字符，并限制长度，避免回显危险内容。截断按 UTF-8 边界进行，避免截断
+// 多字节字符。
 func sanitizeOriginalName(name string) string {
 	name = strings.TrimSpace(name)
 	if name == "" {
@@ -937,10 +947,22 @@ func sanitizeOriginalName(name string) string {
 		}
 		return r
 	}, name)
-	if len(name) > 255 {
-		name = name[:255]
+	if len(name) > maxOriginalNameBytes {
+		name = truncateUTF8(name, maxOriginalNameBytes)
 	}
 	return name
+}
+
+// truncateUTF8 将 s 截断到不超过 maxBytes 字节，且不切断 UTF-8 字符。
+func truncateUTF8(s string, maxBytes int) string {
+	if len(s) <= maxBytes {
+		return s
+	}
+	cut := s[:maxBytes]
+	for len(cut) > 0 && !utf8.ValidString(cut) {
+		cut = cut[:len(cut)-1]
+	}
+	return cut
 }
 
 // decodeDimensions 返回一张已编码图片的像素尺寸，当格式无法解码时返回零值。

@@ -202,7 +202,8 @@ func (h *Handler) listOrders(w http.ResponseWriter, r *http.Request) {
 	writeOK(w, orders)
 }
 
-// payOrder 完成一笔手动/模拟订单的支付。
+// payOrder 完成一笔订单的支付：普通用户仅可完成 mock（开发用）订单，管理员
+// 可核销 manual 等订单；真实渠道订单只能由支付回调确认。
 func (h *Handler) payOrder(w http.ResponseWriter, r *http.Request) {
 	order, err := h.billing.PayOrder(r.Context(), principalOf(r), chi.URLParam(r, "id"))
 	if err != nil {

@@ -295,6 +295,20 @@ func run() error {
 	}
 	billingSvc := service.NewBillingService(repo, cfg.Server.BaseURL, gateways, cfg.Payment.DefaultGateway)
 
+	authenticator := auth.NewAuthenticator(repo, issuer)
+	// 允许访客上传时，为匿名请求附加内置 Guest 账户身份，使访客上传计入
+	// Guest 角色的存储配额。
+	if installed && cfg.Auth.AllowGuestUpload {
+		if guestID := accounts.GuestID(context.Background()); guestID != "" {
+			authenticator.SetGuestPrincipal(&auth.Principal{
+				UserID:   guestID,
+				Username: service.GuestUsername,
+				Role:     auth.RoleUser,
+				Guest:    true,
+			})
+		}
+	}
+
 	router := api.NewRouter(api.Deps{
 		Upload:        uploadSvc,
 		Imaging:       imagingSvc,
@@ -312,7 +326,7 @@ func run() error {
 		Runtime:       runtimeInfo,
 		InstallRepo:   store.Open,
 		InstallSeed:   installSeed,
-		Authenticator: auth.NewAuthenticator(repo, issuer),
+		Authenticator: authenticator,
 		UploadLimiter: &auth.UploadLimiter{
 			User:  auth.NewRateLimiter(cfg.Limits.UploadPerMinute, cfg.Limits.UploadBurst),
 			Guest: auth.NewRateLimiter(cfg.Limits.GuestPerMinute, cfg.Limits.GuestBurst),

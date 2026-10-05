@@ -497,7 +497,9 @@ func (s *BillingService) ListOrders(ctx context.Context, principal *auth.Princip
 	return dtos, nil
 }
 
-// PayOrder 模拟/发起一笔订单的支付完成（用于手动与模拟渠道）。
+// PayOrder 完成一笔订单的支付并发放权益。为避免绕过真实支付，普通用户只能
+// 完成 mock（仅开发用）订单；manual 订单需由管理员核销，alipay/wechat 订单
+// 只能由对应的支付回调确认。
 func (s *BillingService) PayOrder(ctx context.Context, principal *auth.Principal, orderID string) (*OrderDTO, error) {
 	order, err := s.repo.GetOrderByID(ctx, orderID)
 	if err != nil {
@@ -511,6 +513,9 @@ func (s *BillingService) PayOrder(ctx context.Context, principal *auth.Principal
 	}
 	if order.Status != store.OrderPending {
 		return nil, fmt.Errorf("%w: order is not pending", ErrInvalidInput)
+	}
+	if !principal.IsAdmin() && order.Provider != "mock" {
+		return nil, fmt.Errorf("%w: order must be completed through its payment provider", ErrForbidden)
 	}
 	if err := s.applyOrder(ctx, order.ID); err != nil {
 		return nil, err
