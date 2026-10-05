@@ -59,6 +59,38 @@ func (r *RateLimiter) Allow(key string) bool {
 	return limiter.Allow()
 }
 
+// NewDynamicRateLimiter 创建一个按 key 动态指定限额的限流器，供策略驱动的限流
+// 使用。与 NewRateLimiter 不同，每个 key 的速率与突发额度在 AllowWith 时给出。
+func NewDynamicRateLimiter() *RateLimiter {
+	return &RateLimiter{
+		limiters: make(map[string]*rate.Limiter),
+		seen:     make(map[string]time.Time),
+	}
+}
+
+// AllowWith 以给定的每分钟限额与突发额度判断 key 是否放行。perMinute 或 burst
+// 非正表示不限制。当同一 key 的限额发生变化（例如管理员调整了角色组策略）时会
+// 重建对应的令牌桶。
+func (r *RateLimiter) AllowWith(key string, perMinute, burst int) bool {
+	if r == nil || perMinute <= 0 || burst <= 0 {
+		return true
+	}
+	limit := rate.Limit(float64(perMinute) / 60.0)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	limiter, ok := r.limiters[key]
+	if !ok || limiter.Limit() != limit || limiter.Burst() != burst {
+		limiter = rate.NewLimiter(limit, burst)
+		r.limiters[key] = limiter
+		if len(r.limiters) > maxRateLimiterKeys {
+			r.evictLocked()
+		}
+	}
+	r.seen[key] = time.Now()
+	return limiter.Allow()
+}
+
 // evictLocked 淘汰已空闲一段时间的限流器。调用方需持有 mu。
 func (r *RateLimiter) evictLocked() {
 	cutoff := time.Now().Add(-staleLimiterAfter)

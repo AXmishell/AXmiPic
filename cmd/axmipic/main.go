@@ -344,11 +344,8 @@ func run() error {
 		InstallRepo:   store.Open,
 		InstallSeed:   installSeed,
 		Authenticator: authenticator,
-		UploadLimiter: &auth.UploadLimiter{
-			User:  auth.NewRateLimiter(cfg.Limits.UploadPerMinute, cfg.Limits.UploadBurst),
-			Guest: auth.NewRateLimiter(cfg.Limits.GuestPerMinute, cfg.Limits.GuestBurst),
-		},
-		ImageLimiter:     auth.NewRateLimiter(cfg.Limits.ImagePerMinute, cfg.Limits.ImageBurst),
+		// 上传与图片读取限流按角色组策略动态解析（PolicyLimiter + Policies）。
+		PolicyLimiter:    auth.NewDynamicRateLimiter(),
 		RequireAuth:      cfg.Auth.RequireAuth,
 		AllowGuestUpload: cfg.Auth.AllowGuestUpload,
 		TrustProxy:       cfg.Server.TrustProxy,

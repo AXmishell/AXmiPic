@@ -38,6 +38,9 @@ type Deps struct {
 	UploadLimiter *auth.UploadLimiter
 	// ImageLimiter 按 IP 对公开图片服务和转换进行限流。
 	ImageLimiter *auth.RateLimiter
+	// PolicyLimiter 为策略驱动的动态限流器；非 nil 且配置了 Policies 时，上传与
+	// 图片读取的限流改由角色组策略解析，覆盖 UploadLimiter/ImageLimiter。
+	PolicyLimiter *auth.RateLimiter
 	// InstallRepo 按安装输入的数据库参数打开仓库。
 	InstallRepo func(driver, dsn string) (*store.Repository, error)
 	// InstallSeed 在安装过程中创建管理员、角色组与 Guest 账户。
@@ -73,6 +76,10 @@ type Handler struct {
 	installSeed    func(ctx context.Context, repo *store.Repository, in service.InstallInput) error
 	maxUploadBytes int64
 	logger         *slog.Logger
+	// policyRateLimiter 与 policyLimits 用于按角色组策略限流；仅当 Deps.Policies
+	// 与 Deps.PolicyLimiter 均非 nil 时启用。
+	policyRateLimiter *auth.RateLimiter
+	policyLimits      *policyLimits
 }
 
 // NewRouter 构建 HTTP 路由并注册中间件和路由。
@@ -97,6 +104,22 @@ func NewRouter(d Deps) http.Handler {
 		maxUploadBytes: int64(d.MaxUploadMB) << 20,
 		logger:         d.Logger,
 	}
+	if d.PolicyLimiter != nil && d.Policies != nil {
+		h.policyRateLimiter = d.PolicyLimiter
+		h.policyLimits = newPolicyLimits(d.Policies)
+	}
+
+	// 上传/登录限流：优先使用角色组策略驱动的动态限流，否则回退到配置的静态
+	// 限流器。
+	uploadLimit := d.UploadLimiter.Middleware
+	if h.policyRateLimiter != nil {
+		uploadLimit = h.uploadRateLimit
+	}
+	// 公开图片读取限流：同样优先使用策略（匿名访客回退默认）。
+	imageLimit := d.ImageLimiter.Middleware
+	if h.policyRateLimiter != nil {
+		imageLimit = h.imageRateLimit
+	}
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
@@ -111,8 +134,8 @@ func NewRouter(d Deps) http.Handler {
 	r.Use(middleware.Timeout(60 * time.Second))
 
 	r.Get("/healthz", h.health)
-	r.With(d.ImageLimiter.Middleware).Get("/i/*", h.serveImage)
-	r.With(d.ImageLimiter.Middleware).Head("/i/*", h.serveImage)
+	r.With(imageLimit).Get("/i/*", h.serveImage)
+	r.With(imageLimit).Head("/i/*", h.serveImage)
 
 	r.Route("/api/v1", func(r chi.Router) {
 		// 安装状态与安装接口无需认证，且在未安装时也应可用。
@@ -120,7 +143,7 @@ func NewRouter(d Deps) http.Handler {
 		r.Post("/install", h.runInstall)
 
 		r.Group(func(r chi.Router) {
-			r.Use(d.UploadLimiter.Middleware)
+			r.Use(uploadLimit)
 			r.Post("/auth/register", h.register)
 			r.Post("/auth/login", h.login)
 			r.Post("/auth/totp/verify", h.verifyTOTPLogin)
@@ -150,7 +173,7 @@ func NewRouter(d Deps) http.Handler {
 				if d.RequireAuth && !d.AllowGuestUpload {
 					r.Use(auth.RequireAuth)
 				}
-				r.Use(d.UploadLimiter.Middleware)
+				r.Use(uploadLimit)
 				r.Post("/upload", h.uploadImage)
 				r.Post("/upload/presign", h.presignUpload)
 				r.Post("/upload/confirm", h.confirmUpload)

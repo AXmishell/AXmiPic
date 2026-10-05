@@ -102,3 +102,26 @@ func TestNilRateLimiterAllowsEverything(t *testing.T) {
 		t.Fatal("zero limits should disable the limiter")
 	}
 }
+
+func TestDynamicRateLimiterUsesPerKeyLimits(t *testing.T) {
+	limiter := auth.NewDynamicRateLimiter()
+	// 未配置限制（非正值）时放行。
+	if !limiter.AllowWith("k", 0, 0) {
+		t.Fatal("zero limits should allow")
+	}
+	// 每分钟 1 次、突发 1：第二次在本分钟内应被拒绝。
+	if !limiter.AllowWith("k", 1, 1) {
+		t.Fatal("first request should be allowed")
+	}
+	if limiter.AllowWith("k", 1, 1) {
+		t.Fatal("second request should be limited")
+	}
+	// 提高限额后应立即重建令牌桶并放行。
+	if !limiter.AllowWith("k", 600, 10) {
+		t.Fatal("request after raising limits should be allowed")
+	}
+	// 不同 key 相互独立。
+	if !limiter.AllowWith("other", 1, 1) {
+		t.Fatal("a different key should not be limited")
+	}
+}

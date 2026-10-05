@@ -497,6 +497,22 @@ func (s *PolicyService) UploadLimitsFor(ctx context.Context, principal *auth.Pri
 	}, nil
 }
 
+// RateLimitsFor 返回某个主体生效的上传与图片读取速率限制。访客与匿名请求使用
+// Guest 角色组策略，其余按账户所属角色组解析。
+func (s *PolicyService) RateLimitsFor(ctx context.Context, principal *auth.Principal) (RateSettings, error) {
+	var effective *EffectivePolicies
+	var err error
+	if principal.IsGuest() {
+		effective, err = s.ResolveGuest(ctx)
+	} else {
+		effective, err = s.ResolveForCustomer(ctx, principal.UserID)
+	}
+	if err != nil {
+		return RateSettings{}, fmt.Errorf("resolve rate limits: %w", err)
+	}
+	return effective.Rate, nil
+}
+
 // SeedDefaults 确保至少存在一个默认角色组，并按配置创建每个类型的初始策略。
 // 它是幂等的：检测到已有角色组时不再新建。
 func (s *PolicyService) SeedDefaults(ctx context.Context) error {

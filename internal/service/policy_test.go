@@ -179,6 +179,52 @@ func TestPolicyValidationRejectsUnknownFeature(t *testing.T) {
 	}
 }
 
+func TestRateLimitsForResolvesRoleGroupPolicy(t *testing.T) {
+	svc, repo := newPolicyService(t)
+	ctx := context.Background()
+	if err := svc.SeedDefaults(ctx); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+
+	// 默认组速率来自 PolicyDefaults。
+	base, err := svc.RateLimitsFor(ctx, &auth.Principal{Role: auth.RoleUser})
+	if err != nil {
+		t.Fatalf("RateLimitsFor default: %v", err)
+	}
+	if base.UploadPerMinute != 10 || base.UploadBurst != 2 || base.ImagePerMinute != 100 || base.ImageBurst != 10 {
+		t.Fatalf("default rate = %+v", base)
+	}
+
+	// 自定义角色组覆盖速率策略。
+	custom, err := svc.CreatePolicy(ctx, service.PolicyInput{
+		Name: "高速率", Type: store.PolicyTypeRate, Enabled: true,
+		Settings: json.RawMessage(`{"upload_per_minute":99,"upload_burst":9,"image_per_minute":999,"image_burst":99}`),
+	})
+	if err != nil {
+		t.Fatalf("CreatePolicy: %v", err)
+	}
+	group, err := svc.CreateRoleGroup(ctx, service.RoleGroupInput{Name: "高速组"})
+	if err != nil {
+		t.Fatalf("CreateRoleGroup: %v", err)
+	}
+	if _, err := svc.AttachPolicy(ctx, group.ID, custom.ID); err != nil {
+		t.Fatalf("AttachPolicy: %v", err)
+	}
+	newCustomer(t, repo, "u1")
+	groupID := group.ID
+	if _, err := repo.UpdateCustomer(ctx, "u1", store.UserUpdate{RoleGroupID: &groupID}); err != nil {
+		t.Fatalf("UpdateCustomer: %v", err)
+	}
+
+	got, err := svc.RateLimitsFor(ctx, &auth.Principal{UserID: "u1", Role: auth.RoleUser})
+	if err != nil {
+		t.Fatalf("RateLimitsFor custom: %v", err)
+	}
+	if got.UploadPerMinute != 99 || got.UploadBurst != 9 || got.ImagePerMinute != 999 || got.ImageBurst != 99 {
+		t.Fatalf("custom rate = %+v", got)
+	}
+}
+
 func TestDeleteRoleGroupInUse(t *testing.T) {
 	svc, repo := newPolicyService(t)
 	ctx := context.Background()
