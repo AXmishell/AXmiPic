@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/AXmishell/axmipic/internal/config"
 	"github.com/AXmishell/axmipic/internal/notify"
 	"github.com/AXmishell/axmipic/internal/secret"
 	"github.com/AXmishell/axmipic/internal/store"
@@ -73,6 +74,10 @@ type SettingsService struct {
 
 	mu      sync.RWMutex
 	current SMTPConfig
+	// 支付设置：默认值来自配置文件，运行值来自数据库，可热替换。
+	paymentDefaults config.PaymentConfig
+	currentPayment  config.PaymentConfig
+	paymentApplier  func(config.PaymentConfig) error
 }
 
 // NewSettingsService 构建设置服务。fallback 为配置文件中的 SMTP 配置，在数据库
@@ -113,6 +118,42 @@ func (s *SettingsService) Bootstrap(ctx context.Context) error {
 		return nil
 	}
 	s.apply(cfg)
+	return nil
+}
+
+// BootstrapPayment 加载数据库中保存的支付设置；首次启动时用配置兜底写库，使其
+// 可在后台编辑。记录损坏时保留配置兜底。
+func (s *SettingsService) BootstrapPayment(ctx context.Context) error {
+	raw, err := s.repo.GetSetting(ctx, paymentSettingKey)
+	if err != nil {
+		if !errors.Is(err, store.ErrNotFound) {
+			return fmt.Errorf("settings: load payment: %w", err)
+		}
+		s.mu.RLock()
+		fallback := s.paymentDefaults
+		s.mu.RUnlock()
+		fallback.DefaultGateway = normalizeDefaultGateway(fallback)
+		encoded, encErr := s.encodePayment(fallback)
+		if encErr != nil {
+			return encErr
+		}
+		if setErr := s.repo.SetSetting(ctx, paymentSettingKey, encoded); setErr != nil {
+			return setErr
+		}
+		s.setCurrentPayment(fallback)
+		return nil
+	}
+	cfg, err := s.decodePayment(raw)
+	if err != nil {
+		s.logger.Warn("ignoring corrupt payment settings", slog.Any("error", err))
+		return nil
+	}
+	if err := validatePaymentConfig(cfg); err != nil {
+		s.logger.Warn("ignoring invalid payment settings", slog.Any("error", err))
+		return nil
+	}
+	cfg.DefaultGateway = normalizeDefaultGateway(cfg)
+	s.setCurrentPayment(cfg)
 	return nil
 }
 

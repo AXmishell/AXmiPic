@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -129,13 +130,32 @@ type TicketMessageDTO struct {
 
 // BillingService 管理套餐、订单、优惠券与支付渠道。
 type BillingService struct {
-	repo     *store.Repository
-	gateways map[string]payment.Gateway
-	// defaultGateway 为未指定渠道时使用；可为空。
+	repo *store.Repository
+	// mu 保护 gateways 与 defaultGateway，使其可在运行时热替换。
+	mu             sync.RWMutex
+	gateways       map[string]payment.Gateway
 	defaultGateway string
 	baseURL        string
 	// policies 用于套餐到期后回退默认角色组与配额；未安装策略服务时跳过回退。
 	policies *PolicyService
+}
+
+// ApplyPaymentConfig 用新的支付渠道替换运行中的渠道与默认渠道。它用于在后台
+// 修改支付设置后即时生效，无需重启。
+func (s *BillingService) ApplyPaymentConfig(defaultGateway string, gateways []payment.Gateway) {
+	byName := make(map[string]payment.Gateway, len(gateways))
+	for _, g := range gateways {
+		if g != nil {
+			byName[g.Name()] = g
+		}
+	}
+	if defaultGateway == "" || byName[defaultGateway] == nil {
+		defaultGateway = "manual"
+	}
+	s.mu.Lock()
+	s.gateways = byName
+	s.defaultGateway = defaultGateway
+	s.mu.Unlock()
 }
 
 // SetPolicyService 安装角色组/策略服务，使套餐到期后可以回退到默认角色组。
@@ -159,6 +179,8 @@ func NewBillingService(repo *store.Repository, baseURL string, gateways []paymen
 
 // Gateways 返回已注册的支付渠道名称。
 func (s *BillingService) Gateways() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	names := make([]string, 0, len(s.gateways))
 	for name := range s.gateways {
 		names = append(names, name)
@@ -168,6 +190,8 @@ func (s *BillingService) Gateways() []string {
 
 // Gateway 返回指定名称的支付渠道。
 func (s *BillingService) Gateway(name string) (payment.Gateway, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	g, ok := s.gateways[name]
 	return g, ok
 }
@@ -175,7 +199,7 @@ func (s *BillingService) Gateway(name string) (payment.Gateway, bool) {
 // HandleCallback 校验某个渠道的支付回调，并在成功时确认订单。它返回处理是否
 // 成功，供回调处理器决定响应内容。header 为回调请求头（微信平台签名校验需要）。
 func (s *BillingService) HandleCallback(ctx context.Context, provider string, header http.Header, raw []byte) (*OrderDTO, error) {
-	gateway, ok := s.gateways[provider]
+	gateway, ok := s.Gateway(provider)
 	if !ok {
 		return nil, fmt.Errorf("%w: unknown payment provider %q", ErrInvalidInput, provider)
 	}
@@ -420,9 +444,11 @@ func (s *BillingService) CreateOrder(ctx context.Context, principal *auth.Princi
 		return nil, fmt.Errorf("%w: plan is not available", ErrInvalidInput)
 	}
 	if provider == "" {
+		s.mu.RLock()
 		provider = s.defaultGateway
+		s.mu.RUnlock()
 	}
-	gateway, ok := s.gateways[provider]
+	gateway, ok := s.Gateway(provider)
 	if !ok {
 		return nil, fmt.Errorf("%w: unknown payment provider %q", ErrInvalidInput, provider)
 	}

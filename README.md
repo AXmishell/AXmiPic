@@ -485,6 +485,8 @@ curl -X POST http://localhost:8080/api/v1/upload \
 
 为避免绕过真实支付，普通用户只能自助完成 `mock` 订单；`manual` 订单需管理员通过 `POST /api/v1/admin/orders/{id}/pay` 核销；`alipay`/`wechat`/`epay` 订单只能由支付回调确认，且回调金额会与订单金额核对。
 
+支付设置也可在后台「系统设置 → 支付设置」中在线维护：`GET /api/v1/admin/payment` 读取（密钥仅返回是否已设置），`PUT /api/v1/admin/payment` 保存并即时生效（密钥字段为空表示保持原值）。支付凭据经主密钥加密后保存在数据库的 `settings` 表中；配置文件中的支付配置作为首次启动的兜底并写入数据库。
+
 下单请求体的 `provider` 字段选择渠道；支付结果回调地址为 `POST /api/v1/payments/{provider}/callback`（支付宝与易支付返回纯文本 `success`，微信返回 200）。`GET /api/v1/payment-gateways` 返回已注册渠道列表。
 
 ### 图片安全、云处理、短信与邮件
@@ -509,6 +511,8 @@ curl -X POST http://localhost:8080/api/v1/upload \
 | POST | `/admin/notify/test` | 发送测试通知（`{"channel":"sms","to":"…","body":"…"}`） |
 | GET | `/admin/notify/smtp` | 读取 SMTP 邮件渠道设置（密码仅返回是否已设置） |
 | PUT | `/admin/notify/smtp` | 保存 SMTP 设置并即时生效（`password` 为空表示保持原密码） |
+| GET | `/admin/payment` | 读取支付设置（密钥仅返回是否已设置） |
+| PUT | `/admin/payment` | 保存支付设置并即时生效（密钥为空表示保持原值） |
 
 扫描器在 `multipart` 上传与预签名直传确认两个入口都会执行；命中危险内容时返回 HTTP 422 并拒绝入库。通知渠道的兜底实现会把消息写入服务端日志，便于开发调试。管理端「系统设置 → 通知设置」提供 SMTP 配置、渠道查看与发送测试；SMTP 密码经主密钥加密后保存在数据库的 `settings` 表中，保存后邮件渠道即时切换，无需重启。
 

@@ -7,12 +7,17 @@ import { fetchStats } from '@/api/admin'
 import {
   getImagingDrivers,
   getNotifyChannels,
+  getPaymentSettings,
   getProcessInfo,
   getRuntimeInfo,
   getSecurityInfo,
   getSMTPConfig,
+  listPaymentGateways,
   sendTestNotify,
+  updatePaymentSettings,
   updateSMTPConfig,
+  type PaymentSettings,
+  type PaymentSettingsInput,
   type ProcessInfo,
   type RuntimeInfo,
   type SMTPConfig,
@@ -153,6 +158,98 @@ async function saveSMTP(): Promise<void> {
   }
 }
 
+// ---- 支付设置 ----
+const providerLabels: Record<string, string> = {
+  manual: '人工核销',
+  mock: '模拟支付',
+  alipay: '支付宝',
+  wechat: '微信支付',
+  epay: '易支付',
+}
+
+const paymentSaving = ref(false)
+const paymentMeta = ref<PaymentSettings | null>(null)
+const paymentGateways = ref<string[]>([])
+const paymentForm = reactive<PaymentSettingsInput>({
+  default_gateway: 'manual',
+  alipay: { enabled: false, gateway_url: '', app_id: '', private_key: '', public_key: '' },
+  wechat: {
+    enabled: false,
+    gateway_url: '',
+    app_id: '',
+    mch_id: '',
+    serial_no: '',
+    private_key: '',
+    api_v3_key: '',
+    platform_public_key: '',
+    platform_serial_no: '',
+  },
+  epay: {
+    enabled: false,
+    pid: '',
+    key: '',
+    gateway_url: '',
+    api_url: '',
+    submit_url: '',
+    pay_type: 'alipay',
+  },
+})
+
+const providerLabel = (name: string): string => providerLabels[name] ?? name
+
+/** 用服务端返回的配置填充表单，清空密钥输入框（空表示保持不变）。 */
+function fillPayment(cfg: PaymentSettings): void {
+  paymentForm.default_gateway = cfg.default_gateway || 'manual'
+  paymentForm.alipay.enabled = cfg.alipay.enabled
+  paymentForm.alipay.gateway_url = cfg.alipay.gateway_url
+  paymentForm.alipay.app_id = cfg.alipay.app_id
+  paymentForm.alipay.private_key = ''
+  paymentForm.alipay.public_key = ''
+  paymentForm.wechat.enabled = cfg.wechat.enabled
+  paymentForm.wechat.gateway_url = cfg.wechat.gateway_url
+  paymentForm.wechat.app_id = cfg.wechat.app_id
+  paymentForm.wechat.mch_id = cfg.wechat.mch_id
+  paymentForm.wechat.serial_no = cfg.wechat.serial_no
+  paymentForm.wechat.platform_serial_no = cfg.wechat.platform_serial_no
+  paymentForm.wechat.private_key = ''
+  paymentForm.wechat.api_v3_key = ''
+  paymentForm.wechat.platform_public_key = ''
+  paymentForm.epay.enabled = cfg.epay.enabled
+  paymentForm.epay.pid = cfg.epay.pid
+  paymentForm.epay.gateway_url = cfg.epay.gateway_url
+  paymentForm.epay.api_url = cfg.epay.api_url
+  paymentForm.epay.submit_url = cfg.epay.submit_url
+  paymentForm.epay.pay_type = cfg.epay.pay_type || 'alipay'
+  paymentForm.epay.key = ''
+}
+
+function resetPayment(): void {
+  if (paymentMeta.value) fillPayment(paymentMeta.value)
+}
+
+const secretPlaceholder = (set: boolean | undefined, label: string): string =>
+  set ? `${label}已设置，留空保持不变` : `请输入${label}`
+
+async function savePayment(): Promise<void> {
+  paymentSaving.value = true
+  try {
+    const updated = await updatePaymentSettings({
+      default_gateway: paymentForm.default_gateway,
+      alipay: { ...paymentForm.alipay },
+      wechat: { ...paymentForm.wechat },
+      epay: { ...paymentForm.epay },
+    })
+    paymentMeta.value = updated
+    fillPayment(updated)
+    paymentGateways.value = await listPaymentGateways().catch(() => paymentGateways.value)
+    ElMessage.success('支付设置已保存并即时生效')
+  } catch (error) {
+    ElMessage.error(toApiError(error).message)
+  } finally {
+    paymentSaving.value = false
+  }
+}
+
 // ---- 测试通知 ----
 const testChannel = ref<'sms' | 'email'>('email')
 const testTo = ref('')
@@ -184,7 +281,7 @@ async function load(): Promise<void> {
   loading.value = true
   errorMessage.value = ''
   try {
-    const [statsData, runtimeData, processData, smtpData, ch, sec, drv] = await Promise.all([
+    const [statsData, runtimeData, processData, smtpData, ch, sec, drv, paymentData, gatewayList] = await Promise.all([
       fetchStats(),
       getRuntimeInfo(),
       getProcessInfo(),
@@ -192,6 +289,8 @@ async function load(): Promise<void> {
       getNotifyChannels().catch(() => ({ sms: '', email: '' })),
       getSecurityInfo().catch(() => ({ scanner: '' })),
       getImagingDrivers().catch(() => ({ available: [], active: '' })),
+      getPaymentSettings().catch(() => null),
+      listPaymentGateways().catch(() => []),
     ])
     stats.value = statsData
     runtime.value = runtimeData
@@ -201,6 +300,11 @@ async function load(): Promise<void> {
     channels.value = ch ?? { sms: '', email: '' }
     scannerName.value = sec?.scanner ?? ''
     drivers.value = drv ?? { available: [], active: '' }
+    paymentGateways.value = gatewayList ?? []
+    if (paymentData) {
+      paymentMeta.value = paymentData
+      fillPayment(paymentData)
+    }
   } catch (error) {
     errorMessage.value = toApiError(error).message
   } finally {
@@ -419,6 +523,160 @@ onBeforeUnmount(() => {
             </div>
             <p class="integration__hint">
               保存 SMTP 设置后即时生效；未配置真实服务商时，通知会回退到日志渠道并记录到服务端日志。
+            </p>
+          </div>
+        </article>
+      </el-tab-pane>
+
+      <!-- 支付设置 -->
+      <el-tab-pane label="支付设置" name="payment">
+        <article class="ax-card">
+          <header class="ax-card__head">
+            <h2 class="ax-card__title">支付设置</h2>
+            <el-tag size="small" type="info" effect="plain">保存后即时生效</el-tag>
+          </header>
+          <div class="ax-card__body">
+            <el-form label-position="top" class="smtp-form" @submit.prevent>
+              <el-form-item label="默认支付渠道">
+                <el-select v-model="paymentForm.default_gateway" style="max-width: 240px">
+                  <el-option
+                    v-for="gateway in paymentGateways"
+                    :key="gateway"
+                    :label="providerLabel(gateway)"
+                    :value="gateway"
+                  />
+                </el-select>
+                <span class="smtp-form__hint">仅可选择已启用的渠道</span>
+              </el-form-item>
+            </el-form>
+
+            <el-divider content-position="left">支付宝当面付</el-divider>
+            <el-form label-position="top" class="smtp-form" @submit.prevent>
+              <div class="smtp-grid">
+                <el-form-item label="启用">
+                  <el-switch v-model="paymentForm.alipay.enabled" />
+                </el-form-item>
+                <el-form-item label="网关地址" class="smtp-grid__wide">
+                  <el-input v-model="paymentForm.alipay.gateway_url" placeholder="留空使用生产地址" />
+                </el-form-item>
+                <el-form-item label="App ID">
+                  <el-input v-model="paymentForm.alipay.app_id" />
+                </el-form-item>
+                <el-form-item label="应用私钥">
+                  <el-input
+                    v-model="paymentForm.alipay.private_key"
+                    type="password"
+                    show-password
+                    autocomplete="new-password"
+                    :placeholder="secretPlaceholder(paymentMeta?.alipay.private_key_set, '私钥')"
+                  />
+                </el-form-item>
+                <el-form-item label="支付宝公钥">
+                  <el-input
+                    v-model="paymentForm.alipay.public_key"
+                    type="password"
+                    show-password
+                    autocomplete="new-password"
+                    :placeholder="secretPlaceholder(paymentMeta?.alipay.public_key_set, '公钥')"
+                  />
+                </el-form-item>
+              </div>
+            </el-form>
+
+            <el-divider content-position="left">微信支付 v3</el-divider>
+            <el-form label-position="top" class="smtp-form" @submit.prevent>
+              <div class="smtp-grid">
+                <el-form-item label="启用">
+                  <el-switch v-model="paymentForm.wechat.enabled" />
+                </el-form-item>
+                <el-form-item label="网关地址" class="smtp-grid__wide">
+                  <el-input v-model="paymentForm.wechat.gateway_url" placeholder="留空使用生产地址" />
+                </el-form-item>
+                <el-form-item label="App ID">
+                  <el-input v-model="paymentForm.wechat.app_id" />
+                </el-form-item>
+                <el-form-item label="商户号">
+                  <el-input v-model="paymentForm.wechat.mch_id" />
+                </el-form-item>
+                <el-form-item label="证书序列号">
+                  <el-input v-model="paymentForm.wechat.serial_no" />
+                </el-form-item>
+                <el-form-item label="商户 API 私钥">
+                  <el-input
+                    v-model="paymentForm.wechat.private_key"
+                    type="password"
+                    show-password
+                    autocomplete="new-password"
+                    :placeholder="secretPlaceholder(paymentMeta?.wechat.private_key_set, '私钥')"
+                  />
+                </el-form-item>
+                <el-form-item label="APIv3 密钥（32 字节）">
+                  <el-input
+                    v-model="paymentForm.wechat.api_v3_key"
+                    type="password"
+                    show-password
+                    autocomplete="new-password"
+                    :placeholder="secretPlaceholder(paymentMeta?.wechat.api_v3_key_set, '密钥')"
+                  />
+                </el-form-item>
+                <el-form-item label="平台公钥">
+                  <el-input
+                    v-model="paymentForm.wechat.platform_public_key"
+                    type="password"
+                    show-password
+                    autocomplete="new-password"
+                    :placeholder="secretPlaceholder(paymentMeta?.wechat.platform_public_key_set, '公钥')"
+                  />
+                </el-form-item>
+                <el-form-item label="平台证书序列号">
+                  <el-input v-model="paymentForm.wechat.platform_serial_no" placeholder="可选，用于校验回调 serial" />
+                </el-form-item>
+              </div>
+            </el-form>
+
+            <el-divider content-position="left">易支付</el-divider>
+            <el-form label-position="top" class="smtp-form" @submit.prevent>
+              <div class="smtp-grid">
+                <el-form-item label="启用">
+                  <el-switch v-model="paymentForm.epay.enabled" />
+                </el-form-item>
+                <el-form-item label="支付通道">
+                  <el-select v-model="paymentForm.epay.pay_type" style="width: 100%">
+                    <el-option label="支付宝" value="alipay" />
+                    <el-option label="微信支付" value="wxpay" />
+                    <el-option label="QQ 钱包" value="qqpay" />
+                  </el-select>
+                </el-form-item>
+                <el-form-item label="商户号 PID">
+                  <el-input v-model="paymentForm.epay.pid" />
+                </el-form-item>
+                <el-form-item label="商户密钥">
+                  <el-input
+                    v-model="paymentForm.epay.key"
+                    type="password"
+                    show-password
+                    autocomplete="new-password"
+                    :placeholder="secretPlaceholder(paymentMeta?.epay.key_set, '密钥')"
+                  />
+                </el-form-item>
+                <el-form-item label="站点地址" class="smtp-grid__wide">
+                  <el-input v-model="paymentForm.epay.gateway_url" placeholder="https://pay.example.com" />
+                </el-form-item>
+                <el-form-item label="下单接口">
+                  <el-input v-model="paymentForm.epay.api_url" placeholder="默认 /mapi.php" />
+                </el-form-item>
+                <el-form-item label="收银台地址">
+                  <el-input v-model="paymentForm.epay.submit_url" placeholder="默认 /submit.php" />
+                </el-form-item>
+              </div>
+            </el-form>
+
+            <div class="smtp-actions">
+              <el-button type="primary" :loading="paymentSaving" @click="savePayment">保存并应用</el-button>
+              <el-button :disabled="paymentSaving" @click="resetPayment">重置</el-button>
+            </div>
+            <p class="integration__hint">
+              密钥以密文保存，接口仅返回是否已设置（留空保持不变）；保存后立即注册或切换支付渠道，无需重启。
             </p>
           </div>
         </article>

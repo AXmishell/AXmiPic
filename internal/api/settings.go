@@ -34,3 +34,31 @@ func (h *Handler) adminUpdateSMTP(w http.ResponseWriter, r *http.Request) {
 	}
 	writeOK(w, cfg)
 }
+
+// adminGetPayment 返回当前支付设置（密钥仅返回是否已设置）。
+func (h *Handler) adminGetPayment(w http.ResponseWriter, r *http.Request) {
+	if h.settings == nil {
+		writeOK(w, service.PaymentSettingsDTO{})
+		return
+	}
+	writeOK(w, h.settings.Payment())
+}
+
+// adminUpdatePayment 更新支付设置并即时生效（无需重启）。
+func (h *Handler) adminUpdatePayment(w http.ResponseWriter, r *http.Request) {
+	var body service.PaymentSettingsInput
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxJSONBody)).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if h.settings == nil {
+		writeError(w, http.StatusServiceUnavailable, http.StatusServiceUnavailable, "settings service is unavailable")
+		return
+	}
+	cfg, err := h.settings.UpdatePayment(r.Context(), body)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeOK(w, cfg)
+}

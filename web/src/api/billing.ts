@@ -145,6 +145,80 @@ export function updateSMTPConfig(input: SMTPInput): Promise<SMTPConfig> {
   return request<SMTPConfig>({ method: 'PUT', url: '/admin/notify/smtp', data: input })
 }
 
+/** 支付渠道设置（密钥仅返回是否已设置）。 */
+export interface PaymentSettings {
+  default_gateway: string
+  alipay: {
+    enabled: boolean
+    gateway_url: string
+    app_id: string
+    private_key_set: boolean
+    public_key_set: boolean
+  }
+  wechat: {
+    enabled: boolean
+    gateway_url: string
+    app_id: string
+    mch_id: string
+    serial_no: string
+    platform_serial_no: string
+    private_key_set: boolean
+    api_v3_key_set: boolean
+    platform_public_key_set: boolean
+  }
+  epay: {
+    enabled: boolean
+    pid: string
+    gateway_url: string
+    api_url: string
+    submit_url: string
+    pay_type: string
+    key_set: boolean
+  }
+}
+
+/** 更新支付设置的输入；密钥为空表示保持不变。 */
+export interface PaymentSettingsInput {
+  default_gateway: string
+  alipay: {
+    enabled: boolean
+    gateway_url: string
+    app_id: string
+    private_key: string
+    public_key: string
+  }
+  wechat: {
+    enabled: boolean
+    gateway_url: string
+    app_id: string
+    mch_id: string
+    serial_no: string
+    private_key: string
+    api_v3_key: string
+    platform_public_key: string
+    platform_serial_no: string
+  }
+  epay: {
+    enabled: boolean
+    pid: string
+    key: string
+    gateway_url: string
+    api_url: string
+    submit_url: string
+    pay_type: string
+  }
+}
+
+/** 管理端：读取支付设置。 */
+export function getPaymentSettings(): Promise<PaymentSettings> {
+  return request<PaymentSettings>({ method: 'GET', url: '/admin/payment' })
+}
+
+/** 管理端：保存支付设置并即时生效。 */
+export function updatePaymentSettings(input: PaymentSettingsInput): Promise<PaymentSettings> {
+  return request<PaymentSettings>({ method: 'PUT', url: '/admin/payment', data: input })
+}
+
 /** 管理端：安全扫描器信息。 */
 export function getSecurityInfo(): Promise<{ scanner?: string }> {
   return request<{ scanner?: string }>({ method: 'GET', url: '/admin/security' })

@@ -22,7 +22,6 @@ import (
 	"github.com/AXmishell/axmipic/internal/config"
 	"github.com/AXmishell/axmipic/internal/imaging"
 	"github.com/AXmishell/axmipic/internal/notify"
-	"github.com/AXmishell/axmipic/internal/payment"
 	"github.com/AXmishell/axmipic/internal/secret"
 	"github.com/AXmishell/axmipic/internal/security"
 	"github.com/AXmishell/axmipic/internal/server"
@@ -264,54 +263,32 @@ func run() error {
 		Platform:          runtime.GOOS + "/" + runtime.GOARCH,
 	}
 
-	gateways := []payment.Gateway{payment.ManualGateway{}, payment.NewMockGateway(cfg.Server.BaseURL, logger)}
-	if cfg.Payment.Alipay.Enabled {
-		alipay, err := payment.NewAlipayGateway(payment.AlipayOptions{
-			AppID:      cfg.Payment.Alipay.AppID,
-			PrivateKey: cfg.Payment.Alipay.PrivateKey,
-			PublicKey:  cfg.Payment.Alipay.PublicKey,
-			GatewayURL: cfg.Payment.Alipay.GatewayURL,
-		})
-		if err != nil {
-			return fmt.Errorf("main: alipay gateway: %w", err)
-		}
-		gateways = append(gateways, alipay)
-		logger.Info("alipay payment gateway enabled")
-	}
-	if cfg.Payment.Wechat.Enabled {
-		wechat, err := payment.NewWechatGateway(payment.WechatOptions{
-			AppID:             cfg.Payment.Wechat.AppID,
-			MchID:             cfg.Payment.Wechat.MchID,
-			SerialNo:          cfg.Payment.Wechat.SerialNo,
-			PrivateKey:        cfg.Payment.Wechat.PrivateKey,
-			APIv3Key:          cfg.Payment.Wechat.APIv3Key,
-			PlatformPublicKey: cfg.Payment.Wechat.PlatformPublicKey,
-			PlatformSerialNo:  cfg.Payment.Wechat.PlatformSerialNo,
-			GatewayURL:        cfg.Payment.Wechat.GatewayURL,
-		})
-		if err != nil {
-			return fmt.Errorf("main: wechat gateway: %w", err)
-		}
-		gateways = append(gateways, wechat)
-		logger.Info("wechat payment gateway enabled")
-	}
-	if cfg.Payment.Epay.Enabled {
-		epay, err := payment.NewEpayGateway(payment.EpayOptions{
-			PID:        cfg.Payment.Epay.PID,
-			Key:        cfg.Payment.Epay.Key,
-			GatewayURL: cfg.Payment.Epay.GatewayURL,
-			APIURL:     cfg.Payment.Epay.APIURL,
-			SubmitURL:  cfg.Payment.Epay.SubmitURL,
-			PayType:    cfg.Payment.Epay.PayType,
-		})
-		if err != nil {
-			return fmt.Errorf("main: epay gateway: %w", err)
-		}
-		gateways = append(gateways, epay)
-		logger.Info("epay payment gateway enabled")
+	gateways, err := service.BuildGateways(cfg.Server.BaseURL, cfg.Payment, logger)
+	if err != nil {
+		return fmt.Errorf("main: payment gateways: %w", err)
 	}
 	billingSvc := service.NewBillingService(repo, cfg.Server.BaseURL, gateways, cfg.Payment.DefaultGateway)
 	billingSvc.SetPolicyService(policies)
+
+	// 支付设置：以配置文件为兜底，首次启动写入数据库并支持后台热更新。
+	settingsSvc.SetPaymentDefaults(cfg.Payment)
+	settingsSvc.SetPaymentApplier(func(paymentCfg config.PaymentConfig) error {
+		built, buildErr := service.BuildGateways(cfg.Server.BaseURL, paymentCfg, logger)
+		if buildErr != nil {
+			return buildErr
+		}
+		billingSvc.ApplyPaymentConfig(paymentCfg.DefaultGateway, built)
+		return nil
+	})
+	paymentBootstrapCtx, cancelPayment := context.WithTimeout(context.Background(), 10*time.Second)
+	err = settingsSvc.BootstrapPayment(paymentBootstrapCtx)
+	cancelPayment()
+	if err != nil {
+		return err
+	}
+	if err := settingsSvc.ApplyStoredPayment(); err != nil {
+		return fmt.Errorf("main: apply payment settings: %w", err)
+	}
 
 	authenticator := auth.NewAuthenticator(repo, issuer)
 	// 允许访客上传时，为匿名请求附加内置 Guest 账户身份，使访客上传计入

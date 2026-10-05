@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/AXmishell/axmipic/internal/config"
 	"github.com/AXmishell/axmipic/internal/notify"
 	"github.com/AXmishell/axmipic/internal/secret"
 	"github.com/AXmishell/axmipic/internal/service"
@@ -105,5 +106,75 @@ func TestSMTPValidation(t *testing.T) {
 
 	if _, err := svc.UpdateSMTP(context.Background(), service.SMTPInput{Enabled: true, Host: ""}); !errors.Is(err, service.ErrSettingsConfig) {
 		t.Fatalf("missing host err = %v, want ErrSettingsConfig", err)
+	}
+}
+
+func TestPaymentUpdateAndHotReload(t *testing.T) {
+	repo := newRepo(t)
+	cipher, _ := secret.New([]byte("test-encryption-key"))
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	svc := service.NewSettingsService(repo, cipher, service.NewNotifyService(nil, nil), logger, service.SMTPConfig{})
+	ctx := context.Background()
+
+	var applied config.PaymentConfig
+	svc.SetPaymentApplier(func(cfg config.PaymentConfig) error {
+		applied = cfg
+		return nil
+	})
+	if err := svc.BootstrapPayment(ctx); err != nil {
+		t.Fatalf("BootstrapPayment: %v", err)
+	}
+
+	updated, err := svc.UpdatePayment(ctx, service.PaymentSettingsInput{
+		DefaultGateway: "epay",
+		Epay: service.EpaySettingsInput{
+			Enabled: true, PID: "1001", Key: "secret-key", GatewayURL: "https://pay.example.com",
+		},
+	})
+	if err != nil {
+		t.Fatalf("UpdatePayment: %v", err)
+	}
+	if updated.DefaultGateway != "epay" || !updated.Epay.Enabled || !updated.Epay.KeySet {
+		t.Fatalf("updated = %+v", updated)
+	}
+	if !applied.Epay.Enabled || applied.Epay.PID != "1001" {
+		t.Fatalf("applier not applied with new config: %+v", applied)
+	}
+
+	// 落库的密钥必须是密文。
+	raw, err := repo.GetSetting(ctx, "payment")
+	if err != nil {
+		t.Fatalf("GetSetting: %v", err)
+	}
+	if strings.Contains(raw, "secret-key") {
+		t.Fatalf("stored payment leaks plaintext key: %s", raw)
+	}
+
+	// 空密钥表示保持不变。
+	again, err := svc.UpdatePayment(ctx, service.PaymentSettingsInput{
+		DefaultGateway: "epay",
+		Epay:           service.EpaySettingsInput{Enabled: true, PID: "1001", GatewayURL: "https://pay.example.com"},
+	})
+	if err != nil {
+		t.Fatalf("UpdatePayment without key: %v", err)
+	}
+	if !again.Epay.KeySet {
+		t.Fatalf("epay key should be preserved: %+v", again)
+	}
+
+	// 新的服务实例应能从数据库恢复配置。
+	reloaded := service.NewSettingsService(repo, cipher, service.NewNotifyService(nil, nil), logger, service.SMTPConfig{})
+	if err := reloaded.BootstrapPayment(ctx); err != nil {
+		t.Fatalf("BootstrapPayment reload: %v", err)
+	}
+	if got := reloaded.Payment(); got.DefaultGateway != "epay" || !got.Epay.KeySet {
+		t.Fatalf("reloaded payment = %+v", got)
+	}
+
+	// 启用但缺少凭据应被拒绝。
+	if _, err := svc.UpdatePayment(ctx, service.PaymentSettingsInput{
+		Epay: service.EpaySettingsInput{Enabled: true},
+	}); !errors.Is(err, service.ErrSettingsConfig) {
+		t.Fatalf("missing epay creds err = %v, want ErrSettingsConfig", err)
 	}
 }
