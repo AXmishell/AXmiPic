@@ -4,6 +4,8 @@ services:
     restart: unless-stopped
     ports:
       - "8080:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - axmipic-data:/app/data
       - axmipic-config:/app/configs
