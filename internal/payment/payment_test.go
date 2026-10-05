@@ -2,10 +2,12 @@ package payment
 
 import (
 	"context"
+	"crypto"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
@@ -14,6 +16,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"testing"
+	"time"
 )
 
 // generateKeyPair 生成一对 PEM 编码的 RSA 密钥，用于测试签名与验签。
@@ -80,6 +83,38 @@ func TestAlipaySignAndVerifyCallback(t *testing.T) {
 	}
 }
 
+func TestWechatCreateUsesGatewayURL(t *testing.T) {
+	var path string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code_url":"weixin://wxpay/bizpayurl?pr=abc"}`))
+	}))
+	defer server.Close()
+
+	privatePEM, _ := generateKeyPair(t)
+	gateway, err := NewWechatGateway(WechatOptions{
+		AppID: "wxapp", MchID: "1900000001", SerialNo: "serial-1",
+		PrivateKey: privatePEM, APIv3Key: "0123456789abcdef0123456789abcdef",
+		GatewayURL: server.URL,
+	})
+	if err != nil {
+		t.Fatalf("NewWechatGateway: %v", err)
+	}
+	result, err := gateway.Create(context.Background(), Order{
+		ID: "order-1", Subject: "套餐", AmountCents: 1234, NotifyURL: "https://x/notify",
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if result.PayURL != "weixin://wxpay/bizpayurl?pr=abc" {
+		t.Fatalf("pay url = %q", result.PayURL)
+	}
+	if path != "/v3/pay/transactions/native" {
+		t.Fatalf("request path = %q", path)
+	}
+}
+
 func TestWechatDecryptResource(t *testing.T) {
 	privatePEM, _ := generateKeyPair(t)
 	gateway, err := NewWechatGateway(WechatOptions{
@@ -96,13 +131,13 @@ func TestWechatDecryptResource(t *testing.T) {
 	plaintext := []byte(`{"out_trade_no":"order-2","transaction_id":"tx-2","trade_state":"SUCCESS","success_time":"2026-01-02T15:04:05+08:00"}`)
 	nonce := "abcdefghijkl"
 	associatedData := "transaction"
-	ciphertext, err := encryptResource(gateway.apiV3Key, plaintext, nonce, associatedData)
+	ciphertext, err := encryptResource([]byte(gateway.apiV3Key), plaintext, nonce, associatedData)
 	if err != nil {
 		t.Fatalf("encryptResource: %v", err)
 	}
-	decrypted, err := gateway.decryptResource(ciphertext, nonce, associatedData)
+	decrypted, err := decryptAESGCM([]byte(gateway.apiV3Key), ciphertext, nonce, associatedData)
 	if err != nil {
-		t.Fatalf("decryptResource: %v", err)
+		t.Fatalf("decryptAESGCM: %v", err)
 	}
 	if string(decrypted) != string(plaintext) {
 		t.Fatalf("decrypted = %s", decrypted)
@@ -210,7 +245,7 @@ func TestWechatVerifiesPlatformSignature(t *testing.T) {
 	plaintext := []byte(`{"out_trade_no":"order-2","transaction_id":"tx-2","trade_state":"SUCCESS","success_time":"2026-01-02T15:04:05+08:00","amount":{"total":1234}}`)
 	nonce := "abcdefghijkl"
 	associatedData := "transaction"
-	ciphertext, err := encryptResource(gateway.apiV3Key, plaintext, nonce, associatedData)
+	ciphertext, err := encryptResource([]byte(gateway.apiV3Key), plaintext, nonce, associatedData)
 	if err != nil {
 		t.Fatalf("encryptResource: %v", err)
 	}
@@ -218,11 +253,8 @@ func TestWechatVerifiesPlatformSignature(t *testing.T) {
 		`{"event_type":"TRANSACTION.SUCCESS","resource":{"algorithm":"AEAD_AES_256_GCM","ciphertext":%q,"nonce":%q,"associated_data":%q}}`,
 		ciphertext, nonce, associatedData,
 	))
-	timestamp, headerNonce := "1700000000", "headernonce"
-	signature, err := signSHA256RSA(timestamp+"\n"+headerNonce+"\n"+string(body)+"\n", gateway.privateKey)
-	if err != nil {
-		t.Fatalf("signSHA256RSA: %v", err)
-	}
+	timestamp, headerNonce := fmt.Sprintf("%d", time.Now().Unix()), "headernonce"
+	signature := signTestSHA256RSA(t, timestamp+"\n"+headerNonce+"\n"+string(body)+"\n", gateway.privateKey)
 	header := http.Header{}
 	header.Set("Wechatpay-Signature", signature)
 	header.Set("Wechatpay-Timestamp", timestamp)
@@ -241,6 +273,17 @@ func TestWechatVerifiesPlatformSignature(t *testing.T) {
 	if _, err := gateway.VerifyCallback(context.Background(), header, body); err == nil {
 		t.Fatal("tampered signature unexpectedly verified")
 	}
+}
+
+// signTestSHA256RSA 使用测试私钥对消息做 SHA256-RSA 签名（base64）。
+func signTestSHA256RSA(t *testing.T, message string, key *rsa.PrivateKey) string {
+	t.Helper()
+	digest := sha256.Sum256([]byte(message))
+	sig, err := rsa.SignPKCS1v15(rand.Reader, key, crypto.SHA256, digest[:])
+	if err != nil {
+		t.Fatalf("sign test message: %v", err)
+	}
+	return base64.StdEncoding.EncodeToString(sig)
 }
 
 // encryptResource 用 AES-256-GCM 加密测试资源（与解密的对称实现）。

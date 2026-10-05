@@ -6,36 +6,46 @@ import (
 	"crypto"
 	"crypto/aes"
 	"crypto/cipher"
-	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
+	"net/url"
 	"strings"
+	"sync"
 	"time"
+
+	wechatpay "github.com/wechatpay-apiv3/wechatpay-go/core"
+	"github.com/wechatpay-apiv3/wechatpay-go/core/auth"
+	"github.com/wechatpay-apiv3/wechatpay-go/core/notify"
+	"github.com/wechatpay-apiv3/wechatpay-go/core/option"
+	"github.com/wechatpay-apiv3/wechatpay-go/services/payments/native"
 )
 
 // WechatProductionGateway 是微信支付 API v3 的生产地址。
 const WechatProductionGateway = "https://api.mch.weixin.qq.com"
 
-// WechatGateway 实现微信支付 v3 的 Native 扫码下单：使用商户私钥对请求做
-// SHA256-RSA 签名，使用 APIv3 密钥解密回调中的支付结果，并在配置了平台公钥时
-// 校验回调的 Wechatpay-Signature 签名。
+// WechatGateway 基于微信支付官方 SDK（wechatpay-apiv3/wechatpay-go）实现
+// Native 扫码支付：使用 SDK 完成请求签名与 Native 下单，并使用 SDK 的通知
+// 处理器对回调做验签与 AES-256-GCM 解密。
 type WechatGateway struct {
 	appID      string
 	mchID      string
 	serialNo   string
-	apiV3Key   []byte
+	apiV3Key   string
 	privateKey *rsa.PrivateKey
-	// platformPublicKey 为微信支付平台证书公钥；非空时对回调验签。
+	// platformPublicKey 为微信支付公钥；非空时对回调验签。
 	platformPublicKey *rsa.PublicKey
-	// platformSerialNo 为平台证书序列号；非空时校验回调头中的 serial。
+	// platformSerialNo 为公钥 ID；非空时校验回调头中的 serial。
 	platformSerialNo string
 	gatewayURL       string
 	httpClient       *http.Client
+
+	once      sync.Once
+	client    *wechatpay.Client
+	clientErr error
 }
 
 // WechatOptions 是构造 WechatGateway 所需的参数。
@@ -46,10 +56,10 @@ type WechatOptions struct {
 	PrivateKey string
 	APIv3Key   string
 	GatewayURL string
-	// PlatformPublicKey 为微信支付平台证书公钥（PEM 或裸 base64）；配置后对
-	// 回调的 Wechatpay-Signature 做 RSA 验签。强烈建议配置。
+	// PlatformPublicKey 为微信支付平台证书公钥（PEM 或裸 base64）；配置后
+	// 对回调的 Wechatpay-Signature 做 RSA 验签。强烈建议配置。
 	PlatformPublicKey string
-	// PlatformSerialNo 为平台证书序列号；配置后校验回调头中的 serial。
+	// PlatformSerialNo 为公钥 ID；配置后校验回调头中的 serial。
 	PlatformSerialNo string
 	HTTPClient       *http.Client
 }
@@ -89,11 +99,11 @@ func NewWechatGateway(opts WechatOptions) (*WechatGateway, error) {
 		appID:             opts.AppID,
 		mchID:             opts.MchID,
 		serialNo:          opts.SerialNo,
-		apiV3Key:          []byte(opts.APIv3Key),
+		apiV3Key:          opts.APIv3Key,
 		privateKey:        priv,
 		platformPublicKey: platformKey,
 		platformSerialNo:  strings.TrimSpace(opts.PlatformSerialNo),
-		gatewayURL:        strings.TrimRight(gatewayURL, "/"),
+		gatewayURL:        gatewayURL,
 		httpClient:        client,
 	}, nil
 }
@@ -101,62 +111,66 @@ func NewWechatGateway(opts WechatOptions) (*WechatGateway, error) {
 // Name 返回渠道标识。
 func (g *WechatGateway) Name() string { return "wechat" }
 
-// Create 调用微信支付 Native 下单接口，返回二维码链接。
+// Create 通过官方 SDK 调用 Native 下单接口，返回二维码链接。
 func (g *WechatGateway) Create(ctx context.Context, order Order) (*CreateResult, error) {
-	bizContent, err := json.Marshal(map[string]any{
-		"appid":        g.appID,
-		"mchid":        g.mchID,
-		"description":  truncate(order.Subject, 127),
-		"out_trade_no": order.ID,
-		"notify_url":   order.NotifyURL,
-		"amount": map[string]any{
-			"total":    order.AmountCents,
-			"currency": "CNY",
+	client, err := g.sdkClient()
+	if err != nil {
+		return nil, fmt.Errorf("payment: wechat client: %w", err)
+	}
+	service := native.NativeApiService{Client: client}
+	resp, _, err := service.Prepay(ctx, native.PrepayRequest{
+		Appid:       wechatpay.String(g.appID),
+		Mchid:       wechatpay.String(g.mchID),
+		Description: wechatpay.String(truncate(order.Subject, 127)),
+		OutTradeNo:  wechatpay.String(order.ID),
+		NotifyUrl:   wechatpay.String(order.NotifyURL),
+		Amount: &native.Amount{
+			Total:    wechatpay.Int64(order.AmountCents),
+			Currency: wechatpay.String("CNY"),
 		},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("payment: wechat biz content: %w", err)
+		return nil, fmt.Errorf("payment: wechat prepay: %w", err)
 	}
-	endpoint := g.gatewayURL + "/v3/pay/transactions/native"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(bizContent))
-	if err != nil {
-		return nil, fmt.Errorf("payment: wechat request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	if err := g.signRequest(req, bizContent); err != nil {
-		return nil, fmt.Errorf("payment: wechat sign: %w", err)
-	}
-	resp, err := g.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("payment: wechat call: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if err != nil {
-		return nil, fmt.Errorf("payment: wechat read: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		return nil, fmt.Errorf("payment: wechat rejected order (%d): %s", resp.StatusCode, string(body))
-	}
-	var parsed struct {
-		CodeURL string `json:"code_url"`
-	}
-	if err := json.Unmarshal(body, &parsed); err != nil {
-		return nil, fmt.Errorf("payment: wechat decode: %w", err)
-	}
-	if parsed.CodeURL == "" {
+	if resp == nil || resp.CodeUrl == nil || *resp.CodeUrl == "" {
 		return nil, fmt.Errorf("payment: wechat returned an empty code_url")
 	}
-	return &CreateResult{TradeNo: order.ID, PayURL: parsed.CodeURL}, nil
+	return &CreateResult{TradeNo: order.ID, PayURL: *resp.CodeUrl}, nil
 }
 
-// VerifyCallback 解密并校验微信支付 v3 回调。raw 为回调请求体，header 为回调
-// 请求头。配置了平台公钥时会校验 Wechatpay-Signature，并核对金额。
-func (g *WechatGateway) VerifyCallback(_ context.Context, header http.Header, raw []byte) (*Callback, error) {
-	if err := g.verifyCallbackSignature(header, raw); err != nil {
-		return nil, err
+// VerifyCallback 使用官方 SDK 的通知处理器校验签名并解密回调；未配置平台公钥
+// 时回退为仅 AES-GCM 解密（不验签），以兼容旧部署。
+func (g *WechatGateway) VerifyCallback(ctx context.Context, header http.Header, raw []byte) (*Callback, error) {
+	if g.platformPublicKey == nil {
+		return g.verifyCallbackUnverified(ctx, raw)
 	}
+	handler, err := notify.NewRSANotifyHandler(g.apiV3Key, wechatPubkeyVerifier{
+		publicKey: g.platformPublicKey,
+		serial:    g.platformSerialNo,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("payment: wechat notify handler: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "/", bytes.NewReader(raw))
+	if err != nil {
+		return nil, fmt.Errorf("payment: wechat callback request: %w", err)
+	}
+	if header != nil {
+		req.Header = header.Clone()
+	}
+	var transaction wechatTransaction
+	parsed, err := handler.ParseNotifyRequest(ctx, req, &transaction)
+	if err != nil {
+		return nil, fmt.Errorf("payment: wechat callback verify: %w", err)
+	}
+	if parsed.EventType != "TRANSACTION.SUCCESS" {
+		return nil, fmt.Errorf("payment: wechat event %q is not a successful payment", parsed.EventType)
+	}
+	return transaction.toCallback(), nil
+}
+
+// verifyCallbackUnverified 在未配置平台公钥时仅解密回调资源（不校验签名）。
+func (g *WechatGateway) verifyCallbackUnverified(_ context.Context, raw []byte) (*Callback, error) {
 	var notification struct {
 		EventType string `json:"event_type"`
 		Resource  struct {
@@ -172,7 +186,7 @@ func (g *WechatGateway) VerifyCallback(_ context.Context, header http.Header, ra
 	if notification.EventType != "TRANSACTION.SUCCESS" {
 		return nil, fmt.Errorf("payment: wechat event %q is not a successful payment", notification.EventType)
 	}
-	plaintext, err := g.decryptResource(
+	plaintext, err := decryptAESGCM([]byte(g.apiV3Key),
 		notification.Resource.Ciphertext,
 		notification.Resource.Nonce,
 		notification.Resource.AssociatedData,
@@ -180,88 +194,127 @@ func (g *WechatGateway) VerifyCallback(_ context.Context, header http.Header, ra
 	if err != nil {
 		return nil, fmt.Errorf("payment: wechat decrypt: %w", err)
 	}
-	var transaction struct {
-		OutTradeNo    string `json:"out_trade_no"`
-		TransactionID string `json:"transaction_id"`
-		TradeState    string `json:"trade_state"`
-		SuccessTime   string `json:"success_time"`
-		Amount        struct {
-			Total int64 `json:"total"`
-		} `json:"amount"`
-	}
+	var transaction wechatTransaction
 	if err := json.Unmarshal(plaintext, &transaction); err != nil {
 		return nil, fmt.Errorf("payment: wechat transaction decode: %w", err)
 	}
+	return transaction.toCallback(), nil
+}
+
+// sdkClient 惰性构建官方 SDK 客户端：使用商户私钥签名，且不校验应答签名
+// （应答验签需要平台证书，可选）。
+func (g *WechatGateway) sdkClient() (*wechatpay.Client, error) {
+	g.once.Do(func() {
+		opts := []wechatpay.ClientOption{
+			option.WithHTTPClient(g.sdkHTTPClient()),
+			option.WithMerchantCredential(g.mchID, g.serialNo, g.privateKey),
+			option.WithoutValidator(),
+		}
+		g.client, g.clientErr = wechatpay.NewClient(context.Background(), opts...)
+	})
+	return g.client, g.clientErr
+}
+
+// sdkHTTPClient 返回 SDK 使用的 HTTP 客户端。当配置了自定义网关地址时，通过
+// 重写请求主机把请求指向该地址（便于沙箱与测试）。
+func (g *WechatGateway) sdkHTTPClient() *http.Client {
+	target, err := url.Parse(g.gatewayURL)
+	if err != nil || target.Host == "" || g.gatewayURL == WechatProductionGateway {
+		return g.httpClient
+	}
+	clone := *g.httpClient
+	transport := clone.Transport
+	if transport == nil {
+		transport = http.DefaultTransport
+	}
+	clone.Transport = &hostRewriteTransport{base: transport, scheme: target.Scheme, host: target.Host}
+	return &clone
+}
+
+// hostRewriteTransport 把请求重定向到目标主机。
+type hostRewriteTransport struct {
+	base   http.RoundTripper
+	scheme string
+	host   string
+}
+
+// RoundTrip 重写请求 URL 后转发。
+func (t *hostRewriteTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	req.URL.Scheme = t.scheme
+	req.URL.Host = t.host
+	return t.base.RoundTrip(req)
+}
+
+// wechatTransaction 是微信支付回调中解密后的交易信息。
+type wechatTransaction struct {
+	OutTradeNo    string `json:"out_trade_no"`
+	TransactionID string `json:"transaction_id"`
+	TradeState    string `json:"trade_state"`
+	SuccessTime   string `json:"success_time"`
+	Amount        struct {
+		Total int64 `json:"total"`
+	} `json:"amount"`
+}
+
+// toCallback 把交易信息转换为通用回调结果。
+func (t wechatTransaction) toCallback() *Callback {
 	paidAt := time.Now()
-	if t, err := time.Parse(time.RFC3339, transaction.SuccessTime); err == nil {
-		paidAt = t
+	if parsed, err := time.Parse(time.RFC3339, t.SuccessTime); err == nil {
+		paidAt = parsed
 	}
 	return &Callback{
-		OrderID:     transaction.OutTradeNo,
-		TradeNo:     transaction.TransactionID,
-		Success:     transaction.TradeState == "SUCCESS",
+		OrderID:     t.OutTradeNo,
+		TradeNo:     t.TransactionID,
+		Success:     t.TradeState == "SUCCESS",
 		PaidAt:      paidAt,
-		AmountCents: transaction.Amount.Total,
+		AmountCents: t.Amount.Total,
 		HasAmount:   true,
-	}, nil
+	}
 }
 
-// verifyCallbackSignature 依据回调头校验微信支付平台签名。未配置平台公钥时跳过
-// （仅依赖 APIv3 密钥的 AES-GCM 认证），以兼容旧部署。
-func (g *WechatGateway) verifyCallbackSignature(header http.Header, raw []byte) error {
-	if g.platformPublicKey == nil {
-		return nil
+// wechatPubkeyVerifier 使用微信支付公钥验签，实现 SDK 的 auth.Verifier 接口。
+// serial 非空时校验回调头中的序列号。
+type wechatPubkeyVerifier struct {
+	publicKey *rsa.PublicKey
+	serial    string
+}
+
+// Verify 校验签名，签名原文格式为 timestamp\nnonce\nbody\n。
+func (v wechatPubkeyVerifier) Verify(_ context.Context, serial, message, signature string) error {
+	if v.serial != "" && serial != v.serial {
+		return fmt.Errorf("payment: wechat callback serial mismatch")
 	}
-	signature := header.Get("Wechatpay-Signature")
-	timestamp := header.Get("Wechatpay-Timestamp")
-	nonce := header.Get("Wechatpay-Nonce")
-	if signature == "" || timestamp == "" || nonce == "" {
-		return fmt.Errorf("payment: wechat callback missing signature headers")
+	return verifyRSASignature(message, signature, v.publicKey)
+}
+
+// GetSerial 返回可验签的公钥序列号。
+func (v wechatPubkeyVerifier) GetSerial(context.Context) (string, error) {
+	return v.serial, nil
+}
+
+// 确保实现 SDK 的 auth.Verifier 接口。
+var _ auth.Verifier = wechatPubkeyVerifier{}
+
+// verifyRSASignature 校验 base64 编码的 SHA256-RSA 签名。
+func verifyRSASignature(message, signature string, key *rsa.PublicKey) error {
+	sig, err := base64.StdEncoding.DecodeString(signature)
+	if err != nil {
+		return fmt.Errorf("payment: signature is not base64 encoded")
 	}
-	if g.platformSerialNo != "" {
-		if serial := header.Get("Wechatpay-Serial"); serial != "" && serial != g.platformSerialNo {
-			return fmt.Errorf("payment: wechat callback serial mismatch")
-		}
-	}
-	message := timestamp + "\n" + nonce + "\n" + string(raw) + "\n"
-	if !verifySHA256RSA(message, signature, g.platformPublicKey) {
-		return fmt.Errorf("payment: wechat callback signature mismatch")
+	digest := sha256.Sum256([]byte(message))
+	if err := rsa.VerifyPKCS1v15(key, crypto.SHA256, digest[:], sig); err != nil {
+		return fmt.Errorf("payment: signature mismatch: %w", err)
 	}
 	return nil
 }
 
-// signRequest 为请求计算微信支付 v3 的 Authorization 头。
-func (g *WechatGateway) signRequest(req *http.Request, body []byte) error {
-	timestamp := fmt.Sprintf("%d", time.Now().Unix())
-	nonce, err := randomHex(16)
-	if err != nil {
-		return err
-	}
-	message := strings.Join([]string{
-		req.Method,
-		req.URL.Path,
-		timestamp,
-		nonce,
-		string(body),
-	}, "\n")
-	signature, err := signSHA256RSA(message, g.privateKey)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Authorization", fmt.Sprintf(
-		`WECHATPAY2-SHA256-RSA2048 mchid="%s",nonce_str="%s",signature="%s",timestamp="%s",serial_no="%s"`,
-		g.mchID, nonce, signature, timestamp, g.serialNo,
-	))
-	return nil
-}
-
-// decryptResource 使用 APIv3 密钥（AES-256-GCM）解密回调资源。
-func (g *WechatGateway) decryptResource(ciphertext, nonce, associatedData string) ([]byte, error) {
+// decryptAESGCM 使用 APIv3 密钥（AES-256-GCM）解密回调资源。
+func decryptAESGCM(key []byte, ciphertext, nonce, associatedData string) ([]byte, error) {
 	data, err := base64.StdEncoding.DecodeString(ciphertext)
 	if err != nil {
 		return nil, fmt.Errorf("base64: %w", err)
 	}
-	block, err := aes.NewCipher(g.apiV3Key)
+	block, err := aes.NewCipher(key)
 	if err != nil {
 		return nil, err
 	}
@@ -277,24 +330,4 @@ func (g *WechatGateway) decryptResource(ciphertext, nonce, associatedData string
 		return nil, err
 	}
 	return plaintext, nil
-}
-
-// signSHA256RSA 使用商户私钥对消息做 SHA256-RSA 签名并返回 base64 结果。
-func signSHA256RSA(message string, key *rsa.PrivateKey) (string, error) {
-	digest := sha256.Sum256([]byte(message))
-	sig, err := rsa.SignPKCS1v15(rand.Reader, key, crypto.SHA256, digest[:])
-	if err != nil {
-		return "", err
-	}
-	return base64.StdEncoding.EncodeToString(sig), nil
-}
-
-// verifySHA256RSA 使用公钥校验 base64 编码的 SHA256-RSA 签名。
-func verifySHA256RSA(message, signature string, key *rsa.PublicKey) bool {
-	sig, err := base64.StdEncoding.DecodeString(signature)
-	if err != nil {
-		return false
-	}
-	digest := sha256.Sum256([]byte(message))
-	return rsa.VerifyPKCS1v15(key, crypto.SHA256, digest[:], sig) == nil
 }
