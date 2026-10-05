@@ -50,13 +50,16 @@ func TestChangePasswordEndpoint(t *testing.T) {
 	}
 }
 
-// TestPasswordResetRequiresEmailChannel 验证未配置邮件渠道时，找回密码接口
-// 返回明确错误而非静默成功。
-func TestPasswordResetRequiresEmailChannel(t *testing.T) {
+// TestPasswordResetCodeAntiEnumeration 验证找回密码发码接口对非法邮箱返回 400，
+// 对未注册邮箱返回成功但不暴露其是否存在。
+func TestPasswordResetCodeAntiEnumeration(t *testing.T) {
 	env := newTestEnv(t, true, 1<<20)
-	status, body := do(t, env.router, http.MethodPost, "/api/v1/auth/password/reset/code",
-		`{"email":"someone@example.com"}`, "")
-	if status != http.StatusBadRequest {
-		t.Fatalf("reset code status = %d (%s), want 400", status, body)
+	if status, body := do(t, env.router, http.MethodPost, "/api/v1/auth/password/reset/code",
+		`{"email":"not-an-email"}`, ""); status != http.StatusBadRequest {
+		t.Fatalf("invalid email status = %d (%s), want 400", status, body)
+	}
+	if status, body := do(t, env.router, http.MethodPost, "/api/v1/auth/password/reset/code",
+		`{"email":"nobody@example.com"}`, ""); status != http.StatusOK {
+		t.Fatalf("unknown email status = %d (%s), want 200", status, body)
 	}
 }

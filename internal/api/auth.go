@@ -14,18 +14,40 @@ type credentialsRequest struct {
 	Password string `json:"password"`
 }
 
+// registerRequest 是注册请求体：邮箱需先通过验证码验证。
+type registerRequest struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+	Email    string `json:"email"`
+	Code     string `json:"code"`
+}
+
 func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
-	var body credentialsRequest
+	var body registerRequest
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxJSONBody)).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	user, err := h.accounts.RegisterCustomer(r.Context(), body.Username, body.Password)
+	user, err := h.accounts.RegisterCustomerWithEmail(r.Context(), body.Username, body.Password, body.Email, body.Code)
 	if err != nil {
 		h.fail(w, r, err)
 		return
 	}
 	writeCreated(w, user)
+}
+
+// sendRegisterCode 向邮箱发送注册验证码（无需登录）。
+func (h *Handler) sendRegisterCode(w http.ResponseWriter, r *http.Request) {
+	var body emailRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxJSONBody)).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if err := h.accounts.SendRegistrationCode(r.Context(), body.Email); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeOK(w, map[string]string{"status": "sent"})
 }
 
 func (h *Handler) login(w http.ResponseWriter, r *http.Request) {

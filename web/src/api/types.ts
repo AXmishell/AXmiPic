@@ -117,6 +117,14 @@ export interface Credentials {
   password: string
 }
 
+/** 注册请求体：邮箱需先通过验证码验证。 */
+export interface RegisterPayload {
+  username: string
+  email: string
+  code: string
+  password: string
+}
+
 export interface UserUpdate {
   disabled?: boolean
   /** 客户所属角色组；空字符串表示回退默认组。 */

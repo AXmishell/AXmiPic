@@ -98,7 +98,7 @@ func (r *Repository) IncrementEmailDaily(ctx context.Context, key, day string) (
 	if err := r.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "key"}, {Name: "day"}},
 		DoUpdates: clause.Assignments(map[string]any{
-			"count":      gorm.Expr("count + 1"),
+			"count":      gorm.Expr("email_code_stats.count + 1"),
 			"updated_at": time.Now(),
 		}),
 	}).Create(&row).Error; err != nil {

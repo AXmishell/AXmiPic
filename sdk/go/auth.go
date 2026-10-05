@@ -2,22 +2,33 @@ package axmipic
 
 import "context"
 
-// Credentials 是登录/注册请求体。
+// Credentials 是登录请求体；username 字段可填用户名或邮箱。
 type Credentials struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
 }
 
-// Register 注册一个普通用户。
-func (c *Client) Register(ctx context.Context, username, password string) (*User, error) {
+// SendRegisterCode 向邮箱发送注册验证码（无需登录）。注册前必须先调用它。
+func (c *Client) SendRegisterCode(ctx context.Context, email string) error {
+	return c.postJSON(ctx, "/api/v1/auth/register/code", map[string]string{"email": email}, nil)
+}
+
+// Register 使用用户名、邮箱与邮箱验证码注册一个普通用户。调用前需先通过
+// SendRegisterCode 获取验证码。
+func (c *Client) Register(ctx context.Context, username, email, code, password string) (*User, error) {
 	var out User
-	if err := c.postJSON(ctx, "/api/v1/auth/register", Credentials{Username: username, Password: password}, &out); err != nil {
+	if err := c.postJSON(ctx, "/api/v1/auth/register", map[string]string{
+		"username": username,
+		"email":    email,
+		"code":     code,
+		"password": password,
+	}, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
 }
 
-// Login 以普通用户登录，成功后自动保存令牌。
+// Login 以普通用户登录，成功后自动保存令牌。username 可填用户名或邮箱。
 func (c *Client) Login(ctx context.Context, username, password string) (*Session, error) {
 	var out Session
 	if err := c.postJSON(ctx, "/api/v1/auth/login", Credentials{Username: username, Password: password}, &out); err != nil {

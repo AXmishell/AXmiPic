@@ -3,10 +3,10 @@ import { computed, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
-import { Box, DataLine, Lock, Moon, Sunny, UploadFilled, User } from '@element-plus/icons-vue'
+import { Box, DataLine, Lock, Message, Moon, Sunny, UploadFilled, User } from '@element-plus/icons-vue'
 
 import { ApiError } from '@/api/client'
-import { resetPassword, sendPasswordResetCode } from '@/api/auth'
+import { resetPassword, sendPasswordResetCode, sendRegisterCode } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
 import { confirmPasswordRule, usernameRules } from '@/utils/validate'
@@ -22,7 +22,8 @@ const props = defineProps<{ adminOnly?: boolean }>()
 const mode = ref<'login' | 'register' | 'admin'>(props.adminOnly ? 'admin' : 'login')
 const formRef = ref<FormInstance>()
 const loading = ref(false)
-const form = reactive({ username: '', password: '', confirmPassword: '' })
+const form = reactive({ username: '', password: '', confirmPassword: '', email: '', code: '' })
+const codeSending = ref(false)
 
 // TOTP 二次验证步骤。
 const totpChallenge = ref('')
@@ -44,6 +45,8 @@ watch(
     form.username = ''
     form.password = ''
     form.confirmPassword = ''
+    form.email = ''
+    form.code = ''
     totpChallenge.value = ''
     totpCode.value = ''
     resetDialog.value = false
@@ -51,14 +54,28 @@ watch(
   },
 )
 
-const rules: FormRules = {
-  username: usernameRules('请输入用户名'),
+const rules = computed<FormRules>(() => ({
+  username:
+    mode.value === 'register'
+      ? usernameRules('请输入用户名')
+      : [
+          { required: true, message: '请输入用户名或邮箱', trigger: 'blur' },
+          { min: 3, max: 254, message: '请输入有效的用户名或邮箱', trigger: 'blur' },
+        ],
+  email: [
+    { required: true, message: '请输入邮箱', trigger: 'blur' },
+    { type: 'email', message: '请输入有效的邮箱地址', trigger: ['blur', 'change'] },
+  ],
+  code: [
+    { required: true, message: '请输入验证码', trigger: 'blur' },
+    { pattern: /^\d{6}$/, message: '验证码为 6 位数字', trigger: 'blur' },
+  ],
   password: [
     { required: true, message: '请输入密码', trigger: 'blur' },
     { min: 8, max: 72, message: '密码长度为 8 到 72 个字符', trigger: 'blur' },
   ],
   confirmPassword: [confirmPasswordRule(() => form.password)],
-}
+}))
 
 const heading = computed(() => {
   if (totpChallenge.value) return '两步验证'
@@ -68,7 +85,7 @@ const heading = computed(() => {
 const subheading = computed(() => {
   if (totpChallenge.value) return '请输入身份验证器中的 6 位动态验证码以完成登录'
   if (mode.value === 'admin') return '使用管理员账号进入管理控制台'
-  return mode.value === 'login' ? '登录以管理图片、访问令牌与存储配额' : '注册成功后将自动登录并进入控制台'
+  return mode.value === 'login' ? '登录以管理图片、访问令牌与存储配额' : '填写邮箱并完成验证后即可创建账号'
 })
 const submitLabel = computed(() => {
   if (mode.value === 'admin') return '管理员登录'
@@ -78,6 +95,24 @@ const submitLabel = computed(() => {
 function switchMode(): void {
   mode.value = mode.value === 'register' ? 'login' : 'register'
   formRef.value?.clearValidate()
+}
+
+/** 向邮箱发送注册验证码。 */
+async function sendRegCode(): Promise<void> {
+  const email = form.email.trim()
+  if (!email) {
+    ElMessage.warning('请先输入邮箱')
+    return
+  }
+  codeSending.value = true
+  try {
+    await sendRegisterCode(email)
+    ElMessage.success('验证码已发送，请查收邮箱')
+  } catch (error) {
+    ElMessage.error(error instanceof ApiError ? error.message : '发送失败，请稍后重试')
+  } finally {
+    codeSending.value = false
+  }
 }
 
 async function handleSubmit(): Promise<void> {
@@ -95,7 +130,12 @@ async function handleSubmit(): Promise<void> {
     } else if (mode.value === 'login') {
       outcome = await auth.login(credentials)
     } else {
-      outcome = await auth.register(credentials)
+      outcome = await auth.register({
+        username: form.username.trim(),
+        email: form.email.trim(),
+        code: form.code.trim(),
+        password: form.password,
+      })
     }
     if (outcome.totpRequired) {
       totpChallenge.value = outcome.challengeToken
@@ -285,15 +325,34 @@ async function redirectAfterLogin(): Promise<void> {
           size="large"
           @submit.prevent="handleSubmit"
         >
-          <el-form-item label="用户名" prop="username">
+          <el-form-item :label="mode === 'register' ? '用户名' : '用户名 / 邮箱'" prop="username">
             <el-input
               v-model="form.username"
               :prefix-icon="User"
-              placeholder="请输入用户名"
+              :placeholder="mode === 'register' ? '请输入用户名' : '请输入用户名或邮箱'"
               autocomplete="username"
               spellcheck="false"
             />
           </el-form-item>
+
+          <template v-if="mode === 'register'">
+            <el-form-item label="邮箱" prop="email">
+              <el-input
+                v-model="form.email"
+                :prefix-icon="Message"
+                placeholder="you@example.com"
+                autocomplete="email"
+                spellcheck="false"
+              />
+            </el-form-item>
+            <el-form-item label="邮箱验证码" prop="code">
+              <div class="auth__code-row">
+                <el-input v-model="form.code" maxlength="6" inputmode="numeric" placeholder="6 位验证码" />
+                <el-button :loading="codeSending" @click="sendRegCode">发送验证码</el-button>
+              </div>
+            </el-form-item>
+          </template>
+
           <el-form-item label="密码" prop="password">
             <el-input
               v-model="form.password"
@@ -634,6 +693,11 @@ async function redirectAfterLogin(): Promise<void> {
 }
 
 .auth__reset-row {
+  display: flex;
+  gap: var(--ax-space-2);
+}
+
+.auth__code-row {
   display: flex;
   gap: var(--ax-space-2);
 }

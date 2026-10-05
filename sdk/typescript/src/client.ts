@@ -186,10 +186,17 @@ export class AxmipicClient {
 
   // ---- 认证 ----
 
-  async register(username: string, password: string): Promise<User> {
+  async register(username: string, email: string, code: string, password: string): Promise<User> {
     return this.request<User>('/api/v1/auth/register', {
       method: 'POST',
-      body: { username, password },
+      body: { username, email, code, password },
+    })
+  }
+
+  async sendRegisterCode(email: string): Promise<void> {
+    await this.request<{ status: string }>('/api/v1/auth/register/code', {
+      method: 'POST',
+      body: { email },
     })
   }
 

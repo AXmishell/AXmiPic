@@ -149,6 +149,7 @@ func NewRouter(d Deps) http.Handler {
 		r.Group(func(r chi.Router) {
 			r.Use(uploadLimit)
 			r.Post("/auth/register", h.register)
+			r.Post("/auth/register/code", h.sendRegisterCode)
 			r.Post("/auth/login", h.login)
 			r.Post("/auth/totp/verify", h.verifyTOTPLogin)
 			r.Post("/admin/auth/login", h.adminLogin)

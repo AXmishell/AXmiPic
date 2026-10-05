@@ -1,5 +1,5 @@
 import { request } from './client'
-import type { Credentials, EffectivePolicies, LoginResult, User } from './types'
+import type { Credentials, EffectivePolicies, LoginResult, RegisterPayload, User } from './types'
 
 export function login(payload: Credentials): Promise<LoginResult> {
   return request<LoginResult>({ method: 'POST', url: '/auth/login', data: payload })
@@ -9,7 +9,12 @@ export function adminLogin(payload: Credentials): Promise<LoginResult> {
   return request<LoginResult>({ method: 'POST', url: '/admin/auth/login', data: payload })
 }
 
-export function register(payload: Credentials): Promise<User> {
+/** 向邮箱发送注册验证码（无需登录）。 */
+export function sendRegisterCode(email: string): Promise<{ status: string }> {
+  return request<{ status: string }>({ method: 'POST', url: '/auth/register/code', data: { email } })
+}
+
+export function register(payload: RegisterPayload): Promise<User> {
   return request<User>({ method: 'POST', url: '/auth/register', data: payload })
 }
 

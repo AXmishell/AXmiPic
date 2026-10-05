@@ -9,7 +9,7 @@ import {
   register as registerApi,
   verifyTOTPLogin as verifyTOTPLoginApi,
 } from '@/api/auth'
-import type { Credentials, EffectivePolicies, LoginResult, User } from '@/api/types'
+import type { Credentials, EffectivePolicies, LoginResult, RegisterPayload, User } from '@/api/types'
 
 /** 登录结果：直接成功，或需要完成 TOTP 二次验证。 */
 export type LoginOutcome =
@@ -158,9 +158,9 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   /** 注册账号后使用相同凭证自动登录。 */
-  async function register(credentials: Credentials): Promise<LoginOutcome> {
-    await registerApi(credentials)
-    return login(credentials)
+  async function register(payload: RegisterPayload): Promise<LoginOutcome> {
+    await registerApi(payload)
+    return login({ username: payload.username, password: payload.password })
   }
 
   async function refreshUser(): Promise<User> {

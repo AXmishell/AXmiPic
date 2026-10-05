@@ -311,8 +311,9 @@ processing:
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/auth/register` | 注册普通用户 |
-| POST | `/auth/login` | 普通用户登录 |
+| POST | `/auth/register` | 注册普通用户（需邮箱验证码） |
+| POST | `/auth/register/code` | 向邮箱发送注册验证码（无需登录） |
+| POST | `/auth/login` | 普通用户登录（用户名或邮箱） |
 | POST | `/admin/auth/login` | 管理员登录（独立入口） |
 | POST | `/auth/totp/verify` | 完成登录时的 TOTP 二次验证（`challenge_token` + `code`） |
 | GET | `/auth/me` | 当前账号信息 |
@@ -345,6 +346,12 @@ HTTP 429。验证码 10 分钟内有效、一次性、最多尝试 5 次，且�
 密码时可调用 `POST /auth/password/reset/code` 向已验证邮箱发送验证码，再调用
 `POST /auth/password/reset` 携验证码设置新密码；为避免账户枚举，对未注册邮箱
 发送请求同样返回成功但不实际发信，重置时未注册邮箱与验证码错误返回同一错误。
+
+注册与邮箱登录：普通用户注册需先调用 `POST /auth/register/code` 向邮箱发送验证码
+（邮箱已被占用时返回 HTTP 409），再调用 `POST /auth/register` 携 `username`、
+`email`、`code`、`password` 完成注册，注册成功后邮箱即标记为已验证。登录时
+`POST /auth/login` 的 `username` 字段既可填用户名也可填邮箱。管理员账户由后台或
+引导配置创建，不经过该注册流程。
 
 ### 上传
 

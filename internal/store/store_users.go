@@ -110,6 +110,27 @@ func (r *Repository) first(ctx context.Context, dest any, query string, args ...
 	return err
 }
 
+// GetAccountByEmail 从给定角色的表中返回具有 email 的账户，或 ErrNotFound。
+// 邮箱在两表中各自唯一（不允许跨表重复由服务层保证）。
+func (r *Repository) GetAccountByEmail(ctx context.Context, role AccountRole, email string) (*Account, error) {
+	email = strings.TrimSpace(email)
+	if email == "" {
+		return nil, ErrNotFound
+	}
+	if role == RoleAdmin {
+		var admin Admin
+		if err := r.first(ctx, &admin, "email = ?", email); err != nil {
+			return nil, fmt.Errorf("store: admin email %q: %w", email, err)
+		}
+		return accountFromAdmin(&admin), nil
+	}
+	var customer Customer
+	if err := r.first(ctx, &customer, "email = ?", email); err != nil {
+		return nil, fmt.Errorf("store: customer email %q: %w", email, err)
+	}
+	return accountFromCustomer(&customer), nil
+}
+
 // ListCustomers 返回按创建时间排序的所有客户账户。
 func (r *Repository) ListCustomers(ctx context.Context) ([]Account, error) {
 	var customers []Customer

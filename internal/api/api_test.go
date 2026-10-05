@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -20,6 +21,7 @@ import (
 	"github.com/AXmishell/axmipic/internal/auth"
 	"github.com/AXmishell/axmipic/internal/config"
 	"github.com/AXmishell/axmipic/internal/imaging"
+	"github.com/AXmishell/axmipic/internal/notify"
 	"github.com/AXmishell/axmipic/internal/secret"
 	"github.com/AXmishell/axmipic/internal/service"
 	"github.com/AXmishell/axmipic/internal/storage"
@@ -30,6 +32,7 @@ type testEnv struct {
 	router   http.Handler
 	repo     *store.Repository
 	accounts *service.AccountService
+	mail     *notify.MockSender
 }
 
 func newTestEnv(t *testing.T, requireAuth bool, quotaBytes int64) *testEnv {
@@ -69,6 +72,8 @@ func newTestEnv(t *testing.T, requireAuth bool, quotaBytes int64) *testEnv {
 	})
 	issuer := auth.NewSessionIssuer([]byte("test-secret"), time.Hour)
 	accounts := service.NewAccountService(repo, issuer, true, quotaBytes)
+	mail := notify.NewMockSender("email")
+	accounts.SetNotifyService(service.NewNotifyService(nil, mail))
 	router := api.NewRouter(api.Deps{
 		Upload:        uploadSvc,
 		Imaging:       imagingSvc,
@@ -85,7 +90,22 @@ func newTestEnv(t *testing.T, requireAuth bool, quotaBytes int64) *testEnv {
 		MaxUploadMB: 1,
 		Logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
-	return &testEnv{router: router, repo: repo, accounts: accounts}
+	return &testEnv{router: router, repo: repo, accounts: accounts, mail: mail}
+}
+
+// lastEmailCode 从最近一封邮件正文中提取 6 位验证码。
+var emailCodePattern = regexp.MustCompile(`\b(\d{6})\b`)
+
+func (e *testEnv) lastEmailCode(t *testing.T) string {
+	t.Helper()
+	if len(e.mail.Sent) == 0 {
+		t.Fatal("no email was sent")
+	}
+	match := emailCodePattern.FindStringSubmatch(e.mail.Sent[len(e.mail.Sent)-1].Body)
+	if len(match) < 2 {
+		t.Fatalf("no code in email body: %q", e.mail.Sent[len(e.mail.Sent)-1].Body)
+	}
+	return match[1]
 }
 
 func (e *testEnv) token(t *testing.T, username string) string {
@@ -194,8 +214,16 @@ func TestUploadRequiresAuth(t *testing.T) {
 func TestAuthFlowAndOwnership(t *testing.T) {
 	env := newTestEnv(t, true, 1<<20)
 
-	status, body := do(t, env.router, http.MethodPost, "/api/v1/auth/register",
-		`{"username":"alice","password":"password123"}`, "")
+	// 注册前先请求邮箱验证码。
+	status, body := do(t, env.router, http.MethodPost, "/api/v1/auth/register/code",
+		`{"email":"alice@example.com"}`, "")
+	if status != http.StatusOK {
+		t.Fatalf("register code status = %d (%s)", status, body)
+	}
+	code := env.lastEmailCode(t)
+
+	status, body = do(t, env.router, http.MethodPost, "/api/v1/auth/register",
+		`{"username":"alice","email":"alice@example.com","code":"`+code+`","password":"password123"}`, "")
 	if status != http.StatusCreated {
 		t.Fatalf("register status = %d (%s)", status, body)
 	}
@@ -205,6 +233,14 @@ func TestAuthFlowAndOwnership(t *testing.T) {
 	if status != http.StatusOK {
 		t.Fatalf("login status = %d (%s)", status, body)
 	}
+
+	// 邮箱也可用于登录。
+	status, body = do(t, env.router, http.MethodPost, "/api/v1/auth/login",
+		`{"username":"alice@example.com","password":"password123"}`, "")
+	if status != http.StatusOK {
+		t.Fatalf("email login status = %d (%s)", status, body)
+	}
+
 	var session struct {
 		Data struct {
 			Token string `json:"token"`

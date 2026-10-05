@@ -204,7 +204,8 @@ func (s *AccountService) registrationPolicy(ctx context.Context) (*string, int64
 	return &id, effective.QuotaBytes
 }
 
-// RegisterCustomer 创建一个新的普通（客户）账户。
+// RegisterCustomer 创建一个新的普通（客户）账户。它是内部/测试用的低级入口，
+// 不要求邮箱。面向 API 的注册应使用 RegisterCustomerWithEmail。
 func (s *AccountService) RegisterCustomer(ctx context.Context, username, password string) (*UserDTO, error) {
 	username = strings.ToLower(strings.TrimSpace(username))
 	if err := validateCredentials(username, password); err != nil {
@@ -213,6 +214,12 @@ func (s *AccountService) RegisterCustomer(ctx context.Context, username, passwor
 	if !s.allowRegistration {
 		return nil, ErrRegistrationDisabled
 	}
+	return s.createCustomer(ctx, username, password, "", false)
+}
+
+// createCustomer 在完成占用检查后写入一个新客户账户。email 非空时会写入并
+// 按 emailVerified 标记验证状态。
+func (s *AccountService) createCustomer(ctx context.Context, username, password, email string, emailVerified bool) (*UserDTO, error) {
 	if _, err := s.repo.GetAccountByUsername(ctx, store.RoleCustomer, username); err == nil {
 		return nil, ErrUserExists
 	} else if !errors.Is(err, store.ErrNotFound) {
@@ -225,11 +232,13 @@ func (s *AccountService) RegisterCustomer(ctx context.Context, username, passwor
 	}
 	roleGroupID, quotaBytes := s.registrationPolicy(ctx)
 	customer := &store.Customer{
-		ID:           uuid.NewString(),
-		Username:     username,
-		PasswordHash: hash,
-		QuotaBytes:   quotaBytes,
-		RoleGroupID:  roleGroupID,
+		ID:            uuid.NewString(),
+		Username:      username,
+		PasswordHash:  hash,
+		QuotaBytes:    quotaBytes,
+		RoleGroupID:   roleGroupID,
+		Email:         email,
+		EmailVerified: emailVerified,
 	}
 	if err := s.repo.CreateCustomer(ctx, customer); err != nil {
 		// 并发的注册可能已经先插入了相同的用户名。
@@ -239,6 +248,80 @@ func (s *AccountService) RegisterCustomer(ctx context.Context, username, passwor
 		return nil, fmt.Errorf("register: create user: %w", err)
 	}
 	return toUserDTO(accountFromCustomer(customer)), nil
+}
+
+// SendRegistrationCode 向邮箱发送注册验证码（无需登录）。邮箱已被占用时返回
+// ErrEmailInUse，便于前端即时提示。
+func (s *AccountService) SendRegistrationCode(ctx context.Context, email string) error {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if _, err := mail.ParseAddress(email); err != nil {
+		return fmt.Errorf("%w: %s", ErrInvalidEmail, email)
+	}
+	if s.notify == nil {
+		return ErrEmailNotConfigured
+	}
+	key := registrationKey(email)
+	if !s.allowEmailSendForKey(ctx, key) {
+		return ErrEmailRateLimited
+	}
+	inUse, err := s.repo.EmailInUse(ctx, email, "")
+	if err != nil {
+		return err
+	}
+	if inUse {
+		return ErrEmailInUse
+	}
+	code, err := generateNumericCode()
+	if err != nil {
+		return err
+	}
+	body := fmt.Sprintf("你的 AXmiPic 注册验证码是：%s\n\n验证码 %d 分钟内有效，请勿转发给他人。", code, int(emailCodeTTL.Minutes()))
+	if err := s.notify.SendEmail(ctx, email, "AXmiPic 注册验证码", body); err != nil {
+		return err
+	}
+	if err := s.storeEmailCodeForKey(ctx, key, email, code); err != nil {
+		return err
+	}
+	s.recordEmailSendForKey(ctx, key)
+	return nil
+}
+
+// RegisterCustomerWithEmail 校验邮箱验证码后创建普通用户账户并标记邮箱已验证。
+// 用户名或邮箱被占用时分别返回 ErrUserExists / ErrEmailInUse。
+func (s *AccountService) RegisterCustomerWithEmail(ctx context.Context, username, password, email, code string) (*UserDTO, error) {
+	username = strings.ToLower(strings.TrimSpace(username))
+	email = strings.ToLower(strings.TrimSpace(email))
+	if err := validateCredentials(username, password); err != nil {
+		return nil, err
+	}
+	if !s.allowRegistration {
+		return nil, ErrRegistrationDisabled
+	}
+	if _, err := mail.ParseAddress(email); err != nil {
+		return nil, fmt.Errorf("%w: %s", ErrInvalidEmail, email)
+	}
+	// 先做占用检查，避免因用户名/邮箱冲突而消耗验证码。
+	if _, err := s.repo.GetAccountByUsername(ctx, store.RoleCustomer, username); err == nil {
+		return nil, ErrUserExists
+	} else if !errors.Is(err, store.ErrNotFound) {
+		return nil, fmt.Errorf("register: lookup username: %w", err)
+	}
+	inUse, err := s.repo.EmailInUse(ctx, email, "")
+	if err != nil {
+		return nil, err
+	}
+	if inUse {
+		return nil, ErrEmailInUse
+	}
+	if !s.consumeEmailCodeForKey(ctx, registrationKey(email), email, code) {
+		return nil, ErrEmailCodeInvalid
+	}
+	return s.createCustomer(ctx, username, password, email, true)
+}
+
+// registrationKey 返回注册验证码的存储键（按邮箱维度）。
+func registrationKey(email string) string {
+	return "register:" + strings.ToLower(strings.TrimSpace(email))
 }
 
 // GuestUsername 是内置访客账户的用户名。
@@ -330,7 +413,12 @@ func (s *AccountService) LoginAdmin(ctx context.Context, username, password stri
 }
 
 func (s *AccountService) login(ctx context.Context, role store.AccountRole, username, password string) (*SessionDTO, error) {
-	account, err := s.repo.GetAccountByUsername(ctx, role, strings.ToLower(strings.TrimSpace(username)))
+	identifier := strings.ToLower(strings.TrimSpace(username))
+	account, err := s.repo.GetAccountByUsername(ctx, role, identifier)
+	if err != nil && errors.Is(err, store.ErrNotFound) {
+		// 用户名不存在时回退到邮箱登录。
+		account, err = s.repo.GetAccountByEmail(ctx, role, identifier)
+	}
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			// 执行一次哑比对，使账户不存在与密码错误两种情况耗时相近，

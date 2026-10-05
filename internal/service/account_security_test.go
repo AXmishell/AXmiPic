@@ -271,6 +271,49 @@ func TestEmailCodePersistsAcrossInstances(t *testing.T) {
 	}
 }
 
+// TestRegisterWithEmailVerification 验证注册强制邮箱验证码，且注册后可用邮箱登录。
+func TestRegisterWithEmailVerification(t *testing.T) {
+	svc := newSecurityService(t)
+	mock := notify.NewMockSender("email")
+	svc.SetNotifyService(service.NewNotifyService(nil, mock))
+	ctx := context.Background()
+
+	// 无有效验证码无法注册。
+	if _, err := svc.RegisterCustomerWithEmail(ctx, "newreg", "password123", "new@example.com", "000000"); !errors.Is(err, service.ErrEmailCodeInvalid) {
+		t.Fatalf("missing code err = %v, want ErrEmailCodeInvalid", err)
+	}
+
+	if err := svc.SendRegistrationCode(ctx, "new@example.com"); err != nil {
+		t.Fatalf("SendRegistrationCode: %v", err)
+	}
+	code := extractCode(t, mock.Sent[len(mock.Sent)-1].Body)
+
+	user, err := svc.RegisterCustomerWithEmail(ctx, "newreg", "password123", "New@Example.com", code)
+	if err != nil {
+		t.Fatalf("RegisterCustomerWithEmail: %v", err)
+	}
+	if user.Email != "new@example.com" || !user.EmailVerified {
+		t.Fatalf("registered user = %+v", user)
+	}
+
+	// 用户名与邮箱均可登录。
+	if _, err := svc.LoginCustomer(ctx, "new@example.com", "password123"); err != nil {
+		t.Fatalf("email login: %v", err)
+	}
+	if _, err := svc.LoginCustomer(ctx, "newreg", "password123"); err != nil {
+		t.Fatalf("username login: %v", err)
+	}
+
+	// 邮箱已被占用：发码与注册均应报错。
+	if err := svc.SendRegistrationCode(ctx, "new@example.com"); !errors.Is(err, service.ErrEmailInUse) {
+		t.Fatalf("send to used email err = %v, want ErrEmailInUse", err)
+	}
+	// 同一邮箱再次注册（即使验证码本应一次性）也应因邮箱占用而失败。
+	if _, err := svc.RegisterCustomerWithEmail(ctx, "otherreg", "password123", "new@example.com", code); !errors.Is(err, service.ErrEmailInUse) {
+		t.Fatalf("duplicate email err = %v, want ErrEmailInUse", err)
+	}
+}
+
 func TestChangePassword(t *testing.T) {
 	svc := newSecurityService(t)
 	ctx := context.Background()

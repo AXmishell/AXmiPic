@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/AXmishell/axmipic/internal/store"
 )
@@ -158,5 +159,46 @@ func TestQuotaReserveAndRelease(t *testing.T) {
 	ok, err = repo.ReserveQuota(ctx, "c1", 6)
 	if err != nil || !ok {
 		t.Fatalf("reserve after release ok=%v err=%v", ok, err)
+	}
+}
+
+func TestEmailCodeLifecycle(t *testing.T) {
+	repo := newRepo(t)
+	ctx := context.Background()
+
+	expires := time.Now().Add(time.Minute)
+	if err := repo.UpsertEmailCode(ctx, "reset:a@b.com", "a@b.com", "123456", expires); err != nil {
+		t.Fatalf("UpsertEmailCode: %v", err)
+	}
+	got, err := repo.EmailCode(ctx, "reset:a@b.com")
+	if err != nil || got.Code != "123456" || got.Email != "a@b.com" {
+		t.Fatalf("EmailCode = %+v err=%v", got, err)
+	}
+
+	// 错误的验证码不应删除记录。
+	if ok, err := repo.DeleteEmailCodeIfMatches(ctx, "reset:a@b.com", "000000"); err != nil || ok {
+		t.Fatalf("delete mismatch ok=%v err=%v, want false", ok, err)
+	}
+	if _, err := repo.EmailCode(ctx, "reset:a@b.com"); err != nil {
+		t.Fatalf("record should survive mismatch: %v", err)
+	}
+	// 正确验证码原子消费。
+	if ok, err := repo.DeleteEmailCodeIfMatches(ctx, "reset:a@b.com", "123456"); err != nil || !ok {
+		t.Fatalf("delete match ok=%v err=%v, want true", ok, err)
+	}
+	if _, err := repo.EmailCode(ctx, "reset:a@b.com"); err == nil {
+		t.Fatal("record should be consumed")
+	}
+
+	// 每日计数原子累加。
+	day := "2026-01-01"
+	if n, err := repo.IncrementEmailDaily(ctx, "reset:a@b.com", day); err != nil || n != 1 {
+		t.Fatalf("first increment n=%d err=%v", n, err)
+	}
+	if n, err := repo.IncrementEmailDaily(ctx, "reset:a@b.com", day); err != nil || n != 2 {
+		t.Fatalf("second increment n=%d err=%v", n, err)
+	}
+	if n, err := repo.EmailDailyCount(ctx, "reset:a@b.com", "2026-01-02"); err != nil || n != 0 {
+		t.Fatalf("other day count n=%d err=%v", n, err)
 	}
 }
