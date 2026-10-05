@@ -5,10 +5,15 @@
 #   docker compose up -d         # 启动
 #   docker compose logs -f       # 查看日志
 #   docker compose down          # 停止（数据保留在具名卷中）
+#   docker compose down -v       # 停止并删除数据卷
 #
-# 首次启动会自动创建管理员（仅当 admins 表为空时生效），
-# 账号 admin、密码取自 .env 的 AXMIPIC_ADMIN_PASSWORD（默认 change-me-please）。
-# 请复制 .env.example 为 .env 并按需修改。
+# 默认使用【安装向导模式】：
+#   1) docker compose up -d
+#   2) 浏览器访问 http://<主机>:8080/install
+#   3) 按向导填写数据库连接、站点地址与管理员账号，完成初始化
+#
+# 向导会把数据库连接等写入 axmipic-config 卷（/app/configs/config.yaml），
+# 并初始化目标数据库；重启容器后新的数据库配置生效。
 # ---------------------------------------------------------------------------
 services:
   axmipic:
@@ -19,40 +24,24 @@ services:
       # 主机端口:容器端口
       - "8080:8080"
     environment:
-      # 对外访问地址（生成图片/分享链接使用），请改为实际域名或 IP
-      AXMIPIC_SERVER_BASE_URL: "${AXMIPIC_BASE_URL:-http://localhost:8080}"
-      # 安装向导模式：改为 "false" 并启用下面的 ./configs 可写挂载，
-      # 由 /install 向导创建管理员并把数据库连接写入 configs/config.yaml。
-      # 向导会先按输入的 DSN 连接并迁移数据库，但 DB 切换需重启后生效；
-      # 注意向导写出的配置为固定模板，会覆盖 payment/processing 等其他段。
-      AXMIPIC_INSTALL_DISABLED: "true"
-      AXMIPIC_AUTH_BOOTSTRAP_ADMIN: "admin:${AXMIPIC_ADMIN_PASSWORD:-change-me-please}"
-      # 生产环境建议固定 JWT 密钥；留空时服务会生成并持久化到数据卷
+      # 安装向导模式（默认）。首次启动后访问 /install 完成初始化。
+      AXMIPIC_INSTALL_DISABLED: "false"
+      # 生产环境建议固定 JWT 密钥；留空时自动生成并持久化到 axmipic-data 卷。
       AXMIPIC_AUTH_JWT_SECRET: "${AXMIPIC_JWT_SECRET:-}"
-      # 位于可信反向代理之后时才开启，以解析 X-Forwarded-For / X-Real-IP
+      # 位于可信反向代理之后时才开启，以解析 X-Forwarded-For / X-Real-IP。
       # AXMIPIC_SERVER_TRUST_PROXY: "true"
-      # 关闭公开注册 / 访客上传
-      # AXMIPIC_AUTH_ALLOW_REGISTRATION: "false"
-      # AXMIPIC_AUTH_ALLOW_GUEST_UPLOAD: "false"
-      # 使用 PostgreSQL 时取消注释，并启用文件底部的 postgres 服务
-      # AXMIPIC_DATABASE_DRIVER: "postgres"
-      # AXMIPIC_DATABASE_DSN: "host=postgres port=5432 user=axmipic password=axmipic dbname=axmipic sslmode=disable"
+      # 可选：用环境变量覆盖向导写入的站点地址（环境变量优先级高于配置文件）。
+      # AXMIPIC_SERVER_BASE_URL: "${AXMIPIC_BASE_URL:-http://localhost:8080}"
     volumes:
-      # 持久化：SQLite 数据库、本地上传文件、自动生成的主密钥
+      # 持久化：SQLite 数据库、本地上传文件、自动生成的主密钥。
       - axmipic-data:/app/data
-      # 可选：挂载自定义配置文件（只读，与环境变量可叠加）
-      # - ./configs/config.yaml:/app/configs/config.yaml:ro
-      #
-      # 安装向导模式：需挂载【可写】的配置目录，使 /install 向导能把
-      # database/等配置写入 configs/config.yaml 并持久化（去掉 :ro）：
-      # - ./configs:/app/configs
+      # 配置目录：初始化自镜像内置的 config.yaml，向导写入后持久化。
+      - axmipic-config:/app/configs
     # 镜像为 distroless，容器内无 shell/curl，故未配置 healthcheck；
     # 如需健康检查，可在宿主机或编排层探测 GET /healthz。
-    # healthcheck:
-    #   test: ["CMD", "/usr/local/bin/axmipic", "-h"]
-    #   interval: 30s
 
-  # 可选：PostgreSQL 后端。启用后同时设置上面的 AXMIPIC_DATABASE_DRIVER / DSN。
+  # 可选：PostgreSQL 后端。启用后在安装向导中选择 driver=postgres，
+  # DSN 填写 host=postgres port=5432 user=axmipic password=axmipic dbname=axmipic sslmode=disable
   # postgres:
   #   image: postgres:17-alpine
   #   container_name: axmipic-postgres
@@ -69,6 +58,12 @@ services:
   #     timeout: 5s
   #     retries: 5
 
+# 非向导模式（可选，适合自动化部署）：
+#   将上面的 AXMIPIC_INSTALL_DISABLED 改为 "true"，并在 environment 中增加：
+#     AXMIPIC_AUTH_BOOTSTRAP_ADMIN: "admin:${AXMIPIC_ADMIN_PASSWORD:-change-me-please}"
+#   此时跳过 /install 向导，并在 admins 表为空时创建该管理员。
+
 volumes:
   axmipic-data:
+  axmipic-config:
   # axmipic-postgres:
