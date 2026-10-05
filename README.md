@@ -607,6 +607,7 @@ docker compose logs -f
 - 如需 PostgreSQL，取消 `docker-compose.yml` 中 `postgres` 服务与对应 `AXMIPIC_DATABASE_*` 环境变量的注释后重启。
 - 镜像为 distroless，未内置 healthcheck，可通过外部探测 `GET /healthz` 做健康检查。
 - 如需自定义配置，可挂载 `./configs/config.yaml:/app/configs/config.yaml:ro`（与 `AXMIPIC_*` 环境变量可叠加）。
+- **安装向导模式**：删除/设为 `AXMIPIC_INSTALL_DISABLED: "false"`，并挂载可写配置目录 `./configs:/app/configs`；访问 `/install` 完成初始化时，向导会按填写的 `database_driver`/`database_dsn` 连接并迁移数据库，并把数据库连接写入 `configs/config.yaml`（重启后生效）。注意向导写出的配置为固定模板，会覆盖 `payment`/`processing` 等其他段。
 
 ## 开发
 
