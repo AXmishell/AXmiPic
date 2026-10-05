@@ -163,6 +163,12 @@ html.theme-light {
   font-weight: var(--ax-weight-medium);
 }
 
+/* 数字输入框默认居中，改为左对齐以与其他输入框保持一致。 */
+.el-input-number .el-input__inner,
+.el-input-number.is-center .el-input__inner {
+  text-align: left;
+}
+
 /* ---- 表格 ---- */
 .el-table {
   --el-table-bg-color: transparent;
