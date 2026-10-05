@@ -364,7 +364,7 @@ onBeforeUnmount(() => {
     <el-tabs v-else v-model="activeTab" class="settings-tabs">
       <!-- 概览 -->
       <el-tab-pane label="概览" name="overview">
-        <section class="settings-grid">
+        <section class="settings-grid overview-grid">
           <article class="ax-card">
             <header class="ax-card__head">
               <div class="card-head">
@@ -798,6 +798,26 @@ onBeforeUnmount(() => {
 
 .settings-block {
   margin-top: var(--ax-space-4);
+}
+
+/* 概览双卡等高：运行环境与策略概览底边对齐，列表在卡内均分。 */
+.overview-grid {
+  align-items: stretch;
+}
+
+.overview-grid > .ax-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.overview-grid > .ax-card > .ax-card__body {
+  display: flex;
+  flex: 1;
+}
+
+.overview-grid .info-list {
+  flex: 1;
+  justify-content: space-between;
 }
 
 .gateway-grid {
