@@ -565,128 +565,6 @@ onBeforeUnmount(() => {
                 <span class="smtp-form__hint">可选择任意内置渠道；保存后未启用的渠道会自动回退为人工核销</span>
               </el-form-item>
             </el-form>
-
-            <el-divider content-position="left">支付宝当面付</el-divider>
-            <el-form label-position="top" class="smtp-form" @submit.prevent>
-              <div class="smtp-grid">
-                <el-form-item label="启用">
-                  <el-switch v-model="paymentForm.alipay.enabled" />
-                </el-form-item>
-                <el-form-item label="网关地址" class="smtp-grid__wide">
-                  <el-input v-model="paymentForm.alipay.gateway_url" placeholder="留空使用生产地址" />
-                </el-form-item>
-                <el-form-item label="App ID">
-                  <el-input v-model="paymentForm.alipay.app_id" />
-                </el-form-item>
-                <el-form-item label="应用私钥">
-                  <el-input
-                    v-model="paymentForm.alipay.private_key"
-                    type="password"
-                    show-password
-                    autocomplete="new-password"
-                    :placeholder="secretPlaceholder(paymentMeta?.alipay.private_key_set, '私钥')"
-                  />
-                </el-form-item>
-                <el-form-item label="支付宝公钥">
-                  <el-input
-                    v-model="paymentForm.alipay.public_key"
-                    type="password"
-                    show-password
-                    autocomplete="new-password"
-                    :placeholder="secretPlaceholder(paymentMeta?.alipay.public_key_set, '公钥')"
-                  />
-                </el-form-item>
-              </div>
-            </el-form>
-
-            <el-divider content-position="left">微信支付 v3</el-divider>
-            <el-form label-position="top" class="smtp-form" @submit.prevent>
-              <div class="smtp-grid">
-                <el-form-item label="启用">
-                  <el-switch v-model="paymentForm.wechat.enabled" />
-                </el-form-item>
-                <el-form-item label="网关地址" class="smtp-grid__wide">
-                  <el-input v-model="paymentForm.wechat.gateway_url" placeholder="留空使用生产地址" />
-                </el-form-item>
-                <el-form-item label="App ID">
-                  <el-input v-model="paymentForm.wechat.app_id" />
-                </el-form-item>
-                <el-form-item label="商户号">
-                  <el-input v-model="paymentForm.wechat.mch_id" />
-                </el-form-item>
-                <el-form-item label="证书序列号">
-                  <el-input v-model="paymentForm.wechat.serial_no" />
-                </el-form-item>
-                <el-form-item label="商户 API 私钥">
-                  <el-input
-                    v-model="paymentForm.wechat.private_key"
-                    type="password"
-                    show-password
-                    autocomplete="new-password"
-                    :placeholder="secretPlaceholder(paymentMeta?.wechat.private_key_set, '私钥')"
-                  />
-                </el-form-item>
-                <el-form-item label="APIv3 密钥（32 字节）">
-                  <el-input
-                    v-model="paymentForm.wechat.api_v3_key"
-                    type="password"
-                    show-password
-                    autocomplete="new-password"
-                    :placeholder="secretPlaceholder(paymentMeta?.wechat.api_v3_key_set, '密钥')"
-                  />
-                </el-form-item>
-                <el-form-item label="平台公钥">
-                  <el-input
-                    v-model="paymentForm.wechat.platform_public_key"
-                    type="password"
-                    show-password
-                    autocomplete="new-password"
-                    :placeholder="secretPlaceholder(paymentMeta?.wechat.platform_public_key_set, '公钥')"
-                  />
-                </el-form-item>
-                <el-form-item label="平台证书序列号">
-                  <el-input v-model="paymentForm.wechat.platform_serial_no" placeholder="可选，用于校验回调 serial" />
-                </el-form-item>
-              </div>
-            </el-form>
-
-            <el-divider content-position="left">易支付</el-divider>
-            <el-form label-position="top" class="smtp-form" @submit.prevent>
-              <div class="smtp-grid">
-                <el-form-item label="启用">
-                  <el-switch v-model="paymentForm.epay.enabled" />
-                </el-form-item>
-                <el-form-item label="支付通道">
-                  <el-select v-model="paymentForm.epay.pay_type" style="width: 100%">
-                    <el-option label="支付宝" value="alipay" />
-                    <el-option label="微信支付" value="wxpay" />
-                    <el-option label="QQ 钱包" value="qqpay" />
-                  </el-select>
-                </el-form-item>
-                <el-form-item label="商户号 PID">
-                  <el-input v-model="paymentForm.epay.pid" />
-                </el-form-item>
-                <el-form-item label="商户密钥">
-                  <el-input
-                    v-model="paymentForm.epay.key"
-                    type="password"
-                    show-password
-                    autocomplete="new-password"
-                    :placeholder="secretPlaceholder(paymentMeta?.epay.key_set, '密钥')"
-                  />
-                </el-form-item>
-                <el-form-item label="站点地址" class="smtp-grid__wide">
-                  <el-input v-model="paymentForm.epay.gateway_url" placeholder="https://pay.example.com" />
-                </el-form-item>
-                <el-form-item label="下单接口">
-                  <el-input v-model="paymentForm.epay.api_url" placeholder="默认 /mapi.php" />
-                </el-form-item>
-                <el-form-item label="收银台地址">
-                  <el-input v-model="paymentForm.epay.submit_url" placeholder="默认 /submit.php" />
-                </el-form-item>
-              </div>
-            </el-form>
-
             <div class="smtp-actions">
               <el-button type="primary" :loading="paymentSaving" @click="savePayment">保存并应用</el-button>
               <el-button :disabled="paymentSaving" @click="resetPayment">重置</el-button>
@@ -696,6 +574,159 @@ onBeforeUnmount(() => {
             </p>
           </div>
         </article>
+
+        <section class="settings-grid gateway-grid">
+          <article class="ax-card gateway-card">
+            <header class="ax-card__head">
+              <h2 class="ax-card__title">支付宝当面付</h2>
+              <el-tag size="small" :type="paymentForm.alipay.enabled ? 'success' : 'info'" effect="plain">
+                {{ paymentForm.alipay.enabled ? '已启用' : '未启用' }}
+              </el-tag>
+            </header>
+            <div class="ax-card__body">
+              <p class="gateway-card__hint">扫码支付，需应用私钥与支付宝公钥，回调自动验签。</p>
+              <el-form label-position="top" class="smtp-form" @submit.prevent>
+                <div class="smtp-grid">
+                  <el-form-item label="启用">
+                    <el-switch v-model="paymentForm.alipay.enabled" />
+                  </el-form-item>
+                  <el-form-item label="网关地址" class="smtp-grid__wide">
+                    <el-input v-model="paymentForm.alipay.gateway_url" placeholder="留空使用生产地址" />
+                  </el-form-item>
+                  <el-form-item label="App ID">
+                    <el-input v-model="paymentForm.alipay.app_id" />
+                  </el-form-item>
+                  <el-form-item label="应用私钥">
+                    <el-input
+                      v-model="paymentForm.alipay.private_key"
+                      type="password"
+                      show-password
+                      autocomplete="new-password"
+                      :placeholder="secretPlaceholder(paymentMeta?.alipay.private_key_set, '私钥')"
+                    />
+                  </el-form-item>
+                  <el-form-item label="支付宝公钥">
+                    <el-input
+                      v-model="paymentForm.alipay.public_key"
+                      type="password"
+                      show-password
+                      autocomplete="new-password"
+                      :placeholder="secretPlaceholder(paymentMeta?.alipay.public_key_set, '公钥')"
+                    />
+                  </el-form-item>
+                </div>
+              </el-form>
+            </div>
+          </article>
+
+          <article class="ax-card gateway-card">
+            <header class="ax-card__head">
+              <h2 class="ax-card__title">微信支付 v3</h2>
+              <el-tag size="small" :type="paymentForm.wechat.enabled ? 'success' : 'info'" effect="plain">
+                {{ paymentForm.wechat.enabled ? '已启用' : '未启用' }}
+              </el-tag>
+            </header>
+            <div class="ax-card__body">
+              <p class="gateway-card__hint">Native 扫码，基于官方 SDK 下单并对回调验签/解密。</p>
+              <el-form label-position="top" class="smtp-form" @submit.prevent>
+                <div class="smtp-grid">
+                  <el-form-item label="启用">
+                    <el-switch v-model="paymentForm.wechat.enabled" />
+                  </el-form-item>
+                  <el-form-item label="网关地址" class="smtp-grid__wide">
+                    <el-input v-model="paymentForm.wechat.gateway_url" placeholder="留空使用生产地址" />
+                  </el-form-item>
+                  <el-form-item label="App ID">
+                    <el-input v-model="paymentForm.wechat.app_id" />
+                  </el-form-item>
+                  <el-form-item label="商户号">
+                    <el-input v-model="paymentForm.wechat.mch_id" />
+                  </el-form-item>
+                  <el-form-item label="证书序列号">
+                    <el-input v-model="paymentForm.wechat.serial_no" />
+                  </el-form-item>
+                  <el-form-item label="商户 API 私钥">
+                    <el-input
+                      v-model="paymentForm.wechat.private_key"
+                      type="password"
+                      show-password
+                      autocomplete="new-password"
+                      :placeholder="secretPlaceholder(paymentMeta?.wechat.private_key_set, '私钥')"
+                    />
+                  </el-form-item>
+                  <el-form-item label="APIv3 密钥（32 字节）">
+                    <el-input
+                      v-model="paymentForm.wechat.api_v3_key"
+                      type="password"
+                      show-password
+                      autocomplete="new-password"
+                      :placeholder="secretPlaceholder(paymentMeta?.wechat.api_v3_key_set, '密钥')"
+                    />
+                  </el-form-item>
+                  <el-form-item label="平台公钥">
+                    <el-input
+                      v-model="paymentForm.wechat.platform_public_key"
+                      type="password"
+                      show-password
+                      autocomplete="new-password"
+                      :placeholder="secretPlaceholder(paymentMeta?.wechat.platform_public_key_set, '公钥')"
+                    />
+                  </el-form-item>
+                  <el-form-item label="平台证书序列号">
+                    <el-input v-model="paymentForm.wechat.platform_serial_no" placeholder="可选，用于校验回调 serial" />
+                  </el-form-item>
+                </div>
+              </el-form>
+            </div>
+          </article>
+
+          <article class="ax-card gateway-card">
+            <header class="ax-card__head">
+              <h2 class="ax-card__title">易支付</h2>
+              <el-tag size="small" :type="paymentForm.epay.enabled ? 'success' : 'info'" effect="plain">
+                {{ paymentForm.epay.enabled ? '已启用' : '未启用' }}
+              </el-tag>
+            </header>
+            <div class="ax-card__body">
+              <p class="gateway-card__hint">彩虹易支付兼容聚合支付，MD5 签名下单与回调验签。</p>
+              <el-form label-position="top" class="smtp-form" @submit.prevent>
+                <div class="smtp-grid">
+                  <el-form-item label="启用">
+                    <el-switch v-model="paymentForm.epay.enabled" />
+                  </el-form-item>
+                  <el-form-item label="支付通道">
+                    <el-select v-model="paymentForm.epay.pay_type" style="width: 100%">
+                      <el-option label="支付宝" value="alipay" />
+                      <el-option label="微信支付" value="wxpay" />
+                      <el-option label="QQ 钱包" value="qqpay" />
+                    </el-select>
+                  </el-form-item>
+                  <el-form-item label="商户号 PID">
+                    <el-input v-model="paymentForm.epay.pid" />
+                  </el-form-item>
+                  <el-form-item label="商户密钥">
+                    <el-input
+                      v-model="paymentForm.epay.key"
+                      type="password"
+                      show-password
+                      autocomplete="new-password"
+                      :placeholder="secretPlaceholder(paymentMeta?.epay.key_set, '密钥')"
+                    />
+                  </el-form-item>
+                  <el-form-item label="站点地址" class="smtp-grid__wide">
+                    <el-input v-model="paymentForm.epay.gateway_url" placeholder="https://pay.example.com" />
+                  </el-form-item>
+                  <el-form-item label="下单接口">
+                    <el-input v-model="paymentForm.epay.api_url" placeholder="默认 /mapi.php" />
+                  </el-form-item>
+                  <el-form-item label="收银台地址">
+                    <el-input v-model="paymentForm.epay.submit_url" placeholder="默认 /submit.php" />
+                  </el-form-item>
+                </div>
+              </el-form>
+            </div>
+          </article>
+        </section>
       </el-tab-pane>
 
       <!-- 系统集成 -->
@@ -738,6 +769,22 @@ onBeforeUnmount(() => {
 
 .settings-block {
   margin-top: var(--ax-space-4);
+}
+
+.gateway-grid {
+  margin-top: var(--ax-space-4);
+  grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr));
+}
+
+.gateway-card {
+  height: 100%;
+}
+
+.gateway-card__hint {
+  margin: 0 0 var(--ax-space-3);
+  color: var(--ax-text-4);
+  font-size: var(--ax-text-xs);
+  line-height: 1.5;
 }
 
 .process-hint {
