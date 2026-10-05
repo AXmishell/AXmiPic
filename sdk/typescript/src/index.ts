@@ -22,5 +22,7 @@ export {
   type PlanInput,
   type CouponInput,
   type NotifyTest,
+  type NotifyLog,
+  type NotifyLogList,
   type TransformParams,
 } from './client'

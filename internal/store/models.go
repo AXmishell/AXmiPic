@@ -530,3 +530,26 @@ type EmailCodeStat struct {
 func (EmailCodeStat) TableName() string {
 	return "email_code_stats"
 }
+
+// NotifyLog 记录一次通知发送（短信或邮件），供管理员在后台查看。
+type NotifyLog struct {
+	ID string `gorm:"primaryKey;size:36"`
+	// Channel 为 email 或 sms。
+	Channel string `gorm:"size:16;index;not null"`
+	// Recipient 为收件邮箱或手机号。
+	Recipient string `gorm:"size:255;not null;default:''"`
+	Subject   string `gorm:"size:255;not null;default:''"`
+	Body      string `gorm:"type:text;not null;default:''"`
+	// Status 为 sent 或 failed。
+	Status string `gorm:"size:16;index;not null;default:'sent'"`
+	// Error 为失败原因（成功时为空）。
+	Error string `gorm:"size:512;not null;default:''"`
+	// Provider 为实际使用的渠道名称（如 smtp、http、log）。
+	Provider  string    `gorm:"size:32;not null;default:''"`
+	CreatedAt time.Time `gorm:"index"`
+}
+
+// TableName 返回存储 NotifyLog 的表名。
+func (NotifyLog) TableName() string {
+	return "notify_logs"
+}

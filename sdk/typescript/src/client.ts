@@ -645,6 +645,14 @@ export class AxmipicClient {
     await this.request<void>('/api/v1/admin/notify/test', { method: 'POST', body: input })
   }
 
+  async adminNotifyLogs(query?: {
+    channel?: 'email' | 'sms'
+    page?: number
+    page_size?: number
+  }): Promise<NotifyLogList> {
+    return this.request<NotifyLogList>('/api/v1/admin/notify/logs', { query })
+  }
+
   async adminSecurity(): Promise<Record<string, string>> {
     return this.request<Record<string, string>>('/api/v1/admin/security')
   }
@@ -779,6 +787,25 @@ export interface NotifyTest {
   to: string
   subject?: string
   body: string
+}
+
+export interface NotifyLog {
+  id: string
+  channel: 'email' | 'sms'
+  to: string
+  subject: string
+  body: string
+  status: 'sent' | 'failed'
+  error?: string
+  provider: string
+  created_at: string
+}
+
+export interface NotifyLogList {
+  items: NotifyLog[]
+  total: number
+  page: number
+  page_size: number
 }
 
 /** 即时图片处理参数。 */

@@ -535,12 +535,13 @@ curl -X POST http://localhost:8080/api/v1/upload \
 | GET | `/admin/process` | 进程实时运行时指标（Goroutine、堆内存、堆对象数、GC、运行时长等） |
 | GET | `/admin/notify/channels` | 已配置的短信与邮件渠道 |
 | POST | `/admin/notify/test` | 发送测试通知（`{"channel":"sms","to":"…","body":"…"}`） |
+| GET | `/admin/notify/logs` | 通知发送日志（`?channel=email\|sms&page=&page_size=`，按时间倒序） |
 | GET | `/admin/notify/smtp` | 读取 SMTP 邮件渠道设置（密码仅返回是否已设置） |
 | PUT | `/admin/notify/smtp` | 保存 SMTP 设置并即时生效（`password` 为空表示保持原密码） |
 | GET | `/admin/payment` | 读取支付设置（密钥仅返回是否已设置） |
 | PUT | `/admin/payment` | 保存支付设置并即时生效（密钥为空表示保持原值） |
 
-扫描器在 `multipart` 上传与预签名直传确认两个入口都会执行；命中危险内容时返回 HTTP 422 并拒绝入库。通知渠道的兜底实现会把消息写入服务端日志，便于开发调试。管理端「系统设置 → 通知设置」提供 SMTP 配置、渠道查看与发送测试；SMTP 密码经主密钥加密后保存在数据库的 `settings` 表中，保存后邮件渠道即时切换，无需重启。
+扫描器在 `multipart` 上传与预签名直传确认两个入口都会执行；命中危险内容时返回 HTTP 422 并拒绝入库。通知渠道的兜底实现会把消息写入服务端日志，便于开发调试。管理端「系统设置 → 通知设置」提供 SMTP 配置、渠道查看与发送测试；SMTP 密码经主密钥加密后保存在数据库的 `settings` 表中，保存后邮件渠道即时切换，无需重启。每次发送（含验证码、通知与后台测试）都会记录到 `notify_logs` 表，可在「系统设置 → 通知设置 → 发送日志」按邮件/短信查看，日志保留 30 天后自动清理。
 
 ### 角色组与策略
 

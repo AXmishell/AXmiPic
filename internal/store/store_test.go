@@ -202,3 +202,29 @@ func TestEmailCodeLifecycle(t *testing.T) {
 		t.Fatalf("other day count n=%d err=%v", n, err)
 	}
 }
+
+func TestNotifyLogLifecycle(t *testing.T) {
+	repo := newRepo(t)
+	ctx := context.Background()
+	entries := []store.NotifyLog{
+		{ID: "n1", Channel: "email", Recipient: "a@example.com", Subject: "s", Body: "b", Status: "sent", Provider: "smtp"},
+		{ID: "n2", Channel: "sms", Recipient: "13800000000", Body: "b", Status: "failed", Error: "boom", Provider: "http"},
+	}
+	for i := range entries {
+		if err := repo.CreateNotifyLog(ctx, &entries[i]); err != nil {
+			t.Fatalf("CreateNotifyLog[%d]: %v", i, err)
+		}
+	}
+	logs, total, err := repo.ListNotifyLogs(ctx, "", 0, 10)
+	if err != nil || total != 2 || len(logs) != 2 {
+		t.Fatalf("list all total=%d len=%d err=%v", total, len(logs), err)
+	}
+	emailLogs, total, err := repo.ListNotifyLogs(ctx, "email", 0, 10)
+	if err != nil || total != 1 || emailLogs[0].Channel != "email" {
+		t.Fatalf("filter email total=%d %+v err=%v", total, emailLogs, err)
+	}
+	removed, err := repo.DeleteNotifyLogsBefore(ctx, time.Now().Add(time.Hour))
+	if err != nil || removed != 2 {
+		t.Fatalf("prune removed=%d err=%v", removed, err)
+	}
+}

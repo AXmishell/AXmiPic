@@ -249,6 +249,7 @@ func run() error {
 		logger.Info("email notification channel enabled")
 	}
 	notifySvc := service.NewNotifyService(smsSender, emailSender)
+	notifySvc.SetRepository(repo)
 	accounts.SetNotifyService(notifySvc)
 	settingsSvc := service.NewSettingsService(repo, cipher, notifySvc, logger, service.SMTPConfig{
 		Enabled:  cfg.Email.Enabled,
@@ -366,6 +367,7 @@ func run() error {
 
 	go runPendingUploadJanitor(ctx, uploadSvc, logger)
 	go runExpiredPlanJanitor(ctx, billingSvc, logger)
+	go runNotifyLogJanitor(ctx, repo, logger)
 
 	return srv.Run(ctx)
 }
@@ -601,6 +603,38 @@ func runExpiredPlanJanitor(ctx context.Context, svc *service.BillingService, log
 		}
 	}
 
+	cleanup()
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			cleanup()
+		}
+	}
+}
+
+// notifyLogRetention 是通知日志的保留时长；超过后由后台任务清理。
+const notifyLogRetention = 30 * 24 * time.Hour
+
+// runNotifyLogJanitor 定期清理超过保留期的通知日志，避免无界增长。
+func runNotifyLogJanitor(ctx context.Context, repo *store.Repository, logger *slog.Logger) {
+	const interval = 6 * time.Hour
+	cleanup := func() {
+		cutoff := time.Now().Add(-notifyLogRetention)
+		cleanupCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		removed, err := repo.DeleteNotifyLogsBefore(cleanupCtx, cutoff)
+		if err != nil {
+			logger.Warn("notify log cleanup failed", slog.Any("error", err))
+			return
+		}
+		if removed > 0 {
+			logger.Info("cleaned up old notify logs", slog.Int64("count", removed))
+		}
+	}
 	cleanup()
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()

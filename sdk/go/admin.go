@@ -2,6 +2,7 @@ package axmipic
 
 import (
 	"context"
+	"strconv"
 )
 
 // UserUpdate 是账户可选的变更字段。
@@ -41,6 +42,27 @@ type NotifyTest struct {
 	To      string `json:"to"`
 	Subject string `json:"subject,omitempty"`
 	Body    string `json:"body"`
+}
+
+// NotifyLog 是一条通知发送日志。
+type NotifyLog struct {
+	ID        string `json:"id"`
+	Channel   string `json:"channel"`
+	To        string `json:"to"`
+	Subject   string `json:"subject"`
+	Body      string `json:"body"`
+	Status    string `json:"status"`
+	Error     string `json:"error,omitempty"`
+	Provider  string `json:"provider"`
+	CreatedAt string `json:"created_at"`
+}
+
+// NotifyLogList 是通知日志的分页集合。
+type NotifyLogList struct {
+	Items    []NotifyLog `json:"items"`
+	Total    int64       `json:"total"`
+	Page     int         `json:"page"`
+	PageSize int         `json:"page_size"`
 }
 
 // ImagingDrivers 描述可用的图片处理驱动。
@@ -285,6 +307,22 @@ func (c *Client) AdminNotifyChannels(ctx context.Context) (map[string]string, er
 // AdminTestNotify 发送一条测试通知。
 func (c *Client) AdminTestNotify(ctx context.Context, in NotifyTest) error {
 	return c.postJSON(ctx, "/api/v1/admin/notify/test", in, nil)
+}
+
+// AdminNotifyLogs 返回通知发送日志，可按渠道过滤并分页。
+func (c *Client) AdminNotifyLogs(ctx context.Context, channel string, page, pageSize int) (*NotifyLogList, error) {
+	params := map[string]string{"channel": channel}
+	if page > 0 {
+		params["page"] = strconv.Itoa(page)
+	}
+	if pageSize > 0 {
+		params["page_size"] = strconv.Itoa(pageSize)
+	}
+	var out NotifyLogList
+	if err := c.get(ctx, encodeQuery("/api/v1/admin/notify/logs", params), &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
 }
 
 // AdminSecurity 返回当前启用的安全扫描器。

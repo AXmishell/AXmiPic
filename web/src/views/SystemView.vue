@@ -7,6 +7,7 @@ import { fetchStats } from '@/api/admin'
 import {
   getImagingDrivers,
   getNotifyChannels,
+  getNotifyLogs,
   getPaymentSettings,
   getProcessInfo,
   getRuntimeInfo,
@@ -16,6 +17,7 @@ import {
   sendTestNotify,
   updatePaymentSettings,
   updateSMTPConfig,
+  type NotifyLog,
   type PaymentSettings,
   type PaymentSettingsInput,
   type ProcessInfo,
@@ -26,7 +28,7 @@ import { toApiError } from '@/api/client'
 import type { AdminStats } from '@/api/types'
 import ErrorState from '@/components/ErrorState.vue'
 import PageHeader from '@/components/PageHeader.vue'
-import { formatBytes, formatNumber } from '@/utils/format'
+import { formatBytes, formatDateTime, formatNumber } from '@/utils/format'
 
 const loading = ref(false)
 const errorMessage = ref('')
@@ -286,11 +288,50 @@ async function sendTest(): Promise<void> {
       body: testBody.value.trim(),
     })
     ElMessage.success('测试通知已发送（未配置服务商时会记录到日志）')
+    void loadNotifyLogs()
   } catch (error) {
     ElMessage.error(toApiError(error).message)
   } finally {
     testing.value = false
   }
+}
+
+// ---- 通知发送日志 ----
+const logChannel = ref<'email' | 'sms'>('email')
+const notifyLogs = ref<NotifyLog[]>([])
+const logsTotal = ref(0)
+const logsPage = ref(1)
+const logsPageSize = ref(20)
+const logsLoading = ref(false)
+
+async function loadNotifyLogs(): Promise<void> {
+  logsLoading.value = true
+  try {
+    const data = await getNotifyLogs({
+      channel: logChannel.value,
+      page: logsPage.value,
+      page_size: logsPageSize.value,
+    })
+    notifyLogs.value = data.items
+    logsTotal.value = data.total
+  } catch (error) {
+    ElMessage.error(toApiError(error).message)
+  } finally {
+    logsLoading.value = false
+  }
+}
+
+function switchLogChannel(channel: 'email' | 'sms'): void {
+  if (logChannel.value === channel) return
+  logChannel.value = channel
+  logsPage.value = 1
+  notifyLogs.value = []
+  void loadNotifyLogs()
+}
+
+function onLogsPageChange(page: number): void {
+  logsPage.value = page
+  void loadNotifyLogs()
 }
 
 async function load(): Promise<void> {
@@ -321,6 +362,7 @@ async function load(): Promise<void> {
       paymentMeta.value = paymentData
       fillPayment(paymentData)
     }
+    void loadNotifyLogs()
   } catch (error) {
     errorMessage.value = toApiError(error).message
   } finally {
@@ -569,6 +611,63 @@ onBeforeUnmount(() => {
             <p class="integration__hint">
               保存 SMTP 设置后即时生效；未配置真实服务商时，通知会回退到日志渠道并记录到服务端日志。
             </p>
+          </div>
+        </article>
+
+        <article class="ax-card settings-block">
+          <header class="ax-card__head">
+            <h2 class="ax-card__title">发送日志</h2>
+            <div class="notify-logs__tools">
+              <el-radio-group
+                :model-value="logChannel"
+                size="small"
+                @change="switchLogChannel($event as 'email' | 'sms')"
+              >
+                <el-radio-button value="email">邮件</el-radio-button>
+                <el-radio-button value="sms">短信</el-radio-button>
+              </el-radio-group>
+              <el-button size="small" :icon="Refresh" :loading="logsLoading" @click="loadNotifyLogs">
+                刷新
+              </el-button>
+            </div>
+          </header>
+          <div class="ax-card__body">
+            <el-skeleton v-if="logsLoading && notifyLogs.length === 0" :rows="3" animated />
+            <template v-else>
+              <el-table :data="notifyLogs" size="small" style="width: 100%">
+                <el-table-column label="时间" width="170">
+                  <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
+                </el-table-column>
+                <el-table-column prop="to" label="接收方" min-width="160" show-overflow-tooltip />
+                <el-table-column
+                  v-if="logChannel === 'email'"
+                  prop="subject"
+                  label="主题"
+                  min-width="140"
+                  show-overflow-tooltip
+                />
+                <el-table-column label="状态" width="90">
+                  <template #default="{ row }">
+                    <el-tooltip v-if="row.status === 'failed' && row.error" :content="row.error" placement="top">
+                      <el-tag type="danger" size="small" effect="plain">失败</el-tag>
+                    </el-tooltip>
+                    <el-tag v-else type="success" size="small" effect="plain">成功</el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="provider" label="渠道" width="90" />
+                <el-table-column prop="body" label="内容" min-width="220" show-overflow-tooltip />
+              </el-table>
+              <el-empty v-if="notifyLogs.length === 0" description="暂无日志" :image-size="60" />
+            </template>
+            <div class="notify-logs__pager">
+              <el-pagination
+                layout="prev, pager, next, total"
+                :total="logsTotal"
+                :page-size="logsPageSize"
+                :current-page="logsPage"
+                @current-change="onLogsPageChange"
+              />
+            </div>
           </div>
         </article>
       </el-tab-pane>
@@ -1016,6 +1115,18 @@ onBeforeUnmount(() => {
   margin: 0;
   color: var(--ax-text-4);
   font-size: var(--ax-text-xs);
+}
+
+.notify-logs__tools {
+  display: flex;
+  align-items: center;
+  gap: var(--ax-space-2);
+}
+
+.notify-logs__pager {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--ax-space-3);
 }
 
 .info-list {

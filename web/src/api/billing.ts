@@ -113,6 +113,35 @@ export function sendTestNotify(payload: {
   return request<{ status: string }>({ method: 'POST', url: '/admin/notify/test', data: payload })
 }
 
+/** 一条通知发送日志。 */
+export interface NotifyLog {
+  id: string
+  channel: 'email' | 'sms'
+  to: string
+  subject: string
+  body: string
+  status: 'sent' | 'failed'
+  error?: string
+  provider: string
+  created_at: string
+}
+
+export interface NotifyLogList {
+  items: NotifyLog[]
+  total: number
+  page: number
+  page_size: number
+}
+
+/** 管理端：通知发送日志（可按渠道过滤并分页）。 */
+export function getNotifyLogs(params: {
+  channel?: 'email' | 'sms'
+  page?: number
+  page_size?: number
+}): Promise<NotifyLogList> {
+  return request<NotifyLogList>({ method: 'GET', url: '/admin/notify/logs', params })
+}
+
 /** SMTP 邮件渠道设置。密码只返回是否已设置，不回传明文。 */
 export interface SMTPConfig {
   enabled: boolean

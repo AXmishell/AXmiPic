@@ -7,7 +7,27 @@ import (
 	"time"
 
 	"github.com/AXmishell/axmipic/internal/imaging"
+	"github.com/AXmishell/axmipic/internal/service"
 )
+
+// adminNotifyLogs 返回通知发送日志，可按 channel（email/sms）过滤并分页。
+func (h *Handler) adminNotifyLogs(w http.ResponseWriter, r *http.Request) {
+	if h.notify == nil {
+		writeOK(w, &service.NotifyLogList{Items: []service.NotifyLogDTO{}, Page: 1, PageSize: 20})
+		return
+	}
+	result, err := h.notify.ListNotifyLogs(
+		r.Context(),
+		r.URL.Query().Get("channel"),
+		queryInt(r, "page"),
+		queryInt(r, "page_size"),
+	)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeOK(w, result)
+}
 
 type notifyTestRequest struct {
 	Channel string `json:"channel"`

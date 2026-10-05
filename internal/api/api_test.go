@@ -74,6 +74,8 @@ func newTestEnv(t *testing.T, requireAuth bool, quotaBytes int64) *testEnv {
 	accounts := service.NewAccountService(repo, issuer, true, quotaBytes)
 	mail := notify.NewMockSender("email")
 	accounts.SetNotifyService(service.NewNotifyService(nil, mail))
+	notifySvc := service.NewNotifyService(nil, notify.NewMockSender("email"))
+	notifySvc.SetRepository(repo)
 	router := api.NewRouter(api.Deps{
 		Upload:        uploadSvc,
 		Imaging:       imagingSvc,
@@ -81,6 +83,7 @@ func newTestEnv(t *testing.T, requireAuth bool, quotaBytes int64) *testEnv {
 		Admin:         service.NewAdminService(repo, "local", imaging.Default()),
 		Albums:        service.NewAlbumService(repo),
 		Storage:       storageSvc,
+		Notify:        notifySvc,
 		Authenticator: auth.NewAuthenticator(repo, issuer),
 		UploadLimiter: &auth.UploadLimiter{
 			User:  auth.NewRateLimiter(10000, 1000),

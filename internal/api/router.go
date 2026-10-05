@@ -288,6 +288,7 @@ func NewRouter(d Deps) http.Handler {
 
 				r.Get("/admin/notify/channels", h.adminNotifyChannels)
 				r.Post("/admin/notify/test", h.adminTestNotify)
+				r.Get("/admin/notify/logs", h.adminNotifyLogs)
 				r.Get("/admin/notify/smtp", h.adminGetSMTP)
 				r.Put("/admin/notify/smtp", h.adminUpdateSMTP)
 				r.Get("/admin/payment", h.adminGetPayment)
