@@ -275,7 +275,7 @@ onMounted(async () => {
                   <el-input v-model="form.database_dsn" type="textarea" :rows="3" />
                 </el-form-item>
               </div>
-              <div class="install__dsn">
+              <div v-if="!useAdvancedDsn" class="install__dsn">
                 <span class="install__dsn-label">连接串</span>
                 <code class="install__dsn-value">{{ pgDsnPreview }}</code>
               </div>
