@@ -131,9 +131,7 @@ func validateHostPattern(host string) error {
 	if host == "*" {
 		return nil
 	}
-	if strings.HasPrefix(host, "*.") {
-		host = host[2:]
-	}
+	host = strings.TrimPrefix(host, "*.")
 	if strings.ContainsAny(host, "/\\ \t:*") {
 		return fmt.Errorf("invalid host pattern %q", host)
 	}
