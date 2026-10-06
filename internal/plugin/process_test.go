@@ -201,12 +201,15 @@ func TestProcessPluginDisableEnable(t *testing.T) {
 	if !mgr.Enabled("process-webhook") {
 		t.Fatal("plugin should be enabled after enable")
 	}
-	if _, ok := mgr.Registry().Lookup(CategoryNotifySMS, "process-webhook"); !ok {
-		t.Fatal("plugin should be re-registered after enable")
+	if _, ok := mgr.Registry().Lookup(CategoryNotifySMS, "process-webhook"); ok {
+		t.Fatal("enable must not load the plugin")
 	}
-	// 重新启用后应可正常调用。
+	// 首次使用（Configure）时按需加载并注册，且可正常调用。
 	if err := mgr.Configure(ctx, "process-webhook", map[string]string{"url": "http://127.0.0.1:1"}); err != nil {
 		t.Fatalf("configure after enable: %v", err)
+	}
+	if _, ok := mgr.Registry().Lookup(CategoryNotifySMS, "process-webhook"); !ok {
+		t.Fatal("plugin should be registered after first use")
 	}
 }
 

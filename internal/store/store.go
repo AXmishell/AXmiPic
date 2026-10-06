@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/driver/mysql"
@@ -115,6 +116,26 @@ func (r *Repository) Close() error {
 	}
 	if err := sqlDB.Close(); err != nil {
 		return fmt.Errorf("store: close: %w", err)
+	}
+	return nil
+}
+
+// SetPool 配置底层 database/sql 连接池，避免高并发下无界地打开连接与缓冲。
+// maxOpen<=0 表示不限制；maxIdle<=0 表示不保留空闲连接（设为 0）；lifetime<=0
+// 表示不限制连接存活时间。
+func (r *Repository) SetPool(maxOpen, maxIdle int, lifetime time.Duration) error {
+	sqlDB, err := r.db.DB()
+	if err != nil {
+		return fmt.Errorf("store: connection: %w", err)
+	}
+	if maxOpen > 0 {
+		sqlDB.SetMaxOpenConns(maxOpen)
+	}
+	if maxIdle >= 0 {
+		sqlDB.SetMaxIdleConns(maxIdle)
+	}
+	if lifetime > 0 {
+		sqlDB.SetConnMaxLifetime(lifetime)
 	}
 	return nil
 }

@@ -5,6 +5,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"net/http/pprof"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -55,7 +56,9 @@ type Deps struct {
 	// ClientIPResolver 解析客户端真实 IP（可信代理由配置决定）。
 	ClientIPResolver *ClientIPResolver
 	MaxUploadMB      int
-	Logger           *slog.Logger
+	// Pprof 为 true 时在管理端挂载受鉴权保护的 net/http/pprof 端点。
+	Pprof  bool
+	Logger *slog.Logger
 }
 
 // Handler 保存所有 HTTP 处理函数共享的依赖项。
@@ -312,6 +315,17 @@ func NewRouter(d Deps) http.Handler {
 				r.Get("/admin/imaging/drivers", h.adminImagingDrivers)
 				r.Get("/admin/runtime", h.adminRuntimeInfo)
 				r.Get("/admin/process", h.adminProcessInfo)
+				if d.Pprof {
+					// 受管理员鉴权保护的 pprof 端点（仅排查问题时按需开启）。
+					r.Get("/admin/pprof/", pprof.Index)
+					r.Get("/admin/pprof/cmdline", pprof.Cmdline)
+					r.Get("/admin/pprof/profile", pprof.Profile)
+					r.Get("/admin/pprof/symbol", pprof.Symbol)
+					r.Get("/admin/pprof/trace", pprof.Trace)
+					for _, name := range []string{"allocs", "block", "goroutine", "heap", "mutex", "threadcreate"} {
+						r.Handle("/admin/pprof/"+name, pprof.Handler(name))
+					}
+				}
 				r.Get("/admin/plugins", h.adminListPlugins)
 				r.Get("/admin/plugins/registry", h.adminPluginRegistry)
 				r.Get("/admin/plugins/installed", h.adminInstalledPlugins)

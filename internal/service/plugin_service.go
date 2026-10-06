@@ -52,6 +52,41 @@ func (s *PluginService) Descriptors(category string) []plugin.Descriptor {
 	return s.manager.List(category)
 }
 
+// PluginReadiness 描述一个插件作为渠道是否就绪。
+type PluginReadiness struct {
+	// Installed 为插件是否已安装。
+	Installed bool `json:"installed"`
+	// Enabled 为是否已启用（state != disabled）。
+	Enabled bool `json:"enabled"`
+	// Configured 为是否已保存过配置。
+	Configured bool `json:"configured"`
+	// State 为三态：disabled / standby / active。
+	State string `json:"state"`
+}
+
+// Readiness 返回指定插件作为渠道的就绪状态。未安装时 Installed 为 false。
+func (s *PluginService) Readiness(ctx context.Context, name string) PluginReadiness {
+	if s.manager == nil {
+		return PluginReadiness{}
+	}
+	for _, info := range s.manager.Installed() {
+		if info.Manifest.Name != name {
+			continue
+		}
+		configured := false
+		if stored, err := s.loadRaw(ctx, name); err == nil {
+			configured = len(stored) > 0
+		}
+		return PluginReadiness{
+			Installed:  true,
+			Enabled:    info.Enabled,
+			Configured: configured,
+			State:      pluginState(info.Enabled, info.Loaded),
+		}
+	}
+	return PluginReadiness{}
+}
+
 // PluginConfigDTO 是插件配置的对外表示：秘钥字段只返回是否已设置，绝不回传明文。
 type PluginConfigDTO struct {
 	plugin.Descriptor
@@ -182,15 +217,37 @@ func (s *PluginService) resolve(ctx context.Context, name string) (map[string]st
 	return out, nil
 }
 
-// Apply 用已保存的配置（重新）配置插件实例。已暂停的插件会返回错误。
+// Apply 用已保存的配置（重新）配置插件实例。若插件处于待激活（standby）状态，
+// 它**不会**触发加载：配置将在首次激活时自动应用。已暂停的插件返回错误。
 func (s *PluginService) Apply(ctx context.Context, name string) error {
 	if s.manager == nil {
 		return fmt.Errorf("%w: plugins are unavailable", plugin.ErrNotFound)
 	}
-	p, ok := s.manager.Provider(name)
-	if !ok {
+	if !s.manager.Enabled(name) {
 		return fmt.Errorf("%w: plugin %q is not enabled", plugin.ErrNotFound, name)
 	}
+	p, ok := s.manager.Provider(name)
+	if !ok {
+		return nil // standby：延迟到首次激活时应用。
+	}
+	return s.configure(ctx, name, p)
+}
+
+// activateAndApply 确保插件已加载，并用已保存配置 Configure 它。它用于真正
+// 需要使用插件的路径（构造通知渠道、测试发送、预热）。
+func (s *PluginService) activateAndApply(ctx context.Context, name string) error {
+	if s.manager == nil {
+		return fmt.Errorf("%w: plugins are unavailable", plugin.ErrNotFound)
+	}
+	p, err := s.manager.Acquire(ctx, name)
+	if err != nil {
+		return err
+	}
+	return s.configure(ctx, name, p)
+}
+
+// configure 解析已保存配置并注入给定实例。
+func (s *PluginService) configure(ctx context.Context, name string, p plugin.Provider) error {
 	cfg, err := s.resolve(ctx, name)
 	if err != nil {
 		return err
@@ -203,16 +260,12 @@ func (s *PluginService) Apply(ctx context.Context, name string) error {
 	return nil
 }
 
-// Invoke 调用插件执行一次操作。
+// Invoke 调用插件执行一次操作。已启用但空闲卸载的插件会按需重新加载。
 func (s *PluginService) Invoke(ctx context.Context, category, name, op string, payload []byte) ([]byte, error) {
 	if s.manager == nil {
 		return nil, fmt.Errorf("%w: plugins are unavailable", plugin.ErrNotFound)
 	}
-	e, ok := s.manager.Registry().Lookup(category, name)
-	if !ok {
-		return nil, fmt.Errorf("%w: %s/%s", plugin.ErrNotFound, category, name)
-	}
-	return e.Provider.Invoke(ctx, op, payload)
+	return s.manager.Invoke(ctx, category, name, op, payload)
 }
 
 // smsPayload 是交给短信插件的中性载荷，字段与 SDK 的 SMSMessage 对齐。
@@ -230,12 +283,12 @@ func (s *PluginService) Sender(ctx context.Context, name string) (notify.Sender,
 	if s.manager == nil {
 		return nil, fmt.Errorf("%w: plugins are unavailable", plugin.ErrNotFound)
 	}
-	if _, ok := s.manager.Registry().Lookup(plugin.CategoryNotifySMS, name); !ok {
+	if !s.manager.Has(plugin.CategoryNotifySMS, name) {
 		return nil, fmt.Errorf("%w: sms plugin %q", plugin.ErrNotFound, name)
 	}
 	applyCtx, cancel := context.WithTimeout(ctx, pluginApplyTimeout)
 	defer cancel()
-	if err := s.Apply(applyCtx, name); err != nil {
+	if err := s.activateAndApply(applyCtx, name); err != nil {
 		return nil, err
 	}
 	return NewPluginSender(s, plugin.CategoryNotifySMS, name), nil
@@ -246,13 +299,13 @@ func (s *PluginService) Test(ctx context.Context, name, to, subject, body string
 	if s.manager == nil {
 		return nil, fmt.Errorf("%w: plugins are unavailable", plugin.ErrNotFound)
 	}
-	p, ok := s.manager.Provider(name)
-	if !ok {
-		return nil, fmt.Errorf("%w: plugin %q is not enabled", plugin.ErrNotFound, name)
+	p, err := s.manager.Acquire(ctx, name)
+	if err != nil {
+		return nil, err
 	}
 	applyCtx, cancel := context.WithTimeout(ctx, pluginApplyTimeout)
 	defer cancel()
-	if err := s.Apply(applyCtx, name); err != nil {
+	if err := s.activateAndApply(applyCtx, name); err != nil {
 		return nil, err
 	}
 	payload, err := json.Marshal(smsPayload{To: to, Subject: subject, Body: body})

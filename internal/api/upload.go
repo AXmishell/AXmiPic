@@ -3,7 +3,6 @@ package api
 import (
 	"encoding/json"
 	"errors"
-	"io"
 	"log/slog"
 	"net/http"
 
@@ -14,19 +13,24 @@ import (
 // 额外请求体余量。
 const multipartOverhead = 1 << 20
 
+// multipartMemoryLimit 是 multipart 解析时驻留内存的上限；超过该值的文件部分
+// 会落到临时文件，避免大图上传在内存中留下整份副本。
+const multipartMemoryLimit = 1 << 20
+
 // maxJSONBody 限制 JSON 请求体的大小。
 const maxJSONBody = 1 << 20
 
 func (h *Handler) uploadImage(w http.ResponseWriter, r *http.Request) {
+	maxBytes := h.currentMaxUploadBytes()
 	// 预先拒绝明显过大的请求体，这样客户端会收到干净的 413，
 	// 而不是在上传中途连接被关闭。
-	if r.ContentLength > h.maxUploadBytes+multipartOverhead {
+	if r.ContentLength > maxBytes+multipartOverhead {
 		h.fail(w, r, service.ErrFileTooLarge)
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, h.maxUploadBytes+multipartOverhead)
+	r.Body = http.MaxBytesReader(w, r.Body, maxBytes+multipartOverhead)
 
-	if err := r.ParseMultipartForm(h.maxUploadBytes); err != nil {
+	if err := r.ParseMultipartForm(multipartMemoryLimit); err != nil {
 		var maxErr *http.MaxBytesError
 		if errors.As(err, &maxErr) {
 			h.fail(w, r, service.ErrFileTooLarge)
@@ -43,8 +47,10 @@ func (h *Handler) uploadImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	originalName := ""
+	size := int64(-1)
 	if header != nil {
 		originalName = header.Filename
+		size = header.Size
 	}
 	defer func() {
 		if closeErr := file.Close(); closeErr != nil {
@@ -52,42 +58,38 @@ func (h *Handler) uploadImage(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	data, err := io.ReadAll(io.LimitReader(file, h.maxUploadBytes+1))
-	if err != nil {
-		var maxErr *http.MaxBytesError
-		if errors.As(err, &maxErr) {
-			h.fail(w, r, service.ErrFileTooLarge)
-			return
-		}
-		h.logger.ErrorContext(r.Context(), "read uploaded file", slog.Any("error", err))
-		writeError(w, http.StatusInternalServerError, http.StatusInternalServerError, "internal server error")
-		return
-	}
-	if int64(len(data)) > h.maxUploadBytes {
-		h.fail(w, r, service.ErrFileTooLarge)
-		return
-	}
-	if len(data) == 0 {
+	if size <= 0 {
 		writeError(w, http.StatusBadRequest, http.StatusBadRequest, "uploaded file is empty")
 		return
 	}
+	if size > maxBytes {
+		h.fail(w, r, service.ErrFileTooLarge)
+		return
+	}
 
-	mimeType := http.DetectContentType(data)
 	principal := principalOf(r)
 	ctx := r.Context()
 	if principal.IsGuest() {
 		ctx = service.WithClientIP(ctx, requestClientIP(r))
 	}
-	dto, err := h.svc.Upload(ctx, principal, service.UploadInput{
-		Data:         data,
-		MimeType:     mimeType,
-		OriginalName: originalName,
-	})
+	// 直接流式读取 multipart 文件，mimeType 由服务层按有界前缀嗅探。
+	dto, err := h.svc.UploadStream(ctx, principal, file, size, "", originalName)
 	if err != nil {
 		h.fail(w, r, err)
 		return
 	}
 	writeOK(w, dto)
+}
+
+// currentMaxUploadBytes 返回当前生效的单文件上传上限（字节）：优先读取可在
+// 后台热更新的上传设置，未配置设置服务时回退到启动时的配置值。
+func (h *Handler) currentMaxUploadBytes() int64 {
+	if h.settings != nil {
+		if v, ok := service.DomainValue[service.UploadSettings](h.settings, "upload"); ok && v.MaxSizeMB > 0 {
+			return int64(v.MaxSizeMB) << 20
+		}
+	}
+	return h.maxUploadBytes
 }
 
 // presignRequest 是 POST /api/v1/upload/presign 的 JSON 请求体。

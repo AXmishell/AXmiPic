@@ -468,6 +468,141 @@ func (s *UploadService) Upload(ctx context.Context, principal *auth.Principal, i
 	return toDTO(image, s.mediaBaseURL), nil
 }
 
+// UploadStream 从 r 读取图片并持久化，读取过程中不把整个文件驻留内存。size
+// 为已知的字节数（必须为正）；mimeType 为空时由内容嗅探得出。它供 multipart/
+// HTTP 上传路径使用：数据边写入存储边计算内容哈希，仅保留一段有界前缀用于
+// 安全扫描与尺寸探测。
+func (s *UploadService) UploadStream(ctx context.Context, principal *auth.Principal, r io.Reader, size int64, mimeType, originalName string) (*ImageDTO, error) {
+	if size <= 0 {
+		return nil, fmt.Errorf("%w: size must be positive", ErrInvalidInput)
+	}
+	// 有界前缀：内容嗅探、安全扫描与尺寸探测都只依赖头部。
+	prefix, err := io.ReadAll(io.LimitReader(r, dimensionProbeLimit))
+	if err != nil {
+		return nil, fmt.Errorf("upload: read prefix: %w", err)
+	}
+	if len(prefix) == 0 {
+		return nil, fmt.Errorf("%w: uploaded file is empty", ErrInvalidInput)
+	}
+	if mimeType == "" {
+		mimeType = http.DetectContentType(prefix)
+	}
+	policy, allowed, err := s.policyFor(ctx, principal)
+	if err != nil {
+		return nil, err
+	}
+	if size > policy.MaxSizeBytes {
+		return nil, fmt.Errorf("%w: %d bytes exceeds %d bytes", ErrFileTooLarge, size, policy.MaxSizeBytes)
+	}
+	if _, ok := allowed[mimeType]; !ok {
+		return nil, fmt.Errorf("%w: %q", ErrUnsupportedType, mimeType)
+	}
+	// 安全扫描只针对有界前缀；内置扫描器仅检查魔数，语义不受影响。
+	if err := s.scanContent(ctx, prefix, mimeType); err != nil {
+		return nil, err
+	}
+
+	ownerID := ownerIDOf(principal)
+	ownerKey := stringValue(ownerID)
+
+	release, ok, err := s.reserveQuota(ctx, principal, ownerID, size)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, ErrQuotaExceeded
+	}
+	releaseIP, ok, err := s.reserveGuestIPQuota(ctx, principal, size)
+	if err != nil {
+		release()
+		return nil, err
+	}
+	if !ok {
+		release()
+		return nil, ErrGuestQuotaExceeded
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			releaseIP()
+			release()
+		}
+	}()
+
+	backend := s.manager.Current()
+	if backend == nil {
+		return nil, fmt.Errorf("%w: no storage backend configured", ErrStorageConfig)
+	}
+	currentID := s.manager.CurrentID()
+	key := randomKey(mimeType)
+
+	// 边写入存储边计算哈希；prefix 已读取，需拼回数据流。
+	hasher := sha256.New()
+	counting := &countingReader{r: io.MultiReader(bytes.NewReader(prefix), r)}
+	if err := backend.Put(ctx, key, io.TeeReader(counting, hasher), size, mimeType); err != nil {
+		return nil, fmt.Errorf("upload: store object: %w", err)
+	}
+	hash := hex.EncodeToString(hasher.Sum(nil))
+
+	// 同一所有者的相同内容复用已有记录，并删除刚写入的重复对象、释放配额。
+	if existing, dedupErr := s.repo.GetByHashAndUser(ctx, hash, ownerKey); dedupErr == nil {
+		_ = backend.Delete(context.WithoutCancel(ctx), key)
+		committed = true
+		releaseIP()
+		release()
+		return toDTO(existing, s.mediaBaseURL), nil
+	} else if !errors.Is(dedupErr, store.ErrNotFound) {
+		_ = backend.Delete(context.WithoutCancel(ctx), key)
+		return nil, fmt.Errorf("upload: lookup existing image: %w", dedupErr)
+	}
+
+	width, height := decodeDimensions(prefix)
+	if width == 0 || height == 0 {
+		if _, w, h := s.probeObject(ctx, backend, key); w > 0 && h > 0 {
+			width, height = w, h
+		}
+	}
+	image := &store.Image{
+		ID:           uuid.NewString(),
+		Key:          key,
+		UserID:       ownerID,
+		StorageID:    storageIDPtr(currentID),
+		OriginalName: sanitizeOriginalName(originalName),
+		Filename:     path.Base(key),
+		Hash:         hash,
+		URL:          s.urlFor(backend, key),
+		Size:         counting.n,
+		MimeType:     mimeType,
+		Width:        width,
+		Height:       height,
+	}
+	if err := s.repo.Create(ctx, image); err != nil {
+		// 并发上传相同内容可能已先插入记录；删除我们写入的对象并复用记录。
+		_ = backend.Delete(context.WithoutCancel(ctx), key)
+		if concurrent, getErr := s.repo.GetByHashAndUser(ctx, hash, ownerKey); getErr == nil {
+			committed = true
+			releaseIP()
+			release()
+			return toDTO(concurrent, s.mediaBaseURL), nil
+		}
+		return nil, fmt.Errorf("upload: record image: %w", err)
+	}
+	committed = true
+	return toDTO(image, s.mediaBaseURL), nil
+}
+
+// countingReader 统计从底层读取的字节数，用于记录实际写入存储的大小。
+type countingReader struct {
+	r io.Reader
+	n int64
+}
+
+func (c *countingReader) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	c.n += int64(n)
+	return n, err
+}
+
 // Presign 校验直传请求，从存储后端签发一个预签名请求，并记录一条待确认的
 // 上传供后续确认。
 func (s *UploadService) Presign(ctx context.Context, principal *auth.Principal, in PresignInput) (*PresignResult, error) {

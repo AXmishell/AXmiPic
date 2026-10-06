@@ -96,6 +96,7 @@ func newTestEnv(t *testing.T, requireAuth bool, quotaBytes int64) *testEnv {
 			Guest: auth.NewRateLimiter(10000, 1000),
 		},
 		MaxUploadMB: 1,
+		Pprof:       true,
 		Logger:      logger,
 	})
 	return &testEnv{router: router, repo: repo, accounts: accounts, mail: mail, settings: settingsSvc}
@@ -208,6 +209,15 @@ func TestHealthz(t *testing.T) {
 	env.router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+}
+
+func TestPprofEndpointsRequireAdmin(t *testing.T) {
+	env := newTestEnv(t, true, 1<<20)
+	// 未认证访问应被管理员鉴权拦截（401），而不是 404，说明端点已注册。
+	status, _ := do(t, env.router, http.MethodGet, "/api/v1/admin/pprof/", "", "")
+	if status != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", status)
 	}
 }
 

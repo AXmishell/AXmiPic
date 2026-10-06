@@ -32,8 +32,12 @@ var envPaths = map[string]string{
 	"server_read_timeout_sec":            "server.read_timeout_sec",
 	"server_write_timeout_sec":           "server.write_timeout_sec",
 	"server_shutdown_timeout_sec":        "server.shutdown_timeout_sec",
+	"server_pprof_enabled":               "server.pprof_enabled",
 	"database_driver":                    "database.driver",
 	"database_dsn":                       "database.dsn",
+	"database_max_open_conns":            "database.max_open_conns",
+	"database_max_idle_conns":            "database.max_idle_conns",
+	"database_conn_max_lifetime_minutes": "database.conn_max_lifetime_minutes",
 	"storage_driver":                     "storage.driver",
 	"storage_local_root":                 "storage.local.root",
 	"s3_endpoint":                        "storage.s3.endpoint",
@@ -66,6 +70,10 @@ var envPaths = map[string]string{
 	"processing_watermark_text":          "processing.watermark_text",
 	"processing_cache_mb":                "processing.cache_mb",
 	"processing_max_concurrency":         "processing.max_concurrency",
+	"processing_max_decode_pixels":       "processing.max_decode_pixels",
+	"processing_max_render_memory_mb":    "processing.max_render_memory_mb",
+	"runtime_memory_limit_mb":            "runtime.memory_limit_mb",
+	"runtime_gc_percent":                 "runtime.gc_percent",
 	"maintenance_orphan_cleanup":         "maintenance.orphan_cleanup",
 	"maintenance_orphan_grace_hours":     "maintenance.orphan_grace_hours",
 	"maintenance_orphan_interval_hours":  "maintenance.orphan_interval_hours",
@@ -134,6 +142,10 @@ var envPaths = map[string]string{
 	"email_password":                     "email.password",
 	"email_from":                         "email.from",
 	"email_use_tls":                      "email.use_tls",
+	"plugins_memory_limit_mb":            "plugins.memory_limit_mb",
+	"plugins_idle_unload_minutes":        "plugins.idle_unload_minutes",
+	"plugins_startup":                    "plugins.startup",
+	"plugins_preload":                    "plugins.preload",
 	"logging_level":                      "logging.level",
 }
 
@@ -154,6 +166,7 @@ type Config struct {
 	Install     InstallConfig     `koanf:"install"`
 	Maintenance MaintenanceConfig `koanf:"maintenance"`
 	Plugins     PluginsConfig     `koanf:"plugins"`
+	Runtime     RuntimeConfig     `koanf:"runtime"`
 	Logging     LoggingConfig     `koanf:"logging"`
 }
 
@@ -166,6 +179,9 @@ type ServerConfig struct {
 	ReadTimeoutSec     int    `koanf:"read_timeout_sec"`
 	WriteTimeoutSec    int    `koanf:"write_timeout_sec"`
 	ShutdownTimeoutSec int    `koanf:"shutdown_timeout_sec"`
+	// PprofEnabled 在管理端挂载受管理员鉴权保护的 net/http/pprof 端点
+	// （/api/v1/admin/pprof/）。默认关闭。
+	PprofEnabled bool `koanf:"pprof_enabled"`
 	// ClientIP 控制如何解析客户端真实 IP（用于限流、访客配额与日志）。
 	ClientIP ClientIPConfig `koanf:"client_ip"`
 }
@@ -191,6 +207,12 @@ type DatabaseConfig struct {
 	Driver string `koanf:"driver"`
 	// DSN 对于 sqlite 是文件路径，对于 postgres 是 libpq 连接字符串/URL。
 	DSN string `koanf:"dsn"`
+	// MaxOpenConns 限制底层连接池的最大打开连接数；0 表示不限制。
+	MaxOpenConns int `koanf:"max_open_conns"`
+	// MaxIdleConns 限制空闲连接数。
+	MaxIdleConns int `koanf:"max_idle_conns"`
+	// ConnMaxLifetimeMinutes 为连接最长存活时间（分钟）；0 表示不限制。
+	ConnMaxLifetimeMinutes int `koanf:"conn_max_lifetime_minutes"`
 }
 
 // StorageConfig 选择并配置对象存储后端。
@@ -259,6 +281,12 @@ type ProcessingConfig struct {
 	CacheMB int `koanf:"cache_mb"`
 	// MaxConcurrency 限制同时进行的图片渲染数量；0 表示按 CPU 核数自动设置。
 	MaxConcurrency int `koanf:"max_concurrency"`
+	// MaxDecodePixels 限制单张变换可解码的像素总数，用于防范解压炸弹与
+	// 控制瞬时内存；0 表示使用内置默认值。
+	MaxDecodePixels int `koanf:"max_decode_pixels"`
+	// MaxRenderMemoryMB 为并发渲染的总内存预算（MiB）。渲染会按其预估内存
+	// 占用（解码后位图 + 源字节）加权占用该预算；0 表示使用内置默认值。
+	MaxRenderMemoryMB int `koanf:"max_render_memory_mb"`
 }
 
 // MaintenanceConfig 配置后台维护任务。
@@ -397,6 +425,28 @@ type PluginsConfig struct {
 	IndexURL string `koanf:"index_url"`
 	// MaxArchiveMB 为插件归档解压后的最大体积（MiB）。
 	MaxArchiveMB int `koanf:"max_archive_mb"`
+	// MemoryLimitMB 为每个 WASM 插件线性内存的上限（MiB）；0 表示内置默认值
+	// （64 MiB）。降低它可约束单个失控插件占用的内存。
+	MemoryLimitMB int `koanf:"memory_limit_mb"`
+	// IdleUnloadMinutes 为已启用插件的空闲自动卸载时长（分钟）；0 表示关闭。
+	// 卸载后再次调用会按需重新加载，从而在不使用时释放其内存。
+	IdleUnloadMinutes int `koanf:"idle_unload_minutes"`
+	// Startup 选择启动加载模式："lazy"（默认，仅登记不实例化，首次使用才加载）
+	// 或 "eager"（启动即实例化所有已启用插件）。
+	Startup string `koanf:"startup"`
+	// Preload 为无论启动模式都立即预热的插件名列表（例如活跃的短信渠道），
+	// 使其在启动后即处于可调用状态。
+	Preload []string `koanf:"preload"`
+}
+
+// RuntimeConfig 配置 Go 运行时与进程内存行为。
+type RuntimeConfig struct {
+	// MemoryLimitMB 为进程软内存上限（MiB），映射到 GOMEMLIMIT，使 GC 在接近
+	// 该上限时更积极地回收，避免 RSS 长期居高不下。0 表示不设置（保持 Go 默认）。
+	MemoryLimitMB int `koanf:"memory_limit_mb"`
+	// GCPercent 映射到 GOGC。50 表示每分配 1 字节存活数据触发一次 GC（更省内存、
+	// 更耗 CPU）；0 表示不设置（保持 Go 默认 100）。
+	GCPercent int `koanf:"gc_percent"`
 }
 
 // PaymentConfig 配置支付渠道。默认渠道需在已注册的渠道（manual、mock、
@@ -472,7 +522,13 @@ func defaultConfig() Config {
 			ShutdownTimeoutSec: 10,
 			ClientIP:           ClientIPConfig{Source: "remote"},
 		},
-		Database: DatabaseConfig{Driver: "sqlite", DSN: "./data/axmipic.db"},
+		Database: DatabaseConfig{
+			Driver:                 "sqlite",
+			DSN:                    "./data/axmipic.db",
+			MaxOpenConns:           25,
+			MaxIdleConns:           5,
+			ConnMaxLifetimeMinutes: 30,
+		},
 		Storage: StorageConfig{
 			Driver: "local",
 			Local:  LocalStorageConfig{Root: "./data/uploads"},
@@ -493,8 +549,12 @@ func defaultConfig() Config {
 			AllowEnlarge:   false,
 			AllowEffects:   true,
 			AllowWatermark: true,
-			CacheMB:        128,
+			CacheMB:        64,
 			MaxConcurrency: 0,
+			// 默认解码上限约为 16 MP，足以覆盖常见相机照片，同时把单次渲染的
+			// 瞬时内存控制在合理范围。需要处理更大原图时可调高。
+			MaxDecodePixels:   16_000_000,
+			MaxRenderMemoryMB: 256,
 		},
 		Auth: AuthConfig{
 			SessionTTLHours:   24,
@@ -524,12 +584,16 @@ func defaultConfig() Config {
 		Email:   EmailConfig{Port: 587},
 		Install: InstallConfig{LockFile: "./data/install.lock", ConfigPath: "./configs/config.yaml"},
 		Plugins: PluginsConfig{
-			Enabled:        true,
-			Dir:            "./plugins",
-			HTTPTimeoutSec: 10,
-			MaxHTTPBodyKB:  1024,
-			MaxArchiveMB:   64,
+			Enabled:           true,
+			Dir:               "./plugins",
+			HTTPTimeoutSec:    10,
+			MaxHTTPBodyKB:     1024,
+			MaxArchiveMB:      64,
+			MemoryLimitMB:     64,
+			IdleUnloadMinutes: 0,
+			Startup:           "lazy",
 		},
+		Runtime: RuntimeConfig{},
 		Maintenance: MaintenanceConfig{
 			OrphanCleanup:       true,
 			OrphanGraceHours:    72,
@@ -601,6 +665,15 @@ func (c Config) validate() error {
 	if strings.TrimSpace(c.Database.DSN) == "" {
 		return fmt.Errorf("config: database.dsn must not be empty")
 	}
+	if c.Database.MaxOpenConns < 0 {
+		return fmt.Errorf("config: database.max_open_conns must not be negative")
+	}
+	if c.Database.MaxIdleConns < 0 {
+		return fmt.Errorf("config: database.max_idle_conns must not be negative")
+	}
+	if c.Database.ConnMaxLifetimeMinutes < 0 {
+		return fmt.Errorf("config: database.conn_max_lifetime_minutes must not be negative")
+	}
 	switch c.Storage.Driver {
 	case "local":
 		if strings.TrimSpace(c.Storage.Local.Root) == "" {
@@ -659,6 +732,38 @@ func (c Config) validate() error {
 	}
 	if c.Processing.MaxConcurrency < 0 {
 		return fmt.Errorf("config: processing.max_concurrency must not be negative")
+	}
+	if c.Processing.MaxDecodePixels < 0 {
+		return fmt.Errorf("config: processing.max_decode_pixels must not be negative")
+	}
+	if c.Processing.MaxRenderMemoryMB < 0 {
+		return fmt.Errorf("config: processing.max_render_memory_mb must not be negative")
+	}
+	if c.Runtime.MemoryLimitMB < 0 {
+		return fmt.Errorf("config: runtime.memory_limit_mb must not be negative")
+	}
+	if c.Runtime.GCPercent < 0 {
+		return fmt.Errorf("config: runtime.gc_percent must not be negative")
+	}
+	if c.Plugins.MemoryLimitMB < 0 {
+		return fmt.Errorf("config: plugins.memory_limit_mb must not be negative")
+	}
+	if c.Plugins.IdleUnloadMinutes < 0 {
+		return fmt.Errorf("config: plugins.idle_unload_minutes must not be negative")
+	}
+	switch strings.ToLower(strings.TrimSpace(c.Plugins.Startup)) {
+	case "", "lazy", "eager":
+	default:
+		return fmt.Errorf("config: plugins.startup %q is not supported (want lazy or eager)", c.Plugins.Startup)
+	}
+	for _, name := range c.Plugins.Preload {
+		trimmed := strings.TrimSpace(name)
+		if trimmed == "" {
+			return fmt.Errorf("config: plugins.preload contains an empty name")
+		}
+		if strings.ContainsAny(trimmed, "/\\ \t") {
+			return fmt.Errorf("config: plugins.preload name %q must not contain separators or spaces", trimmed)
+		}
 	}
 	if c.Maintenance.OrphanGraceHours < 0 {
 		return fmt.Errorf("config: maintenance.orphan_grace_hours must not be negative")

@@ -200,6 +200,62 @@ func TestUploadDedupIsPerOwner(t *testing.T) {
 	}
 }
 
+func TestUploadStreamPersistsAndDeduplicates(t *testing.T) {
+	repo := newRepo(t)
+	backend := newFakeStorage()
+	svc := service.NewUploadService(repo, managerWithFallback(t, backend), pngPolicy())
+	ctx := context.Background()
+	data := testPNG(t)
+
+	first, err := svc.UploadStream(ctx, nil, bytes.NewReader(data), int64(len(data)), "", "照片.png")
+	if err != nil {
+		t.Fatalf("UploadStream: %v", err)
+	}
+	if first.Width != 8 || first.Height != 8 {
+		t.Fatalf("dimensions = %dx%d, want 8x8", first.Width, first.Height)
+	}
+	if first.OriginalName != "照片.png" {
+		t.Fatalf("original_name = %q", first.OriginalName)
+	}
+	if first.Hash != contentHashForTest(data) {
+		t.Fatalf("hash = %q", first.Hash)
+	}
+	if len(backend.objects) != 1 {
+		t.Fatalf("stored objects = %d, want 1", len(backend.objects))
+	}
+
+	// 同一所有者的重复内容应复用记录，并删除刚写入的重复对象。
+	second, err := svc.UploadStream(ctx, nil, bytes.NewReader(data), int64(len(data)), "", "again.png")
+	if err != nil {
+		t.Fatalf("second UploadStream: %v", err)
+	}
+	if second.ID != first.ID || second.Key != first.Key {
+		t.Fatalf("expected dedup, got %s/%s and %s/%s", first.ID, first.Key, second.ID, second.Key)
+	}
+	if len(backend.objects) != 1 {
+		t.Fatalf("stored objects = %d after dedup, want 1", len(backend.objects))
+	}
+}
+
+func TestUploadStreamRejectsEmptyAndOversized(t *testing.T) {
+	repo := newRepo(t)
+	svc := service.NewUploadService(repo, managerWithFallback(t, newFakeStorage()), pngPolicy())
+	ctx := context.Background()
+
+	if _, err := svc.UploadStream(ctx, nil, bytes.NewReader(nil), 0, "", "empty.png"); err == nil {
+		t.Fatal("expected an error for a zero-size upload")
+	}
+	data := testPNG(t)
+	if _, err := svc.UploadStream(ctx, nil, bytes.NewReader(data), int64(len(data)), "", "big.png"); err != nil {
+		// 正常大小应成功，作为对照。
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// 声明超出策略上限的大小应被拒绝。
+	if _, err := svc.UploadStream(ctx, nil, bytes.NewReader(data), 1<<21, "", "big.png"); !errors.Is(err, service.ErrFileTooLarge) {
+		t.Fatalf("err = %v, want ErrFileTooLarge", err)
+	}
+}
+
 func TestUploadRenamesAndRecordsOriginalNameAndHash(t *testing.T) {
 	repo := newRepo(t)
 	svc := service.NewUploadService(repo, managerWithFallback(t, newFakeStorage()), pngPolicy())

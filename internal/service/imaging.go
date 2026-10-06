@@ -23,11 +23,15 @@ var ErrProcessingFailed = errors.New("service: image processing failed")
 // ErrProcessingUnsupported 在处理功能被禁用时返回。
 var ErrProcessingUnsupported = errors.New("service: image processing is disabled")
 
-// maxRenderSourceBytes 限定了为应用变换而读取的已存储对象的大小上限。
-const maxRenderSourceBytes = 64 << 20
+// defaultMaxRenderSourceBytes 限定了为应用变换而读取的已存储对象的大小上限。
+const defaultMaxRenderSourceBytes = 64 << 20
 
-// maxDecodePixels 限定变换时可接受的解码像素数量上限，以防范解压缩炸弹。
-const maxDecodePixels = 40_000_000
+// defaultMaxDecodePixels 限定变换时可接受的解码像素数量上限，以防范解压缩
+// 炸弹并约束瞬时内存。它可由配置覆盖。
+const defaultMaxDecodePixels = 16_000_000
+
+// renderMemoryUnit 是渲染内存预算的计量单位（1 MiB）。
+const renderMemoryUnit = 1 << 20
 
 // TransformRequest 是一个原始的、未经校验的变换请求。
 type TransformRequest struct {
@@ -94,6 +98,11 @@ type ImagingService struct {
 	cache *renderCache
 	// sem 限制同时进行的渲染数量，防止并发解码造成内存尖峰。
 	sem chan struct{}
+	// mem 按字节对并发渲染施加总内存预算，避免多个大图同时解码耗尽内存。
+	mem *byteLimiter
+	// maxSourceBytes 与 maxDecodePixels 约束单次渲染读取与解码的规模。
+	maxSourceBytes  int64
+	maxDecodePixels int64
 	// policyMu 保护 policy/allowed，使其可在运行时热替换。
 	policyMu sync.RWMutex
 }
@@ -104,7 +113,14 @@ func NewImagingService(manager *storage.Manager, processor imaging.Processor, po
 	for _, f := range policy.AllowedFormats {
 		allowed[f] = struct{}{}
 	}
-	return &ImagingService{manager: manager, processor: processor, policy: policy, allowed: allowed}
+	return &ImagingService{
+		manager:         manager,
+		processor:       processor,
+		policy:          policy,
+		allowed:         allowed,
+		maxSourceBytes:  defaultMaxRenderSourceBytes,
+		maxDecodePixels: defaultMaxDecodePixels,
+	}
 }
 
 // SetRenderCache 启用派生图缓存，容量以字节计（<=0 表示禁用）。
@@ -116,6 +132,26 @@ func (s *ImagingService) SetRenderCache(maxBytes int64) {
 func (s *ImagingService) SetMaxConcurrency(n int) {
 	if n > 0 {
 		s.sem = make(chan struct{}, n)
+	}
+}
+
+// SetRenderMemoryBudget 设置并发渲染的总内存预算（字节）。渲染按其预估内存
+// 占用加权占用该预算；budgetBytes<=0 表示不限制。
+func (s *ImagingService) SetRenderMemoryBudget(budgetBytes int64) {
+	s.mem = newByteLimiter(budgetBytes, renderMemoryUnit)
+}
+
+// SetMaxDecodePixels 覆盖单张变换可解码的像素上限；n<=0 时保持内置默认值。
+func (s *ImagingService) SetMaxDecodePixels(n int) {
+	if n > 0 {
+		s.maxDecodePixels = int64(n)
+	}
+}
+
+// SetMaxRenderSourceBytes 覆盖为变换而读取的源对象大小上限；n<=0 时保持默认。
+func (s *ImagingService) SetMaxRenderSourceBytes(n int64) {
+	if n > 0 {
+		s.maxSourceBytes = n
 	}
 }
 
@@ -303,15 +339,23 @@ func (s *ImagingService) Render(ctx context.Context, backend storage.Storage, ke
 	defer func() {
 		_ = object.Close()
 	}()
-	src, err := io.ReadAll(io.LimitReader(object, maxRenderSourceBytes))
+	src, err := io.ReadAll(io.LimitReader(object, s.maxSourceBytes))
 	if err != nil {
 		return nil, fmt.Errorf("render: read object: %w", err)
 	}
-	if info, infoErr := s.processor.Info(src); infoErr == nil {
-		if info.Width > 0 && info.Height > 0 && int64(info.Width)*int64(info.Height) > maxDecodePixels {
+	pixels := 0
+	if info, infoErr := s.processor.Info(src); infoErr == nil && info.Width > 0 && info.Height > 0 {
+		pixels = info.Width * info.Height
+		if int64(pixels) > s.maxDecodePixels {
 			return nil, fmt.Errorf("%w: source image is too large to process", ErrInvalidInput)
 		}
 	}
+	// 按预估内存占用申请预算，避免多个大图同时解码耗尽进程内存。
+	estimate := renderMemoryEstimate(int64(len(src)), pixels)
+	if err := s.mem.Acquire(ctx, estimate); err != nil {
+		return nil, err
+	}
+	defer s.mem.Release(estimate)
 
 	result, err := s.processor.Process(src, opts)
 	if err != nil {
@@ -326,4 +370,13 @@ func (s *ImagingService) Render(ctx context.Context, backend storage.Storage, ke
 	}
 	s.cache.Put(cacheKey, &result)
 	return &result, nil
+}
+
+// renderMemoryEstimate 估算一次渲染的瞬时内存占用：源字节 + 解码后的位图
+// （按每像素 4 字节的 RGBA 计）。无法取得像素数时按源字节的 3 倍保守估计。
+func renderMemoryEstimate(sourceBytes int64, pixels int) int64 {
+	if pixels > 0 {
+		return sourceBytes + int64(pixels)*4
+	}
+	return sourceBytes * 3
 }

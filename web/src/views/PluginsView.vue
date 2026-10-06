@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, type UploadFile } from 'element-plus'
 
 import {
@@ -37,6 +38,9 @@ const uploadSig = ref('')
 
 const configOpen = ref(false)
 const configName = ref('')
+
+const route = useRoute()
+const router = useRouter()
 
 /** 载入已安装插件及其状态。 */
 async function loadInstalled(): Promise<void> {
@@ -190,8 +194,27 @@ function openConfig(row: PluginStatus): void {
   configOpen.value = true
 }
 
-onMounted(() => {
-  void loadInstalled()
+/** 关闭配置对话框后清理深链参数，避免刷新时重复弹出。 */
+function clearConfigQuery(): void {
+  if (!route.query.config) return
+  const query = { ...route.query }
+  delete query.config
+  void router.replace({ query })
+}
+
+onMounted(async () => {
+  await loadInstalled()
+  // 支持从其它页面深链打开某个插件的配置弹窗（?config=<name>）。
+  const target = String(route.query.config ?? '').trim()
+  if (target) {
+    const row = installed.value.find((p) => p.name === target)
+    if (row) {
+      openConfig(row)
+    } else {
+      ElMessage.warning(`插件「${target}」未安装`)
+      clearConfigQuery()
+    }
+  }
   void loadRegistry()
 })
 </script>
@@ -354,7 +377,7 @@ onMounted(() => {
       </div>
     </article>
 
-    <el-dialog v-model="configOpen" :title="`配置插件：${configName}`" width="640px">
+    <el-dialog v-model="configOpen" :title="`配置插件：${configName}`" width="640px" @closed="clearConfigQuery">
       <PluginConfigForm v-if="configOpen" :name="configName" @saved="loadInstalled" />
     </el-dialog>
   </div>

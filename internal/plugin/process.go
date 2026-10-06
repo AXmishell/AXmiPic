@@ -177,6 +177,10 @@ func (p *processProvider) readLoop(stdout io.Reader) {
 // Descriptor 返回插件自描述。
 func (p *processProvider) Descriptor() Descriptor { return p.desc }
 
+// MemoryBytes 报告插件进程的内存占用。进程插件的内存由操作系统管理，宿主
+// 无法直接读取，返回 0 表示未知。
+func (p *processProvider) MemoryBytes() uint64 { return 0 }
+
 // describe 调用插件的 describe 方法。
 func (p *processProvider) describe(ctx context.Context) (Descriptor, error) {
 	var desc Descriptor

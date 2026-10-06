@@ -335,3 +335,82 @@ func TestWASMPluginReloadAndUnload(t *testing.T) {
 		t.Fatal("plugin still registered after unload")
 	}
 }
+
+func TestWASMPluginLazyLoadAndSuspend(t *testing.T) {
+	requireExample(t)
+	dir := installExample(t, allowLocalManifest)
+	mgr := newTestManager(t, dir)
+	ctx := context.Background()
+
+	// 启动只登记不实例化，但保留启用意图（enabled=true）。
+	if err := mgr.LoadFiltered(ctx, func(string) bool { return false }, func(string) bool { return true }); err != nil {
+		t.Fatalf("load filtered: %v", err)
+	}
+	infos := mgr.Installed()
+	if len(infos) != 1 || infos[0].Loaded || !infos[0].Enabled {
+		t.Fatalf("expected enabled-but-not-loaded standby: %+v", infos)
+	}
+	if _, ok := mgr.Registry().Lookup(CategoryNotifySMS, "smsbao"); ok {
+		t.Fatal("standby plugin should not be registered")
+	}
+
+	// Enable 是幂等的：不触发实例化。
+	if _, err := mgr.Enable(ctx, "smsbao"); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	if _, ok := mgr.Registry().Lookup(CategoryNotifySMS, "smsbao"); ok {
+		t.Fatal("enable must not instantiate the plugin")
+	}
+	if infos := mgr.Installed(); !infos[0].Enabled || infos[0].Loaded {
+		t.Fatalf("expected standby after enable: %+v", infos[0])
+	}
+
+	// 首次使用才按需加载并注册。
+	if _, err := mgr.Acquire(ctx, "smsbao"); err != nil {
+		t.Fatalf("acquire: %v", err)
+	}
+	if _, ok := mgr.Registry().Lookup(CategoryNotifySMS, "smsbao"); !ok {
+		t.Fatal("plugin should be registered after first use")
+	}
+	if infos := mgr.Installed(); infos[0].MemoryBytes == 0 {
+		t.Fatal("loaded WASM plugin should report non-zero memory")
+	}
+
+	// 空闲卸载：注销并释放，但保持逻辑启用。
+	if err := mgr.Suspend(ctx, "smsbao"); err != nil {
+		t.Fatalf("suspend: %v", err)
+	}
+	if _, ok := mgr.Registry().Lookup(CategoryNotifySMS, "smsbao"); ok {
+		t.Fatal("suspended plugin should be unregistered")
+	}
+	if !mgr.Enabled("smsbao") {
+		t.Fatal("suspend must keep the plugin enabled")
+	}
+
+	// 再次使用时应按需重载。
+	if _, err := mgr.Acquire(ctx, "smsbao"); err != nil {
+		t.Fatalf("acquire after suspend: %v", err)
+	}
+	if _, ok := mgr.Registry().Lookup(CategoryNotifySMS, "smsbao"); !ok {
+		t.Fatal("plugin should be re-registered after acquire")
+	}
+}
+
+func TestWASMPluginSuspendIdle(t *testing.T) {
+	requireExample(t)
+	dir := installExample(t, allowLocalManifest)
+	mgr := newTestManager(t, dir)
+	ctx := context.Background()
+	if err := mgr.Load(ctx); err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	time.Sleep(15 * time.Millisecond)
+	names := mgr.SuspendIdle(ctx, 5*time.Millisecond)
+	if len(names) != 1 || names[0] != "smsbao" {
+		t.Fatalf("expected smsbao suspended, got %v", names)
+	}
+	infos := mgr.Installed()
+	if len(infos) != 1 || !infos[0].Enabled || infos[0].Loaded {
+		t.Fatalf("expected enabled-but-unloaded: %+v", infos)
+	}
+}

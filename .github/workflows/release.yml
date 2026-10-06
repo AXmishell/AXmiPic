@@ -89,8 +89,8 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: true
 
-      # 先清掉仓库里已提交的旧产物，避免与新构建的资源哈希文件混在一起。
-      - name: 清理已提交的前端产物
+      # 清掉检出目录里的前端占位/旧产物，避免与新构建的资源哈希文件混在一起。
+      - name: 清理前端产物
         run: rm -rf internal/webui/dist
 
       # 前端只构建一次，各平台任务复用同一份产物。

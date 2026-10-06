@@ -20,6 +20,7 @@ server:
   read_timeout_sec: 30
   write_timeout_sec: 30
   shutdown_timeout_sec: 10
+  pprof_enabled: false                   # 挂载受管理员鉴权保护的 pprof（/api/v1/admin/pprof/）
 ```
 
 > `trust_proxy` 为 `true` 时才会解析 `X-Forwarded-For` / `X-Real-IP`。直连部署请保持 `false`，否则客户端可伪造来源 IP 绕过限流。
@@ -41,6 +42,11 @@ database:
   #   postgres://axmipic:secret@127.0.0.1:5432/axmipic?sslmode=disable
   # mysql 使用 go-sql-driver 的 DSN：
   #   axmipic:secret@tcp(127.0.0.1:3306)/axmipic
+  # 连接池上限（默认 25 / 5 / 30 分钟）。0 表示不限制（max_idle_conns 为 0
+  # 表示不保留空闲连接）。
+  max_open_conns: 25
+  max_idle_conns: 5
+  conn_max_lifetime_minutes: 30
 ```
 
 SQLite 会自动启用 `busy_timeout` 与 WAL 模式。
@@ -95,7 +101,50 @@ processing:
   max_height: 4096
   default_quality: 82
   allowed_formats: ["jpeg", "png", "gif", "webp", "avif"]
+  cache_mb: 64                          # 派生图进程内缓存（MiB），0 表示禁用
+  max_concurrency: 0                    # 并发渲染数，0 表示按 CPU 核数
+  max_decode_pixels: 16000000           # 单张可解码像素上限（防解压炸弹 / 控内存）
+  max_render_memory_mb: 256             # 并发渲染的总内存预算（MiB）
 ```
+
+## 运行时与内存
+
+图片解码是瞬时内存的主要来源。以下选项用于约束峰值并让 GC 更积极地归还内存：
+
+```yaml
+processing:
+  # 降低 max_concurrency、max_decode_pixels 与 max_render_memory_mb 可显著
+  # 降低峰值内存；被拒绝的超大原图会返回错误而不是拖垮进程。
+  max_concurrency: 2
+  max_decode_pixels: 16000000
+  max_render_memory_mb: 256
+
+runtime:
+  # 映射到 GOMEMLIMIT：进程软内存上限（MiB）。0 表示自动：若检测到容器
+  # cgroup 内存限额则取其 90%，否则保持 Go 默认（不限制）。容器中建议显式
+  # 设为容器限额的 60~75%。
+  memory_limit_mb: 0
+  # 映射到 GOGC：50 更省内存、更耗 CPU；0 保持 Go 默认（100）。
+  gc_percent: 0
+
+plugins:
+  # 每个 WASM 插件线性内存上限（MiB）；0 使用内置默认 64。
+  memory_limit_mb: 64
+  # 空闲自动卸载（分钟）：已启用但超过该时长未被调用的插件会被卸载以释放
+  # 内存，下次调用时透明重载。0 表示关闭。
+  idle_unload_minutes: 0
+  # 启动加载模式：lazy（默认）仅登记不实例化、首次使用才加载；eager 启动即
+  # 实例化所有已启用插件。
+  startup: "lazy"
+  # 无论启动模式都立即预热的插件名（例如活跃的短信渠道），避免首次调用冷启动。
+  preload: []
+```
+
+> 插件启用/暂停与空闲卸载都是动态的，无需重启：暂停会立刻释放其 wazero 运行时，空闲卸载在下次调用时按需重建。启动时只实例化「启用」的插件，被暂停的插件不再在启动瞬间占用内存。后台「插件」页可查看每个插件的启用/加载状态；`GET /api/v1/admin/plugins/installed` 的 `memory_bytes` 字段显示已加载 WASM 插件的线性内存占用。
+
+> 也可以用标准环境变量 `GOMEMLIMIT` / `GOGC` 覆盖，两者等价。生产环境处理大图时，优先使用 `-tags libvips` 构建（内存与 CPU 都优于纯 Go 处理器）。
+
+开启 `server.pprof_enabled` 后，可通过管理端 `GET /api/v1/admin/pprof/`（需管理员令牌）获取 heap/goroutine/profile 等剖析数据；排查完成请及时关闭。
 
 ## 认证与限流
 

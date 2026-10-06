@@ -22,6 +22,9 @@ server:
   read_timeout_sec: 30
   write_timeout_sec: 30
   shutdown_timeout_sec: 10
+  # 挂载受管理员鉴权保护的 net/http/pprof 端点（/api/v1/admin/pprof/），
+  # 用于排查内存/CPU/协程问题。默认关闭，仅在需要时临时开启。
+  pprof_enabled: false
 
 database:
   # driver: sqlite | postgres | mysql (MariaDB 兼容)
@@ -33,6 +36,12 @@ database:
   #   axmipic:secret@tcp(127.0.0.1:3306)/axmipic
   #   (parseTime=true / charset=utf8mb4 / loc=Local 会自动补齐)
   dsn: "./data/axmipic.db"
+  # 连接池上限，避免高并发下无界地打开连接与缓冲。
+  # max_open_conns: 0 表示不限制；max_idle_conns: 0 表示不保留空闲连接；
+  # conn_max_lifetime_minutes: 0 表示不限制连接存活时间。
+  max_open_conns: 25
+  max_idle_conns: 5
+  conn_max_lifetime_minutes: 30
 
 storage:
   # driver: local | s3 | qiniu
@@ -95,9 +104,17 @@ processing:
   watermark_text: ""
   # In-process cache for derived images (thumbnails/transforms) in MiB.
   # 0 disables the cache.
-  cache_mb: 128
+  cache_mb: 64
   # Maximum number of concurrent image renders. 0 derives it from CPU count.
   max_concurrency: 0
+  # Maximum decoded pixels per transform (decompression-bomb guard). Larger
+  # sources are rejected. Lower it to bound peak memory; raise it to process
+  # very large originals. 0 uses the built-in default (16 MP).
+  max_decode_pixels: 16000000
+  # Total in-flight render memory budget in MiB. Renders are weighted by their
+  # estimated memory (decoded bitmap + source bytes) against this budget.
+  # 0 uses the built-in default (256 MiB).
+  max_render_memory_mb: 256
 
 maintenance:
   # Daily reconciliation of stored objects against the database: objects that
@@ -265,6 +282,32 @@ plugins:
   index_url: ""
   # Maximum uncompressed size of an installed plugin archive (MiB).
   max_archive_mb: 64
+  # Per-WASM-plugin linear-memory cap (MiB). Lower it to bound a runaway
+  # plugin; 0 uses the built-in default (64 MiB).
+  memory_limit_mb: 64
+  # Idle auto-unload: unload a loaded plugin after this many minutes without
+  # use, releasing its memory; it is transparently reloaded on next use.
+  # 0 disables idle unloading.
+  idle_unload_minutes: 0
+  # Startup loading mode:
+  #   lazy  (default) register plugins without instantiating them; load on first use
+  #   eager instantiate all enabled plugins at startup
+  startup: "lazy"
+  # Plugins to preload at startup regardless of `startup` (e.g. the active SMS
+  # channel), so their first call avoids cold-start latency.
+  preload: []
+
+# Go runtime and process memory behavior. Setting memory_limit_mb maps to
+# GOMEMLIMIT and makes the GC reclaim more aggressively near the cap, which
+# keeps RSS from staying high after image-processing spikes. You can also set
+# these via the standard GOMEMLIMIT / GOGC environment variables instead.
+runtime:
+  # Soft process memory limit in MiB, mapped to GOMEMLIMIT. 0 auto-detects a
+  # container cgroup limit (uses 90% of it) and otherwise leaves Go's default
+  # (unlimited). In containers, set this explicitly to 60~75% of the limit.
+  memory_limit_mb: 0
+  # Maps to GOGC; 50 collects sooner (less memory, more CPU); 0 keeps Go's 100.
+  gc_percent: 0
 
 logging:
   level: "info"

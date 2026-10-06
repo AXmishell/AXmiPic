@@ -20,7 +20,7 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-# 使用刚构建的前端产物覆盖仓库中已提交的版本，确保镜像始终最新。
+# 用刚构建的前端产物填充 internal/webui/dist（该产物不提交到仓库）。
 COPY --from=web /src/internal/webui/dist ./internal/webui/dist
 RUN mkdir -p /out/data \
  && CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \

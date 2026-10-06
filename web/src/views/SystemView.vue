@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { DataLine, Monitor, Odometer, Refresh, SetUp } from '@element-plus/icons-vue'
 
@@ -17,6 +18,7 @@ import {
   getSettingDomain,
   getSMTPConfig,
   listPaymentGateways,
+  listInstalledPlugins,
   listPlugins,
   previewClientIP,
   sendTestNotify,
@@ -35,6 +37,7 @@ import {
   type PaymentSettings,
   type PaymentSettingsInput,
   type PluginDescriptor,
+  type PluginStatus,
   type ProcessInfo,
   type RuntimeInfo,
   type SecuritySettings,
@@ -48,7 +51,6 @@ import { toApiError } from '@/api/client'
 import type { AdminStats } from '@/api/types'
 import ErrorState from '@/components/ErrorState.vue'
 import PageHeader from '@/components/PageHeader.vue'
-import PluginConfigForm from '@/components/PluginConfigForm.vue'
 import { formatBytes, formatNumber } from '@/utils/format'
 
 const loading = ref(false)
@@ -456,6 +458,41 @@ const smsChannelOptions = computed(() => {
   }
   return opts
 })
+
+const router = useRouter()
+// 已安装插件的完整状态（启用/配置/三态），用于在短信渠道页展示就绪情况。
+const installedPlugins = ref<PluginStatus[]>([])
+
+/** 当前选中的插件渠道对应的安装状态。 */
+const selectedPlugin = computed<PluginStatus | undefined>(() =>
+  installedPlugins.value.find((p) => p.name === smsForm.channel),
+)
+
+/** 插件渠道就绪提示；非插件渠道返回 null。 */
+const pluginChannelNotice = computed<{ type: 'success' | 'warning' | 'error'; text: string } | null>(() => {
+  if (!isPluginChannel(smsForm.channel)) return null
+  const p = selectedPlugin.value
+  if (!p) return { type: 'error', text: `插件「${smsForm.channel}」未安装，请先到「插件市场」安装。` }
+  if (!p.enabled) return { type: 'warning', text: `插件「${p.name}」已暂停，请先在「插件市场」启用。` }
+  if (!p.configured) {
+    return { type: 'warning', text: `插件「${p.name}」尚未配置，请到「插件市场」填写配置后再启用短信。` }
+  }
+  return { type: 'success', text: `插件「${p.name}」已就绪（${pluginStateLabel(p)}）。` }
+})
+
+/** 插件三态的可读标签。 */
+function pluginStateLabel(p?: PluginStatus): string {
+  if (!p) return '未安装'
+  if (!p.enabled) return '已暂停'
+  if (p.state === 'active') return '运行中'
+  if (p.state === 'standby') return '待激活'
+  return '已启用'
+}
+
+/** 跳转到插件市场并打开对应插件的配置弹窗。 */
+function goPluginConfig(name: string): void {
+  void router.push({ path: '/admin/plugins', query: { config: name } })
+}
 const limitsForm = reactive<LimitsSettings>({
   upload_per_minute: 30,
   upload_burst: 5,
@@ -550,16 +587,35 @@ async function saveDomain<T>(
   domain: SettingDomain,
   value: unknown,
   apply: (v: T) => void,
-): Promise<void> {
+): Promise<boolean> {
   savingDomain.value = domain
   try {
     const updated = await updateSettingDomain<T>(domain, value)
     apply(updated)
     ElMessage.success('已保存')
+    return true
   } catch (error) {
     ElMessage.error(toApiError(error).message)
+    return false
   } finally {
     savingDomain.value = ''
+  }
+}
+
+/** 保存短信设置，并刷新实际生效渠道；若插件未就绪而回退到日志则明确提示。 */
+async function saveSMS(): Promise<void> {
+  const ok = await saveDomain('sms', { ...smsForm }, fillSMS)
+  if (!ok) return
+  try {
+    channels.value = await getNotifyChannels()
+  } catch {
+    // 忽略：仅影响提示，不影响保存结果。
+  }
+  const want = smsForm.channel
+  if (smsForm.enabled && isPluginChannel(want) && channels.value.sms !== want) {
+    ElMessage.warning(
+      `插件「${want}」未就绪，短信渠道已回退为「${channels.value.sms || 'log'}」；请到「插件市场」启用并配置。`,
+    )
   }
 }
 
@@ -588,6 +644,7 @@ async function load(): Promise<void> {
       siteData,
       clientIPData,
       pluginList,
+      installedList,
     ] = await Promise.all([
       fetchStats(),
       getRuntimeInfo(),
@@ -609,6 +666,7 @@ async function load(): Promise<void> {
       getSettingDomain<SiteSettings>('site').catch(() => null),
       getSettingDomain<ClientIPSettings>('client_ip').catch(() => null),
       listPlugins('notify.sms').catch(() => ({ items: [] })),
+      listInstalledPlugins().catch(() => ({ items: [] })),
     ])
     stats.value = statsData
     runtime.value = runtimeData
@@ -640,6 +698,7 @@ async function load(): Promise<void> {
     if (imagingData) fillImaging(imagingData)
     if (securityData) fillSecurity(securityData)
     smsPlugins.value = pluginList?.items ?? []
+    installedPlugins.value = installedList?.items ?? []
     if (smsData) fillSMS(smsData)
     if (limitsData) fillLimits(limitsData)
     if (maintenanceData) fillMaintenance(maintenanceData)
@@ -964,18 +1023,35 @@ onBeforeUnmount(() => {
                 </el-form-item>
               </div>
 
-              <PluginConfigForm
-                v-if="isPluginChannel(smsForm.channel)"
-                :name="smsForm.channel"
-                style="margin-bottom: 12px"
-              />
+              <template v-if="isPluginChannel(smsForm.channel)">
+                <el-form-item label="插件状态">
+                  <el-tag size="small" :type="selectedPlugin?.enabled ? 'success' : 'info'" effect="plain">
+                    {{ pluginStateLabel(selectedPlugin) }}
+                  </el-tag>
+                  <el-tag
+                    size="small"
+                    :type="selectedPlugin?.configured ? 'warning' : 'danger'"
+                    effect="plain"
+                    style="margin-left: 8px"
+                  >
+                    {{ selectedPlugin?.configured ? '已配置' : '未配置' }}
+                  </el-tag>
+                  <el-button link type="primary" style="margin-left: 8px" @click="goPluginConfig(smsForm.channel)">
+                    去插件市场配置
+                  </el-button>
+                </el-form-item>
+                <el-alert
+                  v-if="pluginChannelNotice"
+                  :title="pluginChannelNotice.text"
+                  :type="pluginChannelNotice.type"
+                  :closable="false"
+                  show-icon
+                  style="margin-bottom: 12px"
+                />
+              </template>
 
               <div class="smtp-actions">
-                <el-button
-                  type="primary"
-                  :loading="savingDomain === 'sms'"
-                  @click="saveDomain('sms', { ...smsForm }, fillSMS)"
-                >
+                <el-button type="primary" :loading="savingDomain === 'sms'" @click="saveSMS">
                   保存并应用
                 </el-button>
                 <span v-if="isPluginChannel(smsForm.channel)" class="smtp-form__hint">

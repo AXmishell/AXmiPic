@@ -520,7 +520,13 @@ export function reloadPlugin(name: string): Promise<PluginConfig> {
 /** 插件安装与启用状态。 */
 export interface PluginStatus extends PluginDescriptor {
   runtime: string
+  /** 三态：disabled（暂停）/ standby（已启用待激活）/ active（已加载）。 */
+  state: 'disabled' | 'standby' | 'active'
   enabled: boolean
+  loaded: boolean
+  memory_bytes?: number
+  last_used?: number
+  last_error?: string
   configured: boolean
 }
 

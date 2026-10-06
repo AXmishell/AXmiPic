@@ -15,6 +15,11 @@ docs/.vitepress/cache/
 # Local configuration may contain secrets (DB password, jwt_secret).
 configs/config.yaml
 
+# 前端构建产物：由 `make web` / Docker / CI 在构建时生成，不提交（保留占位文件以
+# 保证仅构建后端时 go:embed 仍可编译）。
+internal/webui/dist/*
+!internal/webui/dist/.gitkeep
+
 # Auto-generated master key (when jwt_secret/encryption_key are unset).
 .axmipic-key
 **/.axmipic-key

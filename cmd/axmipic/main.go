@@ -13,6 +13,8 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -61,6 +63,7 @@ func run() error {
 
 	logger := newLogger(cfg.Logging.Level)
 	slog.SetDefault(logger)
+	applyRuntimeLimits(cfg.Runtime, logger)
 	logger.Info("AXmiPic starting",
 		slog.String("version", version),
 		slog.String("platform", runtime.GOOS+"/"+runtime.GOARCH),
@@ -87,6 +90,10 @@ func run() error {
 	repo, err := store.Open(cfg.Database.Driver, cfg.Database.DSN)
 	if err != nil {
 		return err
+	}
+	if err := repo.SetPool(cfg.Database.MaxOpenConns, cfg.Database.MaxIdleConns,
+		time.Duration(cfg.Database.ConnMaxLifetimeMinutes)*time.Minute); err != nil {
+		logger.Warn("failed to configure database connection pool", slog.Any("error", err))
 	}
 	defer func() {
 		if closeErr := repo.Close(); closeErr != nil {
@@ -167,6 +174,8 @@ func run() error {
 		renderConcurrency = runtime.NumCPU()
 	}
 	imagingSvc.SetMaxConcurrency(renderConcurrency)
+	imagingSvc.SetMaxDecodePixels(cfg.Processing.MaxDecodePixels)
+	imagingSvc.SetRenderMemoryBudget(int64(cfg.Processing.MaxRenderMemoryMB) << 20)
 
 	issuer := auth.NewSessionIssuer(jwtKey, time.Duration(cfg.Auth.SessionTTLHours)*time.Hour)
 	accounts := service.NewAccountService(repo, issuer, cfg.Auth.AllowRegistration, int64(cfg.Auth.DefaultQuotaMB)<<20)
@@ -289,6 +298,7 @@ func run() error {
 			Logger:           logger,
 			HTTPTimeout:      time.Duration(cfg.Plugins.HTTPTimeoutSec) * time.Second,
 			MaxHTTPBody:      int64(cfg.Plugins.MaxHTTPBodyKB) << 10,
+			MemoryLimitPages: pluginMemoryLimitPages(cfg.Plugins.MemoryLimitMB),
 			TrustedKeys:      cfg.Plugins.TrustedKeys,
 			RequireSignature: cfg.Plugins.RequireSignature,
 			IndexURL:         cfg.Plugins.IndexURL,
@@ -304,7 +314,7 @@ func run() error {
 	}
 	pluginSvc = service.NewPluginService(pluginMgr, repo, cipher, logger)
 	bootCtx, cancelBoot := context.WithTimeout(context.Background(), 30*time.Second)
-	if err := pluginSvc.Bootstrap(bootCtx); err != nil {
+	if err := pluginSvc.Bootstrap(bootCtx, cfg.Plugins.Startup, cfg.Plugins.Preload); err != nil {
 		logger.Warn("failed to bootstrap plugins", slog.Any("error", err))
 	}
 	cancelBoot()
@@ -467,6 +477,7 @@ func run() error {
 		ShareLimiter:     auth.NewRateLimiter(cfg.Limits.SharePerMinute, cfg.Limits.ShareBurst),
 		ClientIPResolver: clientIPResolver,
 		MaxUploadMB:      cfg.Upload.MaxSizeMB,
+		Pprof:            cfg.Server.PprofEnabled,
 		Static:           webui.Handler(),
 		Logger:           logger,
 	})
@@ -479,6 +490,9 @@ func run() error {
 	go runExpiredPlanJanitor(ctx, billingSvc, logger)
 	go runNotifyLogJanitor(ctx, repo, logger)
 	go runGuestJanitor(ctx, repo, logger)
+	if cfg.Plugins.IdleUnloadMinutes > 0 {
+		go runPluginIdleJanitor(ctx, pluginSvc, time.Duration(cfg.Plugins.IdleUnloadMinutes)*time.Minute, logger)
+	}
 	if cfg.Maintenance.OrphanCleanup {
 		reconciler := service.NewOrphanReconciler(
 			repo, manager,
@@ -801,6 +815,29 @@ func runGuestJanitor(ctx context.Context, repo *store.Repository, logger *slog.L
 	}
 }
 
+// runPluginIdleJanitor 定期卸载空闲超过 idle 的已启用插件以回收内存；插件在
+// 下次被调用时会按需重新加载。它运行直到 ctx 被取消。
+func runPluginIdleJanitor(ctx context.Context, svc *service.PluginService, idle time.Duration, logger *slog.Logger) {
+	interval := idle / 2
+	if interval < time.Minute {
+		interval = time.Minute
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			reclaimCtx, cancel := context.WithTimeout(ctx, time.Minute)
+			if n := svc.SuspendIdle(reclaimCtx, idle); n > 0 {
+				logger.Info("suspended idle plugins", slog.Int("count", n))
+			}
+			cancel()
+		}
+	}
+}
+
 // runOrphanJanitor 定期对账存储对象与数据库记录，删除存储中存在、但数据库无
 // 对应记录且超过保留期的孤儿对象。它运行直到 ctx 被取消。
 func runOrphanJanitor(ctx context.Context, reconciler *service.OrphanReconciler, interval time.Duration, logger *slog.Logger) {
@@ -898,7 +935,9 @@ func registerSettingDomains(
 
 	settingsSvc.RegisterDomain(service.NewSettingDomain(repo, "sms",
 		service.SMSSettings{Enabled: cfg.SMS.Enabled, Channel: cfg.SMS.Channel, Provider: cfg.SMS.Provider, Endpoint: cfg.SMS.Endpoint, Method: cfg.SMS.Method},
-		service.ValidateSMSSettings,
+		func(v service.SMSSettings) error {
+			return service.ValidateSMSSettingsWithPlugins(v, pluginSvc)
+		},
 		func(v service.SMSSettings) {
 			notifySvc.SetSMS(service.BuildSMSSender(context.Background(), v, pluginSvc, logger))
 		},
@@ -976,4 +1015,60 @@ func newLogger(level string) *slog.Logger {
 		lvl = slog.LevelInfo
 	}
 	return slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: lvl}))
+}
+
+// applyRuntimeLimits 应用 Go 运行时内存配置。GOMEMLIMIT/GOGC 能让 GC 在接近
+// 进程内存上限时更积极地回收，缓解图片处理洪峰过后 RSS 长期偏高的问题。
+// 未显式配置内存上限时，会尝试采用容器 cgroup 限额的 90%。
+func applyRuntimeLimits(cfg config.RuntimeConfig, logger *slog.Logger) {
+	limit := int64(cfg.MemoryLimitMB) << 20
+	if limit <= 0 {
+		if detected, ok := containerMemoryLimit(); ok {
+			limit = detected / 10 * 9
+			logger.Info("derived GOMEMLIMIT from container memory limit",
+				slog.Int64("container_bytes", detected),
+				slog.Int64("gomemlimit_bytes", limit))
+		}
+	}
+	if limit > 0 {
+		debug.SetMemoryLimit(limit)
+		logger.Info("runtime memory limit applied", slog.Int64("bytes", limit))
+	}
+	if cfg.GCPercent > 0 {
+		debug.SetGCPercent(cfg.GCPercent)
+		logger.Info("runtime GC percent applied", slog.Int("gc_percent", cfg.GCPercent))
+	}
+}
+
+// containerMemoryLimit 尽力读取 cgroup v2/v1 的内存上限（字节）。无限制或读取
+// 失败时返回 false。
+func containerMemoryLimit() (int64, bool) {
+	paths := []string{
+		"/sys/fs/cgroup/memory.max",                   // cgroup v2
+		"/sys/fs/cgroup/memory/memory.limit_in_bytes", // cgroup v1
+	}
+	for _, p := range paths {
+		raw, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		value, err := strconv.ParseInt(strings.TrimSpace(string(raw)), 10, 64)
+		if err != nil {
+			continue // v2 的 "max" 等非数值文本。
+		}
+		// cgroup v1 的「无限制」是一个极大的哨兵值，合理上限不会接近 1<<60。
+		if value > 0 && value < 1<<60 {
+			return value, true
+		}
+	}
+	return 0, false
+}
+
+// pluginMemoryLimitPages 把 WASM 插件内存上限（MiB）换算为 64 KiB 页；0 表示
+// 沿用内置默认值（64 MiB）。
+func pluginMemoryLimitPages(mb int) uint32 {
+	if mb <= 0 {
+		return 0
+	}
+	return uint32(mb) * (1 << 20) / 65536
 }

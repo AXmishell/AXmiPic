@@ -180,8 +180,20 @@ func (p *wasmProvider) Invoke(ctx context.Context, op string, input []byte) ([]b
 	return out, nil
 }
 
-// Close 关闭插件运行时。
+// MemoryBytes 返回插件当前占用的 WASM 线性内存字节数。
+func (p *wasmProvider) MemoryBytes() uint64 {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.closed || p.module == nil {
+		return 0
+	}
+	return uint64(p.module.Memory().Size())
+}
+
+// Close 关闭插件运行时。它持有 mu，确保不会与在途的 Invoke/Configure 竞争。
 func (p *wasmProvider) Close(ctx context.Context) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	if p.closed {
 		return nil
 	}

@@ -1,11 +1,23 @@
-.PHONY: build run vet tidy test test-sdk sdk clean docs docs-serve plugin-example test-plugin
+.PHONY: build build-go web run vet tidy test test-sdk sdk clean docs docs-serve plugin-example test-plugin
 
 BINARY := bin/axmipic
 
-build:
+# 完整构建：先构建前端（产出到 internal/webui/dist），再编译内嵌它的后端二进制。
+build: web
 	go build -o $(BINARY) ./cmd/axmipic
 
-run:
+# 仅构建后端：使用已存在的 internal/webui/dist（无前端产物时内嵌占位文件，
+# 运行后网页返回 503，可在需要时再执行 `make web`）。适合无 Node 环境。
+build-go:
+	go build -o $(BINARY) ./cmd/axmipic
+
+# 构建前端单页应用，产物输出到 internal/webui/dist。Vite 会清空 outDir，因此
+# 构建后补回 .gitkeep 占位文件（保证仅构建后端时 go:embed 可编译且工作区干净）。
+web:
+	cd web && pnpm install --frozen-lockfile && pnpm build && touch ../internal/webui/dist/.gitkeep
+
+# 本地运行：先构建前端，再运行。
+run: web
 	go run ./cmd/axmipic -config configs/config.example.yaml
 
 vet:

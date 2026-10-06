@@ -213,13 +213,37 @@ type SMSSettings struct {
 	Method   string `json:"method"`
 }
 
-// ValidateSMSSettings 校验短信设置。
+// ValidateSMSSettings 校验短信设置的基本约束。
 func ValidateSMSSettings(v SMSSettings) error {
 	if !v.Enabled {
 		return nil
 	}
 	if strings.TrimSpace(v.Channel) == "" && strings.TrimSpace(v.Endpoint) == "" {
 		return fmt.Errorf("%w: sms.endpoint or sms.channel must not be empty when enabled", ErrSettingsConfig)
+	}
+	return nil
+}
+
+// ValidateSMSSettingsWithPlugins 在基本校验之外，进一步确认被选为渠道的插件
+// 已安装且已启用；暂停或未安装的插件会拒绝保存，避免静默回退到日志渠道。
+// 插件是否已填写配置交由管理端提示（部分字段可省略），不在此拦截。
+func ValidateSMSSettingsWithPlugins(v SMSSettings, pluginSvc *PluginService) error {
+	if err := ValidateSMSSettings(v); err != nil {
+		return err
+	}
+	channel := strings.TrimSpace(v.Channel)
+	if !v.Enabled || channel == "" || channel == "http" || channel == "log" {
+		return nil
+	}
+	if pluginSvc == nil {
+		return fmt.Errorf("%w: sms plugin %q is unavailable", ErrSettingsConfig, channel)
+	}
+	r := pluginSvc.Readiness(context.Background(), channel)
+	if !r.Installed {
+		return fmt.Errorf("%w: sms plugin %q is not installed", ErrSettingsConfig, channel)
+	}
+	if !r.Enabled {
+		return fmt.Errorf("%w: sms plugin %q is paused; enable it in the plugin marketplace", ErrSettingsConfig, channel)
 	}
 	return nil
 }

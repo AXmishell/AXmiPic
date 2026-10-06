@@ -46,15 +46,21 @@
 ### 环境要求
 
 - Go 1.26 或更高版本
-- （可选，仅重新构建前端时需要）Node.js 22+ 与 pnpm 9
+- Node.js 22+ 与 pnpm 9（构建前端需要；也可使用 Docker/CI 已内置前端产物的二进制）
 
-前端产物已内嵌进 `internal/webui/dist`，仅构建后端时无需 Node 环境。
+前端产物**不提交到仓库**，而是构建时生成到 `internal/webui/dist`：`make build` 会先构建前端再编译后端。若只想构建后端（无 Node 环境），可先准备一份 `internal/webui/dist`（例如 CI/Release 产物），再执行 `make build-go`。
 
 ### 构建与运行
 
 ```bash
-# 构建后端二进制（前端已内嵌）
-make build          # 产物位于 bin/axmipic
+# 完整构建（前端 + 后端），产物位于 bin/axmipic
+make build
+
+# 仅构建后端（复用已有的 internal/webui/dist；无前端时网页返回 503）
+# make build-go
+
+# 仅构建前端
+# make web
 
 # 使用示例配置运行
 cp configs/config.example.yaml configs/config.yaml
@@ -64,7 +70,7 @@ cp configs/config.example.yaml configs/config.yaml
 或直接运行：
 
 ```bash
-make run            # 等价于 go run ./cmd/axmipic -config configs/config.example.yaml
+make run            # 先构建前端，再 go run ./cmd/axmipic -config configs/config.example.yaml
 ```
 
 默认监听 `0.0.0.0:8080`，访问 `http://localhost:8080` 打开控制台。
