@@ -16,6 +16,7 @@ import { listAnnouncements } from '@/api/site'
 import { uploadImage } from '@/api/images'
 import { toApiError } from '@/api/client'
 import type { Announcement, ImageItem } from '@/api/types'
+import BrandMark from '@/components/BrandMark.vue'
 import CopyField from '@/components/CopyField.vue'
 import PlazaMasonry from '@/components/PlazaMasonry.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -119,15 +120,7 @@ onMounted(async () => {
     <header class="home__topbar">
       <router-link to="/" class="brand" aria-label="AXmiPic 首页">
         <span class="brand__mark" aria-hidden="true">
-          <svg viewBox="0 0 32 32" width="18" height="18">
-            <defs>
-              <linearGradient id="home-mark" x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0" stop-color="#828fff" />
-                <stop offset="1" stop-color="#5e6ad2" />
-              </linearGradient>
-            </defs>
-            <path d="M16 6.5 23.8 25.5h-4.05l-1.55-4.05h-4.4L12.25 25.5H8.2Z" fill="url(#home-mark)" />
-          </svg>
+          <BrandMark :size="18" />
         </span>
         <span class="brand__name">AXmiPic</span>
       </router-link>

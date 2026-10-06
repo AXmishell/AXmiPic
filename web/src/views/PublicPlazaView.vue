@@ -2,6 +2,7 @@
 import { useRouter } from 'vue-router'
 import { Moon, Sunny, User } from '@element-plus/icons-vue'
 
+import BrandMark from '@/components/BrandMark.vue'
 import PlazaMasonry from '@/components/PlazaMasonry.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
@@ -24,15 +25,7 @@ function goAuth(): void {
     <header class="pp__topbar">
       <router-link to="/" class="pp__brand" aria-label="AXmiPic 首页">
         <span class="pp__mark" aria-hidden="true">
-          <svg viewBox="0 0 32 32" width="18" height="18">
-            <defs>
-              <linearGradient id="pp-mark" x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0" stop-color="#828fff" />
-                <stop offset="1" stop-color="#5e6ad2" />
-              </linearGradient>
-            </defs>
-            <path d="M16 6.5 23.8 25.5h-4.05l-1.55-4.05h-4.4L12.25 25.5H8.2Z" fill="url(#pp-mark)" />
-          </svg>
+          <BrandMark :size="18" />
         </span>
         <span class="pp__brand-name">AXmiPic</span>
       </router-link>

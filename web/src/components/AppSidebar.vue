@@ -3,6 +3,7 @@ import { computed, type Component } from 'vue'
 import { useRoute } from 'vue-router'
 import { ArrowRight, Bell, Close, Coin, Folder, Grid, Key, MagicStick, Management, Message, Odometer, Picture, Service, Setting, Share, ShoppingCart, User } from '@element-plus/icons-vue'
 
+import BrandMark from '@/components/BrandMark.vue'
 import QuotaMeter from '@/components/QuotaMeter.vue'
 import { useAuthStore } from '@/stores/auth'
 
@@ -95,15 +96,7 @@ function isActive(item: NavItem): boolean {
     <div class="sidebar__brand">
       <router-link :to="variant === 'admin' ? '/admin' : '/user'" class="brand" aria-label="AXmiPic 控制台首页">
         <span class="brand__mark" aria-hidden="true">
-          <svg viewBox="0 0 32 32" width="18" height="18">
-            <defs>
-              <linearGradient id="sidebar-mark" x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0" stop-color="#828fff" />
-                <stop offset="1" stop-color="#5e6ad2" />
-              </linearGradient>
-            </defs>
-            <path d="M16 6.5 23.8 25.5h-4.05l-1.55-4.05h-4.4L12.25 25.5H8.2Z" fill="url(#sidebar-mark)" />
-          </svg>
+          <BrandMark :size="18" />
         </span>
         <span class="brand__text">
           <span class="brand__name">AXmiPic</span>

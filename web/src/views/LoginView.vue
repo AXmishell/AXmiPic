@@ -7,6 +7,7 @@ import { Box, DataLine, Lock, Message, Moon, Sunny, UploadFilled, User } from '@
 
 import { ApiError } from '@/api/client'
 import { resetPassword, sendPasswordResetCode, sendRegisterCode } from '@/api/auth'
+import BrandMark from '@/components/BrandMark.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
 import { confirmPasswordRule, usernameRules } from '@/utils/validate'
@@ -247,15 +248,7 @@ async function redirectAfterLogin(): Promise<void> {
       <div class="auth__brand-inner">
         <div class="auth__logo">
           <span class="auth__logo-mark" aria-hidden="true">
-            <svg viewBox="0 0 32 32" width="20" height="20">
-              <defs>
-                <linearGradient id="auth-mark" x1="0" y1="0" x2="1" y2="1">
-                  <stop offset="0" stop-color="#828fff" />
-                  <stop offset="1" stop-color="#5e6ad2" />
-                </linearGradient>
-              </defs>
-              <path d="M16 6.5 23.8 25.5h-4.05l-1.55-4.05h-4.4L12.25 25.5H8.2Z" fill="url(#auth-mark)" />
-            </svg>
+            <BrandMark :size="20" />
           </span>
           <span class="auth__logo-name">AXmiPic</span>
         </div>
@@ -306,9 +299,7 @@ async function redirectAfterLogin(): Promise<void> {
       <div class="auth__card">
         <div class="auth__mobile-logo">
           <span class="auth__logo-mark" aria-hidden="true">
-            <svg viewBox="0 0 32 32" width="18" height="18">
-              <path d="M16 6.5 23.8 25.5h-4.05l-1.55-4.05h-4.4L12.25 25.5H8.2Z" fill="currentColor" />
-            </svg>
+            <BrandMark :size="18" />
           </span>
           <span>AXmiPic</span>
         </div>

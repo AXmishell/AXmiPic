@@ -7,6 +7,7 @@ import { Check, Connection, Key, Lock, Refresh, Setting, User } from '@element-p
 
 import { ApiError } from '@/api/client'
 import { fetchInstallStatus, runInstall, type InstallInput } from '@/api/auth'
+import BrandMark from '@/components/BrandMark.vue'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 import { confirmPasswordRule, usernameRules } from '@/utils/validate'
@@ -228,9 +229,7 @@ onMounted(async () => {
     <section class="install__panel">
       <header class="install__brand">
         <span class="install__mark" aria-hidden="true">
-          <svg viewBox="0 0 32 32" width="20" height="20">
-            <path d="M16 6.5 23.8 25.5h-4.05l-1.55-4.05h-4.4L12.25 25.5H8.2Z" fill="currentColor" />
-          </svg>
+          <BrandMark :size="20" />
         </span>
         <div>
           <h1 class="install__title">AXmiPic 安装向导</h1>
