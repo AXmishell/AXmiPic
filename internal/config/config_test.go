@@ -100,7 +100,7 @@ func TestValidateRejectsInvalidValues(t *testing.T) {
 	}{
 		{"port range", "server:\n  port: 0\n"},
 		{"empty base url", "server:\n  base_url: \"   \"\n"},
-		{"unknown database driver", "database:\n  driver: mysql\n"},
+		{"unknown database driver", "database:\n  driver: oracle\n"},
 		{"empty dsn", "database:\n  dsn: \"\"\n"},
 		{"unknown storage driver", "storage:\n  driver: ftp\n"},
 		{"empty mime types", "upload:\n  allowed_mime_types: []\n"},

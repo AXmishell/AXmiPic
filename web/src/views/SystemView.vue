@@ -13,20 +13,30 @@ import {
   getProcessInfo,
   getRuntimeInfo,
   getSecurityInfo,
+  getSettingDomain,
   getSMTPConfig,
   listPaymentGateways,
   sendTestNotify,
   updateAuthSettings,
   updateModerationSettings,
   updatePaymentSettings,
+  updateSettingDomain,
   updateSMTPConfig,
   type AuthConfig,
+  type ImagingSettings,
+  type LimitsSettings,
+  type MaintenanceSettings,
   type ModerationSettings,
   type PaymentSettings,
   type PaymentSettingsInput,
   type ProcessInfo,
   type RuntimeInfo,
+  type SecuritySettings,
+  type SiteSettings,
+  type SMSSettings,
   type SMTPConfig,
+  type SettingDomain,
+  type UploadSettings,
 } from '@/api/billing'
 import { toApiError } from '@/api/client'
 import type { AdminStats } from '@/api/types'
@@ -385,11 +395,107 @@ async function saveAuth(): Promise<void> {
   }
 }
 
+// ---- 运行设置（通用设置域）----
+const savingDomain = ref<SettingDomain | ''>('')
+
+const mimeOptions = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+const formatOptions = ['jpeg', 'png', 'gif', 'webp', 'avif']
+
+const uploadForm = reactive<UploadSettings>({ max_size_mb: 20, allowed_mime_types: [] })
+const imagingForm = reactive<ImagingSettings>({
+  enabled: true,
+  max_width: 4096,
+  max_height: 4096,
+  default_quality: 82,
+  allowed_formats: [],
+  allow_enlarge: false,
+  allow_effects: true,
+  allow_watermark: true,
+  watermark_text: '',
+})
+const securityForm = reactive<SecuritySettings>({ scanner: 'builtin', cloud_processor: 'local' })
+const smsForm = reactive<SMSSettings>({ enabled: false, provider: '', endpoint: '', method: 'POST' })
+const limitsForm = reactive<LimitsSettings>({
+  upload_per_minute: 30,
+  upload_burst: 5,
+  guest_per_minute: 6,
+  guest_burst: 2,
+  image_per_minute: 600,
+  image_burst: 120,
+  share_per_minute: 30,
+  share_burst: 10,
+})
+const maintenanceForm = reactive<MaintenanceSettings>({
+  orphan_cleanup: true,
+  orphan_grace_hours: 72,
+  orphan_interval_hours: 24,
+})
+const siteForm = reactive<SiteSettings>({ name: 'AXmiPic', description: '' })
+
+function fillUpload(v: UploadSettings): void {
+  Object.assign(uploadForm, v)
+}
+function fillImaging(v: ImagingSettings): void {
+  Object.assign(imagingForm, v)
+}
+function fillSecurity(v: SecuritySettings): void {
+  Object.assign(securityForm, v)
+}
+function fillSMS(v: SMSSettings): void {
+  Object.assign(smsForm, v)
+}
+function fillLimits(v: LimitsSettings): void {
+  Object.assign(limitsForm, v)
+}
+function fillMaintenance(v: MaintenanceSettings): void {
+  Object.assign(maintenanceForm, v)
+}
+function fillSite(v: SiteSettings): void {
+  Object.assign(siteForm, v)
+}
+
+/** 保存单个设置域；可热应用的域即时生效，limits/maintenance 重启后生效。 */
+async function saveDomain<T>(
+  domain: SettingDomain,
+  value: unknown,
+  apply: (v: T) => void,
+): Promise<void> {
+  savingDomain.value = domain
+  try {
+    const updated = await updateSettingDomain<T>(domain, value)
+    apply(updated)
+    ElMessage.success('已保存')
+  } catch (error) {
+    ElMessage.error(toApiError(error).message)
+  } finally {
+    savingDomain.value = ''
+  }
+}
+
 async function load(): Promise<void> {
   loading.value = true
   errorMessage.value = ''
   try {
-    const [statsData, runtimeData, processData, smtpData, ch, sec, drv, paymentData, gatewayList, authData, moderationData] = await Promise.all([
+    const [
+      statsData,
+      runtimeData,
+      processData,
+      smtpData,
+      ch,
+      sec,
+      drv,
+      paymentData,
+      gatewayList,
+      authData,
+      moderationData,
+      uploadData,
+      imagingData,
+      securityData,
+      smsData,
+      limitsData,
+      maintenanceData,
+      siteData,
+    ] = await Promise.all([
       fetchStats(),
       getRuntimeInfo(),
       getProcessInfo(),
@@ -401,6 +507,13 @@ async function load(): Promise<void> {
       listPaymentGateways().catch(() => []),
       getAuthSettings().catch(() => null),
       getModerationSettings().catch(() => null),
+      getSettingDomain<UploadSettings>('upload').catch(() => null),
+      getSettingDomain<ImagingSettings>('processing').catch(() => null),
+      getSettingDomain<SecuritySettings>('security').catch(() => null),
+      getSettingDomain<SMSSettings>('sms').catch(() => null),
+      getSettingDomain<LimitsSettings>('limits').catch(() => null),
+      getSettingDomain<MaintenanceSettings>('maintenance').catch(() => null),
+      getSettingDomain<SiteSettings>('site').catch(() => null),
     ])
     stats.value = statsData
     runtime.value = runtimeData
@@ -428,6 +541,13 @@ async function load(): Promise<void> {
       moderationMeta.value = moderationData
       fillModeration(moderationData)
     }
+    if (uploadData) fillUpload(uploadData)
+    if (imagingData) fillImaging(imagingData)
+    if (securityData) fillSecurity(securityData)
+    if (smsData) fillSMS(smsData)
+    if (limitsData) fillLimits(limitsData)
+    if (maintenanceData) fillMaintenance(maintenanceData)
+    if (siteData) fillSite(siteData)
   } catch (error) {
     errorMessage.value = toApiError(error).message
   } finally {
@@ -962,6 +1082,264 @@ onBeforeUnmount(() => {
                 </dd>
               </div>
             </dl>
+          </div>
+        </article>
+      </el-tab-pane>
+      <!-- 运行设置 -->
+      <el-tab-pane label="运行设置" name="runtime">
+        <article class="ax-card">
+          <header class="ax-card__head">
+            <h2 class="ax-card__title">上传限制</h2>
+            <el-tag size="small" type="success" effect="plain">即时生效</el-tag>
+          </header>
+          <div class="ax-card__body">
+            <el-form label-position="top" class="smtp-form" @submit.prevent>
+              <div class="smtp-grid">
+                <el-form-item label="单文件上限 (MiB)">
+                  <el-input-number v-model="uploadForm.max_size_mb" :min="1" :max="10240" controls-position="right" />
+                </el-form-item>
+                <el-form-item label="允许的媒体类型" class="smtp-grid__wide">
+                  <el-select v-model="uploadForm.allowed_mime_types" multiple style="width: 100%">
+                    <el-option v-for="m in mimeOptions" :key="m" :label="m" :value="m" />
+                  </el-select>
+                </el-form-item>
+              </div>
+              <div class="smtp-actions">
+                <el-button
+                  type="primary"
+                  :loading="savingDomain === 'upload'"
+                  @click="saveDomain('upload', { ...uploadForm }, fillUpload)"
+                >
+                  保存并应用
+                </el-button>
+              </div>
+            </el-form>
+          </div>
+        </article>
+
+        <article class="ax-card">
+          <header class="ax-card__head">
+            <h2 class="ax-card__title">图像处理</h2>
+            <el-tag size="small" type="success" effect="plain">即时生效</el-tag>
+          </header>
+          <div class="ax-card__body">
+            <el-form label-position="top" class="smtp-form" @submit.prevent>
+              <div class="smtp-grid">
+                <el-form-item label="启用即时处理">
+                  <el-switch v-model="imagingForm.enabled" />
+                </el-form-item>
+                <el-form-item label="最大宽度">
+                  <el-input-number v-model="imagingForm.max_width" :min="1" :max="20000" controls-position="right" />
+                </el-form-item>
+                <el-form-item label="最大高度">
+                  <el-input-number v-model="imagingForm.max_height" :min="1" :max="20000" controls-position="right" />
+                </el-form-item>
+                <el-form-item label="默认质量">
+                  <el-input-number v-model="imagingForm.default_quality" :min="1" :max="100" controls-position="right" />
+                </el-form-item>
+                <el-form-item label="允许的输出格式" class="smtp-grid__wide">
+                  <el-select v-model="imagingForm.allowed_formats" multiple style="width: 100%">
+                    <el-option v-for="f in formatOptions" :key="f" :label="f" :value="f" />
+                  </el-select>
+                </el-form-item>
+                <el-form-item label="允许放大">
+                  <el-switch v-model="imagingForm.allow_enlarge" />
+                </el-form-item>
+                <el-form-item label="允许滤镜">
+                  <el-switch v-model="imagingForm.allow_effects" />
+                </el-form-item>
+                <el-form-item label="允许水印">
+                  <el-switch v-model="imagingForm.allow_watermark" />
+                </el-form-item>
+                <el-form-item label="强制水印文字" class="smtp-grid__wide">
+                  <el-input v-model="imagingForm.watermark_text" placeholder="留空表示不强制" />
+                </el-form-item>
+              </div>
+              <p class="smtp-form__hint">处理驱动（purego/libvips/magick）在启动时选定，修改驱动需重启。</p>
+              <div class="smtp-actions">
+                <el-button
+                  type="primary"
+                  :loading="savingDomain === 'processing'"
+                  @click="saveDomain('processing', { ...imagingForm }, fillImaging)"
+                >
+                  保存并应用
+                </el-button>
+              </div>
+            </el-form>
+          </div>
+        </article>
+
+        <article class="ax-card">
+          <header class="ax-card__head">
+            <h2 class="ax-card__title">安全扫描</h2>
+            <el-tag size="small" type="success" effect="plain">即时生效</el-tag>
+          </header>
+          <div class="ax-card__body">
+            <el-form label-position="top" class="smtp-form" @submit.prevent>
+              <div class="smtp-grid">
+                <el-form-item label="内容扫描器">
+                  <el-select v-model="securityForm.scanner" style="width: 100%">
+                    <el-option label="关闭（none）" value="none" />
+                    <el-option label="内置（白名单+魔数）" value="builtin" />
+                  </el-select>
+                </el-form-item>
+                <el-form-item label="云处理">
+                  <el-select v-model="securityForm.cloud_processor" style="width: 100%">
+                    <el-option label="本地（local）" value="local" />
+                  </el-select>
+                </el-form-item>
+              </div>
+              <div class="smtp-actions">
+                <el-button
+                  type="primary"
+                  :loading="savingDomain === 'security'"
+                  @click="saveDomain('security', { ...securityForm }, fillSecurity)"
+                >
+                  保存并应用
+                </el-button>
+              </div>
+            </el-form>
+          </div>
+        </article>
+
+        <article class="ax-card">
+          <header class="ax-card__head">
+            <h2 class="ax-card__title">短信渠道</h2>
+            <el-tag size="small" type="success" effect="plain">即时生效</el-tag>
+          </header>
+          <div class="ax-card__body">
+            <el-form label-position="top" class="smtp-form" @submit.prevent>
+              <div class="smtp-grid">
+                <el-form-item label="启用短信">
+                  <el-switch v-model="smsForm.enabled" />
+                </el-form-item>
+                <el-form-item label="服务商名称">
+                  <el-input v-model="smsForm.provider" placeholder="例如 aliyun" />
+                </el-form-item>
+                <el-form-item label="HTTP 网关地址" class="smtp-grid__wide">
+                  <el-input v-model="smsForm.endpoint" placeholder="https://sms.example.com/send" />
+                </el-form-item>
+                <el-form-item label="请求方法">
+                  <el-select v-model="smsForm.method" style="width: 100%">
+                    <el-option label="POST" value="POST" />
+                    <el-option label="GET" value="GET" />
+                  </el-select>
+                </el-form-item>
+              </div>
+              <div class="smtp-actions">
+                <el-button
+                  type="primary"
+                  :loading="savingDomain === 'sms'"
+                  @click="saveDomain('sms', { ...smsForm }, fillSMS)"
+                >
+                  保存并应用
+                </el-button>
+              </div>
+            </el-form>
+          </div>
+        </article>
+
+        <article class="ax-card">
+          <header class="ax-card__head">
+            <h2 class="ax-card__title">限流</h2>
+            <el-tag size="small" type="info" effect="plain">重启后生效</el-tag>
+          </header>
+          <div class="ax-card__body">
+            <el-form label-position="top" class="smtp-form" @submit.prevent>
+              <div class="smtp-grid">
+                <el-form-item label="上传/分钟">
+                  <el-input-number v-model="limitsForm.upload_per_minute" :min="0" controls-position="right" />
+                </el-form-item>
+                <el-form-item label="上传突发">
+                  <el-input-number v-model="limitsForm.upload_burst" :min="0" controls-position="right" />
+                </el-form-item>
+                <el-form-item label="访客/分钟">
+                  <el-input-number v-model="limitsForm.guest_per_minute" :min="0" controls-position="right" />
+                </el-form-item>
+                <el-form-item label="访客突发">
+                  <el-input-number v-model="limitsForm.guest_burst" :min="0" controls-position="right" />
+                </el-form-item>
+                <el-form-item label="图片读取/分钟">
+                  <el-input-number v-model="limitsForm.image_per_minute" :min="0" controls-position="right" />
+                </el-form-item>
+                <el-form-item label="图片读取突发">
+                  <el-input-number v-model="limitsForm.image_burst" :min="0" controls-position="right" />
+                </el-form-item>
+                <el-form-item label="分享访问/分钟">
+                  <el-input-number v-model="limitsForm.share_per_minute" :min="0" controls-position="right" />
+                </el-form-item>
+                <el-form-item label="分享访问突发">
+                  <el-input-number v-model="limitsForm.share_burst" :min="0" controls-position="right" />
+                </el-form-item>
+              </div>
+              <div class="smtp-actions">
+                <el-button
+                  type="primary"
+                  :loading="savingDomain === 'limits'"
+                  @click="saveDomain('limits', { ...limitsForm }, fillLimits)"
+                >
+                  保存
+                </el-button>
+              </div>
+            </el-form>
+          </div>
+        </article>
+
+        <article class="ax-card">
+          <header class="ax-card__head">
+            <h2 class="ax-card__title">维护任务</h2>
+            <el-tag size="small" type="info" effect="plain">重启后生效</el-tag>
+          </header>
+          <div class="ax-card__body">
+            <el-form label-position="top" class="smtp-form" @submit.prevent>
+              <div class="smtp-grid">
+                <el-form-item label="启用孤儿对象对账">
+                  <el-switch v-model="maintenanceForm.orphan_cleanup" />
+                </el-form-item>
+                <el-form-item label="保留时长（小时）">
+                  <el-input-number v-model="maintenanceForm.orphan_grace_hours" :min="0" controls-position="right" />
+                </el-form-item>
+                <el-form-item label="执行间隔（小时）">
+                  <el-input-number v-model="maintenanceForm.orphan_interval_hours" :min="1" controls-position="right" />
+                </el-form-item>
+              </div>
+              <div class="smtp-actions">
+                <el-button
+                  type="primary"
+                  :loading="savingDomain === 'maintenance'"
+                  @click="saveDomain('maintenance', { ...maintenanceForm }, fillMaintenance)"
+                >
+                  保存
+                </el-button>
+              </div>
+            </el-form>
+          </div>
+        </article>
+
+        <article class="ax-card">
+          <header class="ax-card__head">
+            <h2 class="ax-card__title">站点信息</h2>
+          </header>
+          <div class="ax-card__body">
+            <el-form label-position="top" class="smtp-form" @submit.prevent>
+              <div class="smtp-grid">
+                <el-form-item label="站点名称">
+                  <el-input v-model="siteForm.name" />
+                </el-form-item>
+                <el-form-item label="站点描述" class="smtp-grid__wide">
+                  <el-input v-model="siteForm.description" type="textarea" :rows="2" />
+                </el-form-item>
+              </div>
+              <div class="smtp-actions">
+                <el-button
+                  type="primary"
+                  :loading="savingDomain === 'site'"
+                  @click="saveDomain('site', { ...siteForm }, fillSite)"
+                >
+                  保存
+                </el-button>
+              </div>
+            </el-form>
           </div>
         </article>
       </el-tab-pane>

@@ -343,29 +343,31 @@ func paymentToDTO(cfg config.PaymentConfig) PaymentSettingsDTO {
 
 // encodePayment 把支付配置序列化，敏感字段以密文写入。
 func (s *SettingsService) encodePayment(cfg config.PaymentConfig) (string, error) {
-	encrypt := func(value string) (string, error) { return s.cipher.Encrypt(value) }
+	encrypt := func(field, value string) (string, error) {
+		return s.cipher.EncryptWithAAD(value, "settings.payment."+field)
+	}
 
-	alipayPriv, err := encrypt(cfg.Alipay.PrivateKey)
+	alipayPriv, err := encrypt("alipay.private_key", cfg.Alipay.PrivateKey)
 	if err != nil {
 		return "", fmt.Errorf("settings: encrypt alipay private key: %w", err)
 	}
-	alipayPub, err := encrypt(cfg.Alipay.PublicKey)
+	alipayPub, err := encrypt("alipay.public_key", cfg.Alipay.PublicKey)
 	if err != nil {
 		return "", fmt.Errorf("settings: encrypt alipay public key: %w", err)
 	}
-	wechatPriv, err := encrypt(cfg.Wechat.PrivateKey)
+	wechatPriv, err := encrypt("wechat.private_key", cfg.Wechat.PrivateKey)
 	if err != nil {
 		return "", fmt.Errorf("settings: encrypt wechat private key: %w", err)
 	}
-	wechatKey, err := encrypt(cfg.Wechat.APIv3Key)
+	wechatKey, err := encrypt("wechat.api_v3_key", cfg.Wechat.APIv3Key)
 	if err != nil {
 		return "", fmt.Errorf("settings: encrypt wechat api_v3_key: %w", err)
 	}
-	wechatPub, err := encrypt(cfg.Wechat.PlatformPublicKey)
+	wechatPub, err := encrypt("wechat.platform_public_key", cfg.Wechat.PlatformPublicKey)
 	if err != nil {
 		return "", fmt.Errorf("settings: encrypt wechat platform public key: %w", err)
 	}
-	epayKey, err := encrypt(cfg.Epay.Key)
+	epayKey, err := encrypt("epay.key", cfg.Epay.Key)
 	if err != nil {
 		return "", fmt.Errorf("settings: encrypt epay key: %w", err)
 	}
@@ -412,34 +414,34 @@ func (s *SettingsService) decodePayment(raw string) (config.PaymentConfig, error
 	if err := json.Unmarshal([]byte(raw), &stored); err != nil {
 		return config.PaymentConfig{}, fmt.Errorf("settings: decode payment: %w", err)
 	}
-	decrypt := func(value string) (string, error) {
-		plain, err := s.cipher.Decrypt(value)
+	decrypt := func(field, value string) (string, error) {
+		plain, err := s.cipher.DecryptWithAAD(value, "settings.payment."+field)
 		if err != nil {
 			return "", fmt.Errorf("settings: decrypt payment secret: %w", err)
 		}
 		return plain, nil
 	}
-	alipayPriv, err := decrypt(stored.Alipay.PrivateKey)
+	alipayPriv, err := decrypt("alipay.private_key", stored.Alipay.PrivateKey)
 	if err != nil {
 		return config.PaymentConfig{}, err
 	}
-	alipayPub, err := decrypt(stored.Alipay.PublicKey)
+	alipayPub, err := decrypt("alipay.public_key", stored.Alipay.PublicKey)
 	if err != nil {
 		return config.PaymentConfig{}, err
 	}
-	wechatPriv, err := decrypt(stored.Wechat.PrivateKey)
+	wechatPriv, err := decrypt("wechat.private_key", stored.Wechat.PrivateKey)
 	if err != nil {
 		return config.PaymentConfig{}, err
 	}
-	wechatKey, err := decrypt(stored.Wechat.APIv3Key)
+	wechatKey, err := decrypt("wechat.api_v3_key", stored.Wechat.APIv3Key)
 	if err != nil {
 		return config.PaymentConfig{}, err
 	}
-	wechatPub, err := decrypt(stored.Wechat.PlatformPublicKey)
+	wechatPub, err := decrypt("wechat.platform_public_key", stored.Wechat.PlatformPublicKey)
 	if err != nil {
 		return config.PaymentConfig{}, err
 	}
-	epayKey, err := decrypt(stored.Epay.Key)
+	epayKey, err := decrypt("epay.key", stored.Epay.Key)
 	if err != nil {
 		return config.PaymentConfig{}, err
 	}

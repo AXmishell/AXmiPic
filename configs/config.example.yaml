@@ -11,11 +11,14 @@ server:
   shutdown_timeout_sec: 10
 
 database:
-  # driver: sqlite | postgres
+  # driver: sqlite | postgres | mysql (MariaDB 兼容)
   driver: "sqlite"
   # For sqlite: a file path. For postgres: a libpq DSN or URL, e.g.
   #   host=127.0.0.1 port=5432 user=axmipic password=secret dbname=axmipic sslmode=disable
   #   postgres://axmipic:secret@127.0.0.1:5432/axmipic?sslmode=disable
+  # For mysql: a go-sql-driver DSN, e.g.
+  #   axmipic:secret@tcp(127.0.0.1:3306)/axmipic
+  #   (parseTime=true / charset=utf8mb4 / loc=Local 会自动补齐)
   dsn: "./data/axmipic.db"
 
 storage:

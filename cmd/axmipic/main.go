@@ -119,6 +119,10 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	if secret.WeakKey(cipherKey) {
+		logger.Warn("encryption master key is shorter than recommended; use at least 16 bytes",
+			slog.Int("length", len(cipherKey)))
+	}
 	storageSvc := service.NewStorageService(repo, manager, cipher, cfg.Server.BaseURL, cfg.Storage)
 
 	bootstrapCtx, cancelBootstrap := context.WithTimeout(context.Background(), 30*time.Second)
@@ -271,6 +275,10 @@ func run() error {
 		From:     cfg.Email.From,
 		UseTLS:   cfg.Email.UseTLS,
 	})
+
+	// 通用设置域：config 为首次播种与兜底，DB 为运行值；可热应用的域即时生效。
+	registerSettingDomains(settingsSvc, repo, cfg, uploadSvc, imagingSvc, notifySvc, logger)
+
 	// 权限开关（开放注册、上传鉴权、访客上传）：以配置文件为兜底，首次启动写入
 	// 数据库并支持后台热更新。实际应用在 Authenticator 就绪后进行（见下）。
 	settingsSvc.SetAuthDefaults(service.AuthConfig{
@@ -302,6 +310,9 @@ func run() error {
 	err = settingsSvc.Bootstrap(settingsCtx)
 	if err == nil {
 		err = settingsSvc.BootstrapModeration(settingsCtx)
+	}
+	if err == nil {
+		err = settingsSvc.BootstrapDomains(settingsCtx)
 	}
 	cancelSettings()
 	if err != nil {
@@ -535,6 +546,8 @@ func normalizeDBDriver(driver string) string {
 		return "sqlite"
 	case "postgres", "postgresql", "pgx":
 		return "postgres"
+	case "mysql", "mariadb":
+		return "mysql"
 	default:
 		return driver
 	}
@@ -777,6 +790,120 @@ func runOrphanJanitor(ctx context.Context, reconciler *service.OrphanReconciler,
 			cleanup()
 		}
 	}
+}
+
+// registerSettingDomains 注册通用系统设置域。默认值来自配置文件，DB 为运行值；
+// upload/processing/security/sms 支持运行时热应用，limits/site/maintenance 落库待重启生效。
+func registerSettingDomains(
+	settingsSvc *service.SettingsService,
+	repo *store.Repository,
+	cfg config.Config,
+	uploadSvc *service.UploadService,
+	imagingSvc *service.ImagingService,
+	notifySvc *service.NotifyService,
+	logger *slog.Logger,
+) {
+	settingsSvc.RegisterDomain(service.NewSettingDomain(repo, "upload",
+		service.UploadSettings{MaxSizeMB: cfg.Upload.MaxSizeMB, AllowedMIMETypes: cfg.Upload.AllowedMIMETypes},
+		service.ValidateUploadSettings,
+		func(v service.UploadSettings) {
+			uploadSvc.SetPolicy(service.UploadPolicy{
+				MaxSizeBytes:     int64(v.MaxSizeMB) << 20,
+				AllowedMIMETypes: v.AllowedMIMETypes,
+				PresignExpiry:    storagePresignExpiry(cfg),
+			})
+		},
+	))
+
+	settingsSvc.RegisterDomain(service.NewSettingDomain(repo, "processing",
+		service.ImagingSettings{
+			Enabled:        cfg.Processing.Enabled,
+			MaxWidth:       cfg.Processing.MaxWidth,
+			MaxHeight:      cfg.Processing.MaxHeight,
+			DefaultQuality: cfg.Processing.DefaultQuality,
+			AllowedFormats: cfg.Processing.AllowedFormats,
+			AllowEnlarge:   cfg.Processing.AllowEnlarge,
+			AllowEffects:   cfg.Processing.AllowEffects,
+			AllowWatermark: cfg.Processing.AllowWatermark,
+			WatermarkText:  cfg.Processing.WatermarkText,
+		},
+		service.ValidateImagingSettings,
+		func(v service.ImagingSettings) {
+			imagingSvc.SetPolicy(service.ProcessingPolicy{
+				Enabled:        v.Enabled,
+				MaxWidth:       v.MaxWidth,
+				MaxHeight:      v.MaxHeight,
+				DefaultQuality: v.DefaultQuality,
+				AllowedFormats: processingFormats(v.AllowedFormats),
+				AllowEnlarge:   v.AllowEnlarge,
+				AllowEffects:   v.AllowEffects,
+				AllowWatermark: v.AllowWatermark,
+				WatermarkText:  v.WatermarkText,
+			})
+		},
+	))
+
+	settingsSvc.RegisterDomain(service.NewSettingDomain(repo, "security",
+		service.SecuritySettings{Scanner: cfg.Security.Scanner, CloudProcessor: cfg.Security.CloudProcessor},
+		service.ValidateSecuritySettings,
+		func(v service.SecuritySettings) {
+			switch v.Scanner {
+			case "builtin":
+				upload, _ := service.DomainValue[service.UploadSettings](settingsSvc, "upload")
+				uploadSvc.SetScanner(security.NewBlockingScanner(upload.AllowedMIMETypes))
+			default:
+				uploadSvc.SetScanner(nil)
+			}
+		},
+	))
+
+	settingsSvc.RegisterDomain(service.NewSettingDomain(repo, "sms",
+		service.SMSSettings{Enabled: cfg.SMS.Enabled, Provider: cfg.SMS.Provider, Endpoint: cfg.SMS.Endpoint, Method: cfg.SMS.Method},
+		service.ValidateSMSSettings,
+		func(v service.SMSSettings) {
+			var sender notify.Sender = notify.NewLogSender("sms", logger)
+			if v.Enabled {
+				httpSender, err := notify.NewHTTPSSender(notify.HTTPOptions{Name: v.Provider, Endpoint: v.Endpoint, Method: v.Method})
+				if err != nil {
+					logger.Warn("apply sms settings", slog.Any("error", err))
+				} else {
+					sender = httpSender
+				}
+			}
+			notifySvc.SetSMS(sender)
+		},
+	))
+
+	settingsSvc.RegisterDomain(service.NewSettingDomain(repo, "limits",
+		service.LimitsSettings{
+			UploadPerMinute: cfg.Limits.UploadPerMinute,
+			UploadBurst:     cfg.Limits.UploadBurst,
+			GuestPerMinute:  cfg.Limits.GuestPerMinute,
+			GuestBurst:      cfg.Limits.GuestBurst,
+			ImagePerMinute:  cfg.Limits.ImagePerMinute,
+			ImageBurst:      cfg.Limits.ImageBurst,
+			SharePerMinute:  cfg.Limits.SharePerMinute,
+			ShareBurst:      cfg.Limits.ShareBurst,
+		},
+		service.ValidateLimitsSettings,
+		nil,
+	))
+
+	settingsSvc.RegisterDomain(service.NewSettingDomain(repo, "maintenance",
+		service.MaintenanceSettings{
+			OrphanCleanup:       cfg.Maintenance.OrphanCleanup,
+			OrphanGraceHours:    cfg.Maintenance.OrphanGraceHours,
+			OrphanIntervalHours: cfg.Maintenance.OrphanIntervalHours,
+		},
+		service.ValidateMaintenanceSettings,
+		nil,
+	))
+
+	settingsSvc.RegisterDomain(service.NewSettingDomain(repo, "site",
+		service.SiteSettings{Name: "AXmiPic"},
+		nil,
+		nil,
+	))
 }
 
 // storagePresignExpiry 返回当前存储驱动的预签名上传有效期。

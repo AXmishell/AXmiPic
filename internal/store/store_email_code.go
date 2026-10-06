@@ -34,7 +34,7 @@ func (r *Repository) UpsertEmailCode(ctx context.Context, key, email, code strin
 // EmailCode 返回某个 key 的验证码，或 ErrNotFound。
 func (r *Repository) EmailCode(ctx context.Context, key string) (*EmailCode, error) {
 	var row EmailCode
-	err := r.db.WithContext(ctx).First(&row, "key = ?", key).Error
+	err := r.db.WithContext(ctx).Where(map[string]any{"key": key}).First(&row).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, fmt.Errorf("store: email code %q: %w", key, ErrNotFound)
 	}
@@ -46,7 +46,7 @@ func (r *Repository) EmailCode(ctx context.Context, key string) (*EmailCode, err
 
 // SaveEmailCodeAttempts 更新某个 key 的失败尝试次数。
 func (r *Repository) SaveEmailCodeAttempts(ctx context.Context, key string, attempts int) error {
-	if err := r.db.WithContext(ctx).Model(&EmailCode{}).Where("key = ?", key).
+	if err := r.db.WithContext(ctx).Model(&EmailCode{}).Where(map[string]any{"key": key}).
 		UpdateColumn("attempts", attempts).Error; err != nil {
 		return fmt.Errorf("store: update email code attempts %q: %w", key, err)
 	}
@@ -55,7 +55,7 @@ func (r *Repository) SaveEmailCodeAttempts(ctx context.Context, key string, atte
 
 // DeleteEmailCode 删除某个 key 的验证码；不存在时为无操作。
 func (r *Repository) DeleteEmailCode(ctx context.Context, key string) error {
-	if err := r.db.WithContext(ctx).Delete(&EmailCode{}, "key = ?", key).Error; err != nil {
+	if err := r.db.WithContext(ctx).Where(map[string]any{"key": key}).Delete(&EmailCode{}).Error; err != nil {
 		return fmt.Errorf("store: delete email code %q: %w", key, err)
 	}
 	return nil
@@ -64,7 +64,7 @@ func (r *Repository) DeleteEmailCode(ctx context.Context, key string) error {
 // DeleteEmailCodeIfMatches 仅当 key 存在且验证码仍匹配时删除，返回是否删除成功。
 // 用于原子地消费验证码，防止并发重放。
 func (r *Repository) DeleteEmailCodeIfMatches(ctx context.Context, key, code string) (bool, error) {
-	result := r.db.WithContext(ctx).Where("key = ? AND code = ?", key, code).Delete(&EmailCode{})
+	result := r.db.WithContext(ctx).Where(map[string]any{"key": key, "code": code}).Delete(&EmailCode{})
 	if result.Error != nil {
 		return false, fmt.Errorf("store: consume email code %q: %w", key, result.Error)
 	}
@@ -82,7 +82,7 @@ func (r *Repository) DeleteExpiredEmailCodes(ctx context.Context, now time.Time)
 // EmailDailyCount 返回某个 key 在指定自然日的验证码发送次数。
 func (r *Repository) EmailDailyCount(ctx context.Context, key, day string) (int, error) {
 	var row EmailCodeStat
-	err := r.db.WithContext(ctx).First(&row, "key = ? AND day = ?", key, day).Error
+	err := r.db.WithContext(ctx).Where(map[string]any{"key": key, "day": day}).First(&row).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return 0, nil
 	}

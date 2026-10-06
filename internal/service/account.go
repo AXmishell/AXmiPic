@@ -60,6 +60,9 @@ var (
 // emailCodeTTL 是邮箱验证码的有效期。
 const emailCodeTTL = 10 * time.Minute
 
+// aadTOTPSecret 是 TOTP 密钥密文的 AAD 标识。
+const aadTOTPSecret = "account.totp_secret"
+
 // emailCodeMaxAttempts 是单个验证码允许的最大尝试次数。
 const emailCodeMaxAttempts = 5
 
@@ -608,7 +611,7 @@ func (s *AccountService) SetupTOTP(ctx context.Context, principal *auth.Principa
 	if err != nil {
 		return nil, err
 	}
-	encrypted, err := s.cipher.Encrypt(secret)
+	encrypted, err := s.cipher.EncryptWithAAD(secret, aadTOTPSecret)
 	if err != nil {
 		return nil, fmt.Errorf("setup totp: encrypt: %w", err)
 	}
@@ -891,7 +894,7 @@ func (s *AccountService) decryptTOTPSecret(encrypted string) (string, error) {
 	if s.cipher == nil {
 		return "", ErrTOTPUnavailable
 	}
-	secret, err := s.cipher.Decrypt(encrypted)
+	secret, err := s.cipher.DecryptWithAAD(encrypted, aadTOTPSecret)
 	if err != nil {
 		return "", fmt.Errorf("decrypt totp secret: %w", err)
 	}

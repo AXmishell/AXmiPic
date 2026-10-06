@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/glebarez/sqlite"
+	"gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
@@ -23,8 +25,9 @@ type Repository struct {
 }
 
 // Open 打开由 driver 选择的数据库，运行迁移，并返回一个即用型的
-// repository。支持的驱动有 "sqlite"（默认）和 "postgres"。dsn 对于
-// sqlite 是文件路径，对于 postgres 是 libpq 连接字符串（或 URL）。
+// repository。支持的驱动有 "sqlite"（默认）、"postgres" 和 "mysql"
+// （含 MariaDB）。dsn 对于 sqlite 是文件路径，对于 postgres 是 libpq 连接
+// 字符串（或 URL），对于 mysql 是 go-sql-driver 的 DSN。
 func Open(driver, dsn string) (*Repository, error) {
 	dialector, err := newDialector(driver, dsn)
 	if err != nil {
@@ -59,9 +62,49 @@ func newDialector(driver, dsn string) (gorm.Dialector, error) {
 		return sqlite.Open(withSQLitePragmas(dsn)), nil
 	case "postgres", "postgresql", "pgx":
 		return postgres.Open(dsn), nil
+	case "mysql", "mariadb":
+		return mysql.Open(normalizeMySQLDSN(dsn)), nil
 	default:
 		return nil, fmt.Errorf("store: unsupported database driver %q", driver)
 	}
+}
+
+// normalizeMySQLDSN 补齐 MySQL 连接串的关键参数：parseTime=true（扫描
+// time.Time 所必需）与 utf8mb4 字符集。用户已显式指定的参数保持不变。
+func normalizeMySQLDSN(dsn string) string {
+	dsn = strings.TrimSpace(dsn)
+	if dsn == "" {
+		return dsn
+	}
+	base, query, _ := strings.Cut(dsn, "?")
+	params := map[string]string{}
+	if query != "" {
+		for _, pair := range strings.Split(query, "&") {
+			key, value, _ := strings.Cut(pair, "=")
+			if key != "" {
+				params[key] = value
+			}
+		}
+	}
+	if _, ok := params["parseTime"]; !ok {
+		params["parseTime"] = "true"
+	}
+	if _, ok := params["charset"]; !ok {
+		params["charset"] = "utf8mb4"
+	}
+	if _, ok := params["loc"]; !ok {
+		params["loc"] = "Local"
+	}
+	keys := make([]string, 0, len(params))
+	for key := range params {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		parts = append(parts, key+"="+params[key])
+	}
+	return base + "?" + strings.Join(parts, "&")
 }
 
 // Close 释放底层数据库连接。

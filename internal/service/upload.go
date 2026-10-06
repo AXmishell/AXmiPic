@@ -193,6 +193,9 @@ type UploadService struct {
 	resolver UploadPolicyResolver
 	scanner  security.Scanner
 
+	// policyMu 保护 policy，使其可在运行时热替换。
+	policyMu sync.RWMutex
+
 	// mediaBaseURL 是构造缩略图/转换 URL 时使用的实例公开根地址。
 	mediaBaseURL string
 
@@ -215,6 +218,13 @@ func NewUploadService(repo *store.Repository, manager *storage.Manager, policy U
 // SetPolicyResolver 安装一个按调用方解析上传限制的解析器（例如角色组策略）。
 func (s *UploadService) SetPolicyResolver(resolver UploadPolicyResolver) {
 	s.resolver = resolver
+}
+
+// SetPolicy 在运行时替换全局上传策略（后台设置热更新）。
+func (s *UploadService) SetPolicy(policy UploadPolicy) {
+	s.policyMu.Lock()
+	s.policy = policy
+	s.policyMu.Unlock()
 }
 
 // SetMediaBaseURL 设置实例公开根地址，用于构造列表缩略图 URL。
@@ -313,7 +323,9 @@ func (s *UploadService) scanContent(ctx context.Context, data []byte, mimeType s
 
 // policyFor 解析某个主体生效上传策略，并返回其允许的媒体类型集合。
 func (s *UploadService) policyFor(ctx context.Context, principal *auth.Principal) (UploadPolicy, map[string]struct{}, error) {
+	s.policyMu.RLock()
 	policy := s.policy
+	s.policyMu.RUnlock()
 	if s.resolver != nil {
 		limits, err := s.resolver.UploadLimitsFor(ctx, principal)
 		if err != nil {

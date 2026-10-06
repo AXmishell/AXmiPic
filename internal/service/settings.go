@@ -24,6 +24,9 @@ const smtpSettingKey = "smtp"
 // authSettingKey 是权限开关在数据库中的键。
 const authSettingKey = "auth"
 
+// aadSMTPPassword 是 SMTP 密码密文的 AAD 标识（防密文跨字段搬运）。
+const aadSMTPPassword = "settings.smtp.password"
+
 // AuthConfig 是可在线切换的权限开关。
 type AuthConfig struct {
 	// AllowRegistration 控制是否开放自助注册。
@@ -99,6 +102,9 @@ type SettingsService struct {
 	moderationDefaults config.ModerationConfig
 	currentModeration  config.ModerationConfig
 	moderationApplier  func(config.ModerationConfig) error
+
+	// domains 是按域组织的通用设置（upload/processing/security/sms/limits/site/maintenance）。
+	domains map[string]SettingDomain
 }
 
 // NewSettingsService 构建设置服务。fallback 为配置文件中的 SMTP 配置，在数据库
@@ -116,7 +122,52 @@ func NewSettingsService(
 		notify:  notifySvc,
 		logger:  logger,
 		current: fallback,
+		domains: make(map[string]SettingDomain),
 	}
+}
+
+// RegisterDomain 注册一个设置域。
+func (s *SettingsService) RegisterDomain(d SettingDomain) {
+	if s.domains == nil {
+		s.domains = make(map[string]SettingDomain)
+	}
+	s.domains[d.Name()] = d
+}
+
+// Domain 返回指定名称的设置域。
+func (s *SettingsService) Domain(name string) (SettingDomain, bool) {
+	d, ok := s.domains[name]
+	return d, ok
+}
+
+// Domains 返回全部设置域的名称。
+func (s *SettingsService) Domains() []string {
+	names := make([]string, 0, len(s.domains))
+	for name := range s.domains {
+		names = append(names, name)
+	}
+	return names
+}
+
+// BootstrapDomains 从数据库加载并应用全部设置域。
+func (s *SettingsService) BootstrapDomains(ctx context.Context) error {
+	for _, d := range s.domains {
+		if err := d.Bootstrap(ctx); err != nil {
+			return fmt.Errorf("settings: bootstrap domain %s: %w", d.Name(), err)
+		}
+	}
+	return nil
+}
+
+// DomainValue 返回指定域的当前运行值（类型化）。
+func DomainValue[T any](s *SettingsService, name string) (T, bool) {
+	d, ok := s.Domain(name)
+	if !ok {
+		var zero T
+		return zero, false
+	}
+	v, ok := d.Get().(T)
+	return v, ok
 }
 
 // Bootstrap 加载数据库中保存的 SMTP 设置并即时应用；没有记录或记录损坏时
@@ -267,7 +318,7 @@ func (s *SettingsService) apply(cfg SMTPConfig) {
 
 // encode 将配置序列化，密码以密文写入。
 func (s *SettingsService) encode(cfg SMTPConfig) (string, error) {
-	encrypted, err := s.cipher.Encrypt(cfg.Password)
+	encrypted, err := s.cipher.EncryptWithAAD(cfg.Password, aadSMTPPassword)
 	if err != nil {
 		return "", fmt.Errorf("settings: encrypt smtp password: %w", err)
 	}
@@ -292,7 +343,7 @@ func (s *SettingsService) decode(raw string) (SMTPConfig, error) {
 	if err := json.Unmarshal([]byte(raw), &stored); err != nil {
 		return SMTPConfig{}, fmt.Errorf("settings: decode smtp: %w", err)
 	}
-	password, err := s.cipher.Decrypt(stored.Password)
+	password, err := s.cipher.DecryptWithAAD(stored.Password, aadSMTPPassword)
 	if err != nil {
 		return SMTPConfig{}, fmt.Errorf("settings: decrypt smtp password: %w", err)
 	}

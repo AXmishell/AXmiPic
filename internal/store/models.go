@@ -85,7 +85,7 @@ type Admin struct {
 	Email         string `gorm:"size:255;not null;default:''"`
 	EmailVerified bool   `gorm:"not null;default:false"`
 	// TOTPSecret 为 TOTP 密钥的密文；TOTPEnabled 表示二次验证是否已启用。
-	TOTPSecret  string `gorm:"type:text;not null;default:''"`
+	TOTPSecret  string `gorm:"type:text;not null"`
 	TOTPEnabled bool   `gorm:"not null;default:false"`
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
@@ -112,7 +112,7 @@ type Customer struct {
 	Email         string `gorm:"size:255;not null;default:''"`
 	EmailVerified bool   `gorm:"not null;default:false"`
 	// TOTPSecret 为 TOTP 密钥的密文；TOTPEnabled 表示二次验证是否已启用。
-	TOTPSecret  string `gorm:"type:text;not null;default:''"`
+	TOTPSecret  string `gorm:"type:text;not null"`
 	TOTPEnabled bool   `gorm:"not null;default:false"`
 	// IsGuest 标记内置访客账户（匿名上传）。这类账户不出现在用户管理中。
 	IsGuest   bool `gorm:"not null;default:false;index"`
@@ -191,7 +191,7 @@ func (StorageBackend) TableName() string {
 // 由服务层加密，数据库只保存密文。
 type Setting struct {
 	Key       string `gorm:"primaryKey;size:64"`
-	Value     string `gorm:"type:text;not null;default:''"`
+	Value     string `gorm:"type:text;not null"`
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
@@ -205,7 +205,7 @@ func (Setting) TableName() string {
 // 它用于跨设备同步查看器等前端设置。
 type UserPreference struct {
 	UserID    string `gorm:"primaryKey;size:36"`
-	Data      string `gorm:"type:text;not null;default:''"`
+	Data      string `gorm:"type:text;not null"`
 	UpdatedAt time.Time
 }
 
@@ -253,7 +253,7 @@ type Policy struct {
 	Description string `gorm:"size:255;not null;default:''"`
 	Enabled     bool   `gorm:"not null;default:true"`
 	// Settings 为类型相关的 JSON 配置。
-	Settings  string `gorm:"type:text;not null;default:'{}'"`
+	Settings  string `gorm:"type:text;not null"`
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
@@ -311,7 +311,7 @@ func (Share) TableName() string {
 type Announcement struct {
 	ID        string `gorm:"primaryKey;size:36"`
 	Title     string `gorm:"size:200;not null"`
-	Content   string `gorm:"type:text;not null;default:''"`
+	Content   string `gorm:"type:text;not null"`
 	Level     string `gorm:"size:16;not null;default:'info'"` // info | success | warning | danger
 	Pinned    bool   `gorm:"not null;default:false"`
 	Published bool   `gorm:"not null;default:true"`
@@ -358,7 +358,7 @@ type Page struct {
 	ID        string `gorm:"primaryKey;size:36"`
 	Slug      string `gorm:"uniqueIndex;size:100;not null"`
 	Title     string `gorm:"size:200;not null"`
-	Content   string `gorm:"type:text;not null;default:''"`
+	Content   string `gorm:"type:text;not null"`
 	Published bool   `gorm:"not null;default:true"`
 	CreatedAt time.Time
 	UpdatedAt time.Time
@@ -516,7 +516,7 @@ type TicketMessage struct {
 	AuthorID string `gorm:"size:36;not null;default:''"`
 	// AuthorRole 为 author 或 admin。
 	AuthorRole string `gorm:"size:16;not null;default:'author'"`
-	Body       string `gorm:"type:text;not null;default:''"`
+	Body       string `gorm:"type:text;not null"`
 	CreatedAt  time.Time
 }
 
@@ -564,7 +564,7 @@ type NotifyLog struct {
 	// Recipient 为收件邮箱或手机号。
 	Recipient string `gorm:"size:255;not null;default:''"`
 	Subject   string `gorm:"size:255;not null;default:''"`
-	Body      string `gorm:"type:text;not null;default:''"`
+	Body      string `gorm:"type:text;not null"`
 	// Status 为 sent 或 failed。
 	Status string `gorm:"size:16;index;not null;default:'sent'"`
 	// Error 为失败原因（成功时为空）。

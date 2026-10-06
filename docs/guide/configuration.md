@@ -2,6 +2,8 @@
 
 配置文件为 YAML，支持通过环境变量覆盖，前缀为 `AXMIPIC_`（例如 `AXMIPIC_SERVER_PORT=9000`）。完整示例见 `configs/config.example.yaml`。
 
+> **引导项 vs 运行设置**：`config.yaml` 只需保留**引导项**——`server`（监听/`base_url`）、`database`、初始 `storage`、`install`、`logging`，以及可选的 `auth.encryption_key`/`auth.jwt_secret`（主密钥）。其余设置（权限开关、上传/处理/限流/安全/短信/维护/站点等）保存在数据库中，可在后台「系统设置」修改；首次启动时以配置文件为兜底播种，之后以数据库为准。**请勿把密钥明文放进 `config.yaml`**：需要回读的密钥（存储密钥、支付密钥、SMTP 密码等）以密文存数据库，主密钥建议通过环境变量或 0600 密钥文件提供。
+
 ## 服务器
 
 ```yaml
@@ -21,14 +23,18 @@ server:
 
 ```yaml
 database:
-  driver: "sqlite"                      # sqlite | postgres
+  driver: "sqlite"                      # sqlite | postgres | mysql
   dsn: "./data/axmipic.db"              # sqlite 为文件路径
   # postgres 使用 libpq 连接串或 URL：
   #   host=127.0.0.1 port=5432 user=axmipic password=secret dbname=axmipic sslmode=disable
   #   postgres://axmipic:secret@127.0.0.1:5432/axmipic?sslmode=disable
+  # mysql 使用 go-sql-driver 的 DSN：
+  #   axmipic:secret@tcp(127.0.0.1:3306)/axmipic
 ```
 
 SQLite 会自动启用 `busy_timeout` 与 WAL 模式。
+
+MySQL 支持 5.7 及以上（MariaDB 兼容）。连接串中的 `parseTime=true`、`charset=utf8mb4`、`loc=Local` 会自动补齐（已显式指定则不覆盖）。5.7 建议保持默认的 InnoDB 大前缀（`innodb_large_prefix=ON`、`innodb_default_row_format=DYNAMIC`），以支持 `utf8mb4` 下的长索引。
 
 ## 存储
 

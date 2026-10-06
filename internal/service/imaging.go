@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/AXmishell/axmipic/internal/imaging"
@@ -93,6 +94,8 @@ type ImagingService struct {
 	cache *renderCache
 	// sem 限制同时进行的渲染数量，防止并发解码造成内存尖峰。
 	sem chan struct{}
+	// policyMu 保护 policy/allowed，使其可在运行时热替换。
+	policyMu sync.RWMutex
 }
 
 // NewImagingService 构造一个 ImagingService。
@@ -114,6 +117,18 @@ func (s *ImagingService) SetMaxConcurrency(n int) {
 	if n > 0 {
 		s.sem = make(chan struct{}, n)
 	}
+}
+
+// SetPolicy 在运行时替换处理策略（后台设置热更新），并重建允许格式集合。
+func (s *ImagingService) SetPolicy(policy ProcessingPolicy) {
+	allowed := make(map[imaging.Format]struct{}, len(policy.AllowedFormats))
+	for _, f := range policy.AllowedFormats {
+		allowed[f] = struct{}{}
+	}
+	s.policyMu.Lock()
+	s.policy = policy
+	s.allowed = allowed
+	s.policyMu.Unlock()
 }
 
 // acquire 获取一个渲染槽位，尊重 ctx 取消。
@@ -138,6 +153,8 @@ func (s *ImagingService) release() {
 
 // Enabled 报告变换功能是否可用。
 func (s *ImagingService) Enabled() bool {
+	s.policyMu.RLock()
+	defer s.policyMu.RUnlock()
 	return s.policy.Enabled && s.processor != nil
 }
 
@@ -151,6 +168,8 @@ func (s *ImagingService) Capabilities() imaging.Capabilities {
 
 // Options 根据策略和处理器校验 req，并返回要使用的处理器选项。
 func (s *ImagingService) Options(req TransformRequest) (imaging.Options, error) {
+	s.policyMu.RLock()
+	defer s.policyMu.RUnlock()
 	if req.Width < 0 || req.Height < 0 {
 		return imaging.Options{}, fmt.Errorf("%w: dimensions must not be negative", ErrInvalidInput)
 	}

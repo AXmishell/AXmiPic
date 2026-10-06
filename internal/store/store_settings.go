@@ -11,7 +11,7 @@ import (
 func (r *Repository) GetSetting(ctx context.Context, key string) (string, error) {
 	var settings []Setting
 	// 使用 Find 而非 First：记录不存在时不触发 GORM 的「record not found」日志。
-	if err := r.db.WithContext(ctx).Where("key = ?", key).Limit(1).Find(&settings).Error; err != nil {
+	if err := r.db.WithContext(ctx).Where(map[string]any{"key": key}).Limit(1).Find(&settings).Error; err != nil {
 		return "", fmt.Errorf("store: get setting %q: %w", key, err)
 	}
 	if len(settings) == 0 {

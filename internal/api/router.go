@@ -294,6 +294,8 @@ func NewRouter(d Deps) http.Handler {
 				r.Get("/admin/notify/logs", h.adminNotifyLogs)
 				r.Get("/admin/notify/smtp", h.adminGetSMTP)
 				r.Put("/admin/notify/smtp", h.adminUpdateSMTP)
+				r.Get("/admin/settings/{domain}", h.adminGetSettingDomain)
+				r.Put("/admin/settings/{domain}", h.adminUpdateSettingDomain)
 				r.Get("/admin/auth", h.adminGetAuth)
 				r.Put("/admin/auth", h.adminUpdateAuth)
 				r.Get("/admin/moderation", h.adminGetModeration)

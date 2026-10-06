@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/AXmishell/axmipic/internal/service"
@@ -109,6 +110,74 @@ func TestInstallWritesConfigAndLock(t *testing.T) {
 	}, opener, seed)
 	if !errors.Is(err, service.ErrAlreadyInstalled) {
 		t.Fatalf("second install err = %v, want ErrAlreadyInstalled", err)
+	}
+}
+
+func TestInstallConfigIsBootstrapOnly(t *testing.T) {
+	dir := t.TempDir()
+	lock := filepath.Join(dir, "install.lock")
+	cfgPath := filepath.Join(dir, "config.yaml")
+	dbPath := filepath.Join(dir, "install.db")
+	svc := service.NewInstallService(lock, cfgPath, false, "")
+	opener := func(driver, dsn string) (*store.Repository, error) { return store.Open("sqlite", dbPath) }
+
+	err := svc.Install(context.Background(), service.InstallInput{
+		SiteName:          "测试图床",
+		BaseURL:           "http://example.test",
+		DatabaseDriver:    "sqlite",
+		DatabaseDSN:       dbPath,
+		AdminUsername:     "admin",
+		AdminPassword:     "password123",
+		StorageDriver:     "local",
+		StorageRoot:       filepath.Join(dir, "uploads"),
+		AllowRegistration: false,
+		AllowGuestUpload:  true,
+	}, opener, nil)
+	if err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+
+	content, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	text := string(content)
+	for _, forbidden := range []string{"auth:", "bootstrap_admin", "allow_registration", "admin_password", "jwt_secret"} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("config should not contain %q:\n%s", forbidden, text)
+		}
+	}
+	if !strings.Contains(text, "database:") || !strings.Contains(text, "install:") {
+		t.Fatalf("config missing bootstrap sections:\n%s", text)
+	}
+	info, err := os.Stat(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("config mode = %v, want 0600", info.Mode().Perm())
+	}
+
+	// 运行设置写入数据库。
+	repo, err := store.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open target db: %v", err)
+	}
+	defer func() { _ = repo.Close() }()
+	ctx := context.Background()
+	authRaw, err := repo.GetSetting(ctx, "auth")
+	if err != nil {
+		t.Fatalf("auth setting: %v", err)
+	}
+	if !strings.Contains(authRaw, `"allow_guest_upload":true`) || !strings.Contains(authRaw, `"require_auth":false`) {
+		t.Fatalf("auth setting = %s", authRaw)
+	}
+	siteRaw, err := repo.GetSetting(ctx, "site")
+	if err != nil {
+		t.Fatalf("site setting: %v", err)
+	}
+	if !strings.Contains(siteRaw, "测试图床") {
+		t.Fatalf("site setting = %s", siteRaw)
 	}
 }
 

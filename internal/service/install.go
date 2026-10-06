@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"crypto/subtle"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -146,6 +147,11 @@ func (s *InstallService) Install(ctx context.Context, in InstallInput, repoOpene
 		}
 	}
 
+	// 把向导采集的运行设置写入目标库（config.yaml 仅保留引导项）。
+	if err := s.writeRuntimeSettings(ctx, repo, in); err != nil {
+		return err
+	}
+
 	// 写入配置文件（尽力而为；失败不阻断，但会体现在错误里）。
 	if err := s.writeConfig(in); err != nil {
 		return err
@@ -157,6 +163,30 @@ func (s *InstallService) Install(ctx context.Context, in InstallInput, repoOpene
 	return nil
 }
 
+// writeRuntimeSettings 把安装向导采集的运行设置写入目标数据库，避免这些项以
+// 明文形式留在 config.yaml 中（config 只保留引导项）。
+func (s *InstallService) writeRuntimeSettings(ctx context.Context, repo *store.Repository, in InstallInput) error {
+	authSetting, err := json.Marshal(map[string]any{
+		"allow_registration": in.AllowRegistration,
+		"require_auth":       !in.AllowGuestUpload,
+		"allow_guest_upload": in.AllowGuestUpload,
+	})
+	if err != nil {
+		return fmt.Errorf("install: encode auth settings: %w", err)
+	}
+	if err := repo.SetSetting(ctx, "auth", string(authSetting)); err != nil {
+		return err
+	}
+	siteSetting, err := json.Marshal(map[string]any{
+		"name":        strings.TrimSpace(in.SiteName),
+		"description": "",
+	})
+	if err != nil {
+		return fmt.Errorf("install: encode site settings: %w", err)
+	}
+	return repo.SetSetting(ctx, "site", string(siteSetting))
+}
+
 // validateInstallInput 校验向导输入。
 func validateInstallInput(in InstallInput) error {
 	if strings.TrimSpace(in.BaseURL) == "" {
@@ -166,7 +196,7 @@ func validateInstallInput(in InstallInput) error {
 		return fmt.Errorf("%w: base_url must start with http:// or https://", ErrInvalidInput)
 	}
 	switch strings.ToLower(strings.TrimSpace(in.DatabaseDriver)) {
-	case "", "sqlite", "postgres", "postgresql", "pgx":
+	case "", "sqlite", "postgres", "postgresql", "pgx", "mysql", "mariadb":
 	default:
 		return fmt.Errorf("%w: unsupported database driver %q", ErrInvalidInput, in.DatabaseDriver)
 	}
@@ -213,6 +243,8 @@ func (s *InstallService) writeLock(in InstallInput) error {
 }
 
 // writeConfig 把向导输入写入配置文件。它仅在 configPath 非空时执行。
+// 生成的配置只包含引导项（监听、数据库、初始存储、安装、日志）；其余运行设置
+// （权限开关、上传/处理/限流等）保存在数据库中，可在后台修改。
 func (s *InstallService) writeConfig(in InstallInput) error {
 	if strings.TrimSpace(s.configPath) == "" {
 		return nil
@@ -230,6 +262,7 @@ func (s *InstallService) writeConfig(in InstallInput) error {
 		root = "./data/uploads"
 	}
 	content := fmt.Sprintf(`# 由 AXmiPic 安装向导生成于 %s
+# 仅包含引导项；其余运行设置保存在数据库中，可在后台「系统设置」修改。
 server:
   host: "0.0.0.0"
   port: 8080
@@ -248,11 +281,6 @@ storage:
   local:
     root: %q
 
-auth:
-  allow_registration: %t
-  allow_guest_upload: %t
-  require_auth: %t
-
 install:
   lock_file: %q
   config_path: %q
@@ -266,16 +294,13 @@ logging:
 		strings.TrimSpace(in.DatabaseDSN),
 		storageDriver,
 		root,
-		in.AllowRegistration,
-		in.AllowGuestUpload,
-		!in.AllowGuestUpload,
 		s.lockFile,
 		s.configPath,
 	)
 	if err := os.MkdirAll(filepath.Dir(s.configPath), 0o755); err != nil {
 		return fmt.Errorf("install: create config directory: %w", err)
 	}
-	if err := os.WriteFile(s.configPath, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(s.configPath, []byte(content), 0o600); err != nil {
 		return fmt.Errorf("install: write config file: %w", err)
 	}
 	return nil

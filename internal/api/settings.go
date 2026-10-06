@@ -2,10 +2,51 @@ package api
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
+
+	"github.com/go-chi/chi/v5"
 
 	"github.com/AXmishell/axmipic/internal/service"
 )
+
+// adminGetSettingDomain 返回指定设置域的当前值。
+func (h *Handler) adminGetSettingDomain(w http.ResponseWriter, r *http.Request) {
+	if h.settings == nil {
+		writeError(w, http.StatusNotFound, http.StatusNotFound, "settings unavailable")
+		return
+	}
+	domain, ok := h.settings.Domain(chi.URLParam(r, "domain"))
+	if !ok {
+		writeError(w, http.StatusNotFound, http.StatusNotFound, "unknown settings domain")
+		return
+	}
+	writeOK(w, domain.Get())
+}
+
+// adminUpdateSettingDomain 校验并保存指定设置域。
+func (h *Handler) adminUpdateSettingDomain(w http.ResponseWriter, r *http.Request) {
+	if h.settings == nil {
+		writeError(w, http.StatusNotFound, http.StatusNotFound, "settings unavailable")
+		return
+	}
+	domain, ok := h.settings.Domain(chi.URLParam(r, "domain"))
+	if !ok {
+		writeError(w, http.StatusNotFound, http.StatusNotFound, "unknown settings domain")
+		return
+	}
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxJSONBody))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	value, err := domain.Update(r.Context(), body)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeOK(w, value)
+}
 
 // adminGetSMTP 返回当前 SMTP 设置（密码仅返回是否已设置）。
 func (h *Handler) adminGetSMTP(w http.ResponseWriter, r *http.Request) {

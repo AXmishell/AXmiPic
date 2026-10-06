@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // Create 插入图像元数据。
@@ -33,7 +34,7 @@ func (r *Repository) GetByID(ctx context.Context, id string) (*Image, error) {
 // GetByKey 返回存储在 key 下的图像，或 ErrNotFound。
 func (r *Repository) GetByKey(ctx context.Context, key string) (*Image, error) {
 	var image Image
-	err := r.db.WithContext(ctx).First(&image, "key = ?", key).Error
+	err := r.db.WithContext(ctx).Where(map[string]any{"key": key}).First(&image).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, fmt.Errorf("store: image key %q: %w", key, ErrNotFound)
 	}
@@ -111,11 +112,16 @@ func (r *Repository) ListImages(ctx context.Context, opts ImageListOptions) ([]I
 	}
 	if opts.Keyword != "" {
 		like := "%" + opts.Keyword + "%"
-		countQuery = countQuery.Where("original_name LIKE ? OR filename LIKE ? OR key LIKE ?", like, like, like)
-		listQuery = listQuery.Where(
-			"images.original_name LIKE ? OR images.filename LIKE ? OR images.key LIKE ?",
-			like, like, like,
-		)
+		countQuery = countQuery.Where(clause.Or(
+			clause.Like{Column: clause.Column{Name: "original_name"}, Value: like},
+			clause.Like{Column: clause.Column{Name: "filename"}, Value: like},
+			clause.Like{Column: clause.Column{Name: "key"}, Value: like},
+		))
+		listQuery = listQuery.Where(clause.Or(
+			clause.Like{Column: clause.Column{Table: "images", Name: "original_name"}, Value: like},
+			clause.Like{Column: clause.Column{Table: "images", Name: "filename"}, Value: like},
+			clause.Like{Column: clause.Column{Table: "images", Name: "key"}, Value: like},
+		))
 	}
 
 	useCursor := opts.Cursor != nil && opts.Cursor.Order == order
@@ -240,7 +246,7 @@ func (r *Repository) CreatePendingUpload(ctx context.Context, pending *PendingUp
 // GetPendingUpload 返回 key 对应的待处理上传，或 ErrNotFound。
 func (r *Repository) GetPendingUpload(ctx context.Context, key string) (*PendingUpload, error) {
 	var pending PendingUpload
-	err := r.db.WithContext(ctx).First(&pending, "key = ?", key).Error
+	err := r.db.WithContext(ctx).Where(map[string]any{"key": key}).First(&pending).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, fmt.Errorf("store: pending upload %q: %w", key, ErrNotFound)
 	}
@@ -253,7 +259,7 @@ func (r *Repository) GetPendingUpload(ctx context.Context, key string) (*Pending
 // DeletePendingUpload 移除一个待处理上传。删除不存在的记录是
 // 无操作。
 func (r *Repository) DeletePendingUpload(ctx context.Context, key string) error {
-	if err := r.db.WithContext(ctx).Delete(&PendingUpload{}, "key = ?", key).Error; err != nil {
+	if err := r.db.WithContext(ctx).Where(map[string]any{"key": key}).Delete(&PendingUpload{}).Error; err != nil {
 		return fmt.Errorf("store: delete pending upload %q: %w", key, err)
 	}
 	return nil

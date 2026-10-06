@@ -358,3 +358,76 @@ export function getModerationSettings(): Promise<ModerationSettings> {
 export function updateModerationSettings(payload: ModerationSettingsInput): Promise<ModerationSettings> {
   return request<ModerationSettings>({ method: 'PUT', url: '/admin/moderation', data: payload })
 }
+
+// ---- 通用系统设置域（upload/processing/security/sms/limits/maintenance/site）----
+
+/** 可配置的设置域标识。 */
+export type SettingDomain =
+  | 'upload'
+  | 'processing'
+  | 'security'
+  | 'sms'
+  | 'limits'
+  | 'maintenance'
+  | 'site'
+
+export interface UploadSettings {
+  max_size_mb: number
+  allowed_mime_types: string[]
+}
+
+export interface ImagingSettings {
+  enabled: boolean
+  max_width: number
+  max_height: number
+  default_quality: number
+  allowed_formats: string[]
+  allow_enlarge: boolean
+  allow_effects: boolean
+  allow_watermark: boolean
+  watermark_text: string
+}
+
+export interface SecuritySettings {
+  scanner: string
+  cloud_processor: string
+}
+
+export interface SMSSettings {
+  enabled: boolean
+  provider: string
+  endpoint: string
+  method: string
+}
+
+export interface LimitsSettings {
+  upload_per_minute: number
+  upload_burst: number
+  guest_per_minute: number
+  guest_burst: number
+  image_per_minute: number
+  image_burst: number
+  share_per_minute: number
+  share_burst: number
+}
+
+export interface MaintenanceSettings {
+  orphan_cleanup: boolean
+  orphan_grace_hours: number
+  orphan_interval_hours: number
+}
+
+export interface SiteSettings {
+  name: string
+  description: string
+}
+
+/** 读取某个设置域的当前值。 */
+export function getSettingDomain<T>(domain: SettingDomain): Promise<T> {
+  return request<T>({ method: 'GET', url: `/admin/settings/${domain}` })
+}
+
+/** 保存某个设置域（可热应用的域即时生效）。 */
+export function updateSettingDomain<T>(domain: SettingDomain, value: unknown): Promise<T> {
+  return request<T>({ method: 'PUT', url: `/admin/settings/${domain}`, data: value })
+}

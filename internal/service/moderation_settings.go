@@ -16,6 +16,9 @@ import (
 // moderationSettingKey 是图片广场 AI 审查在数据库中的键。
 const moderationSettingKey = "moderation"
 
+// aadModerationAPIKey 是审查 API Key 密文的 AAD 标识。
+const aadModerationAPIKey = "settings.moderation.api_key"
+
 // ModerationSettingsDTO 是图片广场 AI 审查设置的对外表示（密钥仅返回是否已设置）。
 type ModerationSettingsDTO struct {
 	Enabled    bool   `json:"enabled"`
@@ -175,7 +178,7 @@ func (s *SettingsService) applyModeration(cfg config.ModerationConfig) {
 
 // encodeModeration 序列化审查设置，APIKey 以密文写入。
 func (s *SettingsService) encodeModeration(cfg config.ModerationConfig) (string, error) {
-	encrypted, err := s.cipher.Encrypt(cfg.APIKey)
+	encrypted, err := s.cipher.EncryptWithAAD(cfg.APIKey, aadModerationAPIKey)
 	if err != nil {
 		return "", fmt.Errorf("settings: encrypt moderation api key: %w", err)
 	}
@@ -200,7 +203,7 @@ func (s *SettingsService) decodeModeration(raw string) (config.ModerationConfig,
 	if err := json.Unmarshal([]byte(raw), &stored); err != nil {
 		return config.ModerationConfig{}, fmt.Errorf("settings: decode moderation: %w", err)
 	}
-	key, err := s.cipher.Decrypt(stored.APIKey)
+	key, err := s.cipher.DecryptWithAAD(stored.APIKey, aadModerationAPIKey)
 	if err != nil {
 		return config.ModerationConfig{}, fmt.Errorf("settings: decrypt moderation api key: %w", err)
 	}

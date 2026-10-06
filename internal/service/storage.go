@@ -25,6 +25,9 @@ var (
 	ErrStorageConfig = errors.New("service: invalid storage configuration")
 )
 
+// aadStorageSecrets 是存储后端密钥密文的 AAD 标识。
+const aadStorageSecrets = "storage.secrets"
+
 // StorageBackendDTO 是存储后端的对外表示。敏感字段以脱敏形式返回。
 type StorageBackendDTO struct {
 	ID        string         `json:"id"`
@@ -147,7 +150,7 @@ func (s *StorageService) Create(ctx context.Context, in StorageInput, makeCurren
 	if err != nil {
 		return nil, fmt.Errorf("storage: encode secrets: %w", err)
 	}
-	encrypted, err := s.cipher.Encrypt(string(secretsJSON))
+	encrypted, err := s.cipher.EncryptWithAAD(string(secretsJSON), aadStorageSecrets)
 	if err != nil {
 		return nil, fmt.Errorf("storage: encrypt secrets: %w", err)
 	}
@@ -203,7 +206,7 @@ func (s *StorageService) Update(ctx context.Context, id string, in StorageInput)
 		}
 	}
 	secretsJSON, _ := json.Marshal(merged)
-	encrypted, err := s.cipher.Encrypt(string(secretsJSON))
+	encrypted, err := s.cipher.EncryptWithAAD(string(secretsJSON), aadStorageSecrets)
 	if err != nil {
 		return nil, fmt.Errorf("storage: encrypt secrets: %w", err)
 	}
@@ -383,7 +386,7 @@ func (s *StorageService) parseInput(in StorageInput, existing *store.StorageBack
 
 // decryptSecrets 解开某个后端保存的敏感字段。解密失败时返回空集合。
 func (s *StorageService) decryptSecrets(b *store.StorageBackend) map[string]string {
-	plain, err := s.cipher.Decrypt(b.Secrets)
+	plain, err := s.cipher.DecryptWithAAD(b.Secrets, aadStorageSecrets)
 	if err != nil || plain == "" {
 		return map[string]string{}
 	}

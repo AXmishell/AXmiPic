@@ -18,7 +18,6 @@ type ImageObjectRef struct {
 func (r *Repository) ObjectRefsByUser(ctx context.Context, userID string) ([]ImageObjectRef, error) {
 	var refs []ImageObjectRef
 	if err := r.db.WithContext(ctx).Model(&Image{}).
-		Select("key, storage_id").
 		Where("user_id = ?", userID).
 		Find(&refs).Error; err != nil {
 		return nil, fmt.Errorf("store: list object refs for %q: %w", userID, err)
@@ -73,7 +72,7 @@ func (r *Repository) ExistingImageKeys(ctx context.Context, keys []string) (map[
 		}
 		var found []string
 		if err := r.db.WithContext(ctx).Model(&Image{}).
-			Where("key IN ?", keys[start:end]).
+			Where(map[string]any{"key": keys[start:end]}).
 			Pluck("key", &found).Error; err != nil {
 			return nil, fmt.Errorf("store: find existing image keys: %w", err)
 		}

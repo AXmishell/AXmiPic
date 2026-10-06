@@ -523,9 +523,9 @@ func (c Config) validate() error {
 		return fmt.Errorf("config: server.base_url must not be empty")
 	}
 	switch strings.ToLower(strings.TrimSpace(c.Database.Driver)) {
-	case "", "sqlite", "postgres", "postgresql", "pgx":
+	case "", "sqlite", "postgres", "postgresql", "pgx", "mysql", "mariadb":
 	default:
-		return fmt.Errorf("config: database.driver %q is not supported (want sqlite or postgres)", c.Database.Driver)
+		return fmt.Errorf("config: database.driver %q is not supported (want sqlite, postgres or mysql)", c.Database.Driver)
 	}
 	if strings.TrimSpace(c.Database.DSN) == "" {
 		return fmt.Errorf("config: database.dsn must not be empty")
