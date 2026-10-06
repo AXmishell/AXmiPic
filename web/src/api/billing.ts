@@ -400,9 +400,163 @@ export interface SecuritySettings {
 
 export interface SMSSettings {
   enabled: boolean
+  /** 渠道类型：'log' 日志、'http' 通用网关，或已加载的短信插件名。 */
+  channel: string
   provider: string
   endpoint: string
   method: string
+}
+
+/** 插件配置字段（与后端 plugin.Field 对齐）。 */
+export interface PluginField {
+  key: string
+  label: string
+  type?: string
+  required?: boolean
+  secret?: boolean
+  default?: string
+  options?: string[]
+  help?: string
+}
+
+/** 插件自描述（与后端 plugin.Descriptor 对齐）。 */
+export interface PluginDescriptor {
+  category: string
+  name: string
+  title?: string
+  version?: string
+  fields?: PluginField[]
+}
+
+/** 插件配置（秘钥字段只返回是否已设置）。 */
+export interface PluginConfig extends PluginDescriptor {
+  values: Record<string, string>
+  secrets: Record<string, boolean>
+  configured: boolean
+}
+
+/** 列出指定类别的插件。 */
+export function listPlugins(category?: string): Promise<{ items: PluginDescriptor[] }> {
+  return request<{ items: PluginDescriptor[] }>({
+    method: 'GET',
+    url: '/admin/plugins',
+    params: category ? { category } : undefined,
+  })
+}
+
+/** 读取插件配置（秘钥仅返回是否已设置）。 */
+export function getPluginConfig(name: string): Promise<PluginConfig> {
+  return request<PluginConfig>({ method: 'GET', url: `/admin/plugins/${name}` })
+}
+
+/** 保存插件配置并即时应用。秘钥字段留空表示保持原值。 */
+export function updatePluginConfig(
+  name: string,
+  values: Record<string, string>,
+): Promise<PluginConfig> {
+  return request<PluginConfig>({
+    method: 'PUT',
+    url: `/admin/plugins/${name}/config`,
+    data: { values },
+  })
+}
+
+/** 用当前配置向插件发送一条测试通知。 */
+export function testPlugin(
+  name: string,
+  payload: { to: string; subject?: string; body?: string },
+): Promise<{ status: string; result: unknown }> {
+  return request<{ status: string; result: unknown }>({
+    method: 'POST',
+    url: `/admin/plugins/${name}/test`,
+    data: payload,
+  })
+}
+
+/** 插件市场索引条目。 */
+export interface PluginMarketEntry {
+  name: string
+  version: string
+  category: string
+  runtime: string
+  description?: string
+  url: string
+  sha256?: string
+  signature?: string
+}
+
+/** 拉取插件市场索引。 */
+export function listPluginRegistry(): Promise<{ items: PluginMarketEntry[]; configured: boolean }> {
+  return request<{ items: PluginMarketEntry[]; configured: boolean }>({
+    method: 'GET',
+    url: '/admin/plugins/registry',
+  })
+}
+
+/** 安装插件：按索引名，或按直链 URL + 校验值。 */
+export function installPlugin(payload: {
+  name?: string
+  version?: string
+  url?: string
+  sha256?: string
+  signature?: string
+}): Promise<PluginDescriptor> {
+  return request<PluginDescriptor>({ method: 'POST', url: '/admin/plugins/install', data: payload })
+}
+
+/** 卸载并删除插件。 */
+export function removePlugin(name: string): Promise<{ status: string; name: string }> {
+  return request<{ status: string; name: string }>({
+    method: 'DELETE',
+    url: `/admin/plugins/${name}`,
+  })
+}
+
+/** 重新加载插件。 */
+export function reloadPlugin(name: string): Promise<PluginConfig> {
+  return request<PluginConfig>({ method: 'POST', url: `/admin/plugins/${name}/reload` })
+}
+
+/** 插件安装与启用状态。 */
+export interface PluginStatus extends PluginDescriptor {
+  runtime: string
+  enabled: boolean
+  configured: boolean
+}
+
+/** 列出全部已安装插件及其状态。 */
+export function listInstalledPlugins(): Promise<{ items: PluginStatus[] }> {
+  return request<{ items: PluginStatus[] }>({ method: 'GET', url: '/admin/plugins/installed' })
+}
+
+/** 启用或暂停插件（状态持久化）。 */
+export function setPluginEnabled(
+  name: string,
+  enabled: boolean,
+): Promise<{ name: string; enabled: boolean }> {
+  return request<{ name: string; enabled: boolean }>({
+    method: 'PUT',
+    url: `/admin/plugins/${name}/enabled`,
+    data: { enabled },
+  })
+}
+
+/** 本地上传插件归档（zip）安装。 */
+export function installPluginArchive(
+  file: Blob,
+  sha256 = '',
+  signature = '',
+): Promise<PluginDescriptor> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/octet-stream' }
+  if (sha256) headers['X-Plugin-Sha256'] = sha256
+  if (signature) headers['X-Plugin-Signature'] = signature
+  return request<PluginDescriptor>({
+    method: 'POST',
+    url: '/admin/plugins/install',
+    data: file,
+    timeout: 120000,
+    headers,
+  })
 }
 
 export interface LimitsSettings {

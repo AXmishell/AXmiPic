@@ -1,0 +1,9 @@
+name: aliyun-sms
+version: 0.1.0
+category: notify.sms
+runtime: wasm
+entry: plugin.wasm
+abi: 1
+capabilities:
+  http:
+    hosts: ["dysmsapi.aliyuncs.com"]

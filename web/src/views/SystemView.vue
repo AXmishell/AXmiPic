@@ -17,6 +17,7 @@ import {
   getSettingDomain,
   getSMTPConfig,
   listPaymentGateways,
+  listPlugins,
   previewClientIP,
   sendTestNotify,
   updateAuthSettings,
@@ -33,6 +34,7 @@ import {
   type ModerationSettings,
   type PaymentSettings,
   type PaymentSettingsInput,
+  type PluginDescriptor,
   type ProcessInfo,
   type RuntimeInfo,
   type SecuritySettings,
@@ -46,6 +48,7 @@ import { toApiError } from '@/api/client'
 import type { AdminStats } from '@/api/types'
 import ErrorState from '@/components/ErrorState.vue'
 import PageHeader from '@/components/PageHeader.vue'
+import PluginConfigForm from '@/components/PluginConfigForm.vue'
 import { formatBytes, formatNumber } from '@/utils/format'
 
 const loading = ref(false)
@@ -432,7 +435,27 @@ const imagingForm = reactive<ImagingSettings>({
   watermark_text: '',
 })
 const securityForm = reactive<SecuritySettings>({ scanner: 'builtin', cloud_processor: 'local' })
-const smsForm = reactive<SMSSettings>({ enabled: false, provider: '', endpoint: '', method: 'POST' })
+const smsForm = reactive<SMSSettings>({ enabled: false, channel: '', provider: '', endpoint: '', method: 'POST' })
+
+// ---- 短信插件渠道 ----
+const smsPlugins = ref<PluginDescriptor[]>([])
+
+/** 判断渠道值是否为插件名。 */
+function isPluginChannel(channel: string): boolean {
+  return !!channel && channel !== 'http' && channel !== 'log'
+}
+
+/** 短信渠道下拉选项：日志、通用 HTTP 网关与全部已加载插件。 */
+const smsChannelOptions = computed(() => {
+  const opts = [
+    { label: '日志（调试）', value: 'log' },
+    { label: '通用 HTTP 网关', value: 'http' },
+  ]
+  for (const p of smsPlugins.value) {
+    opts.push({ label: p.title || p.name, value: p.name })
+  }
+  return opts
+})
 const limitsForm = reactive<LimitsSettings>({
   upload_per_minute: 30,
   upload_burst: 5,
@@ -509,6 +532,8 @@ function fillSecurity(v: SecuritySettings): void {
 }
 function fillSMS(v: SMSSettings): void {
   Object.assign(smsForm, v)
+  // 规范化历史渠道值：未显式设置 channel 时按 endpoint 推断，便于下拉展示。
+  if (!smsForm.channel) smsForm.channel = smsForm.endpoint ? 'http' : 'log'
 }
 function fillLimits(v: LimitsSettings): void {
   Object.assign(limitsForm, v)
@@ -562,6 +587,7 @@ async function load(): Promise<void> {
       maintenanceData,
       siteData,
       clientIPData,
+      pluginList,
     ] = await Promise.all([
       fetchStats(),
       getRuntimeInfo(),
@@ -582,6 +608,7 @@ async function load(): Promise<void> {
       getSettingDomain<MaintenanceSettings>('maintenance').catch(() => null),
       getSettingDomain<SiteSettings>('site').catch(() => null),
       getSettingDomain<ClientIPSettings>('client_ip').catch(() => null),
+      listPlugins('notify.sms').catch(() => ({ items: [] })),
     ])
     stats.value = statsData
     runtime.value = runtimeData
@@ -612,6 +639,7 @@ async function load(): Promise<void> {
     if (uploadData) fillUpload(uploadData)
     if (imagingData) fillImaging(imagingData)
     if (securityData) fillSecurity(securityData)
+    smsPlugins.value = pluginList?.items ?? []
     if (smsData) fillSMS(smsData)
     if (limitsData) fillLimits(limitsData)
     if (maintenanceData) fillMaintenance(maintenanceData)
@@ -901,19 +929,47 @@ onBeforeUnmount(() => {
                 <el-form-item label="启用短信">
                   <el-switch v-model="smsForm.enabled" />
                 </el-form-item>
-                <el-form-item label="服务商名称">
-                  <el-input v-model="smsForm.provider" placeholder="例如 aliyun" />
-                </el-form-item>
-                <el-form-item label="HTTP 网关地址" class="smtp-grid__wide">
-                  <el-input v-model="smsForm.endpoint" placeholder="https://sms.example.com/send" />
-                </el-form-item>
-                <el-form-item label="请求方法">
-                  <el-select v-model="smsForm.method" style="width: 100%">
-                    <el-option label="POST" value="POST" />
-                    <el-option label="GET" value="GET" />
+                <el-form-item label="渠道">
+                  <el-select v-model="smsForm.channel" style="width: 100%">
+                    <el-option
+                      v-for="opt in smsChannelOptions"
+                      :key="opt.value"
+                      :label="opt.label"
+                      :value="opt.value"
+                    />
                   </el-select>
                 </el-form-item>
+
+                <template v-if="smsForm.channel === 'http'">
+                  <el-form-item label="服务商名称">
+                    <el-input v-model="smsForm.provider" placeholder="例如 aliyun" />
+                  </el-form-item>
+                  <el-form-item label="HTTP 网关地址" class="smtp-grid__wide">
+                    <el-input v-model="smsForm.endpoint" placeholder="https://sms.example.com/send" />
+                  </el-form-item>
+                  <el-form-item label="请求方法">
+                    <el-select v-model="smsForm.method" style="width: 100%">
+                      <el-option label="POST" value="POST" />
+                      <el-option label="GET" value="GET" />
+                    </el-select>
+                  </el-form-item>
+                </template>
+
+                <el-form-item
+                  v-else-if="!isPluginChannel(smsForm.channel)"
+                  label="说明"
+                  class="smtp-grid__wide"
+                >
+                  <span class="smtp-form__hint">日志渠道仅记录发送内容，便于本地调试。</span>
+                </el-form-item>
               </div>
+
+              <PluginConfigForm
+                v-if="isPluginChannel(smsForm.channel)"
+                :name="smsForm.channel"
+                style="margin-bottom: 12px"
+              />
+
               <div class="smtp-actions">
                 <el-button
                   type="primary"
@@ -922,6 +978,9 @@ onBeforeUnmount(() => {
                 >
                   保存并应用
                 </el-button>
+                <span v-if="isPluginChannel(smsForm.channel)" class="smtp-form__hint">
+                  插件凭据在「插件市场」中配置
+                </span>
               </div>
             </el-form>
           </div>

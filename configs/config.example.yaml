@@ -230,9 +230,10 @@ moderation:
   max_image_mb: 10
 
 sms:
-  # Enable a generic HTTP SMS gateway. Params are not templated here; the
-  # gateway is contacted with to/body placeholders when enabled in code.
+  # SMS channel. `channel` may be "log", "http" (generic gateway below), or the
+  # name of a loaded WASM plugin under `plugins.dir` (e.g. "smsbao").
   enabled: false
+  channel: ""
   provider: ""
   endpoint: ""
   method: "POST"
@@ -245,6 +246,25 @@ email:
   password: ""
   from: ""
   use_tls: false
+
+# Runtime WASM plugins: each subdirectory of `dir` containing plugin.yaml is
+# loaded at startup. Plugins declare their capabilities (e.g. allowed HTTP
+# hosts) in the manifest and communicate with the host over the `axmipic`
+# WASM import module.
+plugins:
+  enabled: true
+  dir: "./plugins"
+  http_timeout_sec: 10
+  max_http_body_kb: 1024
+  # Ed25519 trusted public keys (base64) for verifying signed plugin archives.
+  # When set, installing a plugin requires a valid signature. Leave empty to
+  # allow unsigned installs (a warning is logged) unless require_signature=true.
+  trusted_keys: []
+  require_signature: false
+  # Optional plugin marketplace index (JSON) for browsing/installing by name.
+  index_url: ""
+  # Maximum uncompressed size of an installed plugin archive (MiB).
+  max_archive_mb: 64
 
 logging:
   level: "info"

@@ -31,6 +31,8 @@ type Deps struct {
 	Install  *service.InstallService
 	// Settings 管理运行时可修改的系统设置（如 SMTP）。
 	Settings *service.SettingsService
+	// Plugins 为运行时插件服务（WASM 插件配置与调用）。
+	Plugins *service.PluginService
 	// GuestSigner 为匿名访客的签名 cookie 提供签名与校验。
 	GuestSigner *auth.GuestSigner
 	// Runtime 是实例运行环境信息，供管理端展示（不含密钥）。
@@ -71,6 +73,7 @@ type Handler struct {
 	notify         *service.NotifyService
 	install        *service.InstallService
 	settings       *service.SettingsService
+	plugins        *service.PluginService
 	guestSigner    *auth.GuestSigner
 	runtime        RuntimeInfo
 	installRepo    func(driver, dsn string) (*store.Repository, error)
@@ -101,6 +104,7 @@ func NewRouter(d Deps) http.Handler {
 		notify:         d.Notify,
 		install:        d.Install,
 		settings:       d.Settings,
+		plugins:        d.Plugins,
 		guestSigner:    d.GuestSigner,
 		runtime:        d.Runtime,
 		installRepo:    d.InstallRepo,
@@ -308,6 +312,16 @@ func NewRouter(d Deps) http.Handler {
 				r.Get("/admin/imaging/drivers", h.adminImagingDrivers)
 				r.Get("/admin/runtime", h.adminRuntimeInfo)
 				r.Get("/admin/process", h.adminProcessInfo)
+				r.Get("/admin/plugins", h.adminListPlugins)
+				r.Get("/admin/plugins/registry", h.adminPluginRegistry)
+				r.Get("/admin/plugins/installed", h.adminInstalledPlugins)
+				r.Post("/admin/plugins/install", h.adminInstallPlugin)
+				r.Get("/admin/plugins/{name}", h.adminGetPluginConfig)
+				r.Put("/admin/plugins/{name}/config", h.adminUpdatePluginConfig)
+				r.Put("/admin/plugins/{name}/enabled", h.adminSetPluginEnabled)
+				r.Post("/admin/plugins/{name}/test", h.adminTestPlugin)
+				r.Post("/admin/plugins/{name}/reload", h.adminReloadPlugin)
+				r.Delete("/admin/plugins/{name}", h.adminRemovePlugin)
 			})
 		})
 	})

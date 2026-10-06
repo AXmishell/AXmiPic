@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, type Component } from 'vue'
 import { useRoute } from 'vue-router'
-import { ArrowRight, Bell, Close, Coin, Folder, Grid, Key, MagicStick, Management, Message, Odometer, Picture, Service, Setting, Share, ShoppingCart, User } from '@element-plus/icons-vue'
+import { ArrowRight, Bell, Close, Coin, Folder, Goods, Grid, Key, MagicStick, Management, Message, Odometer, Picture, Service, Setting, Share, ShoppingCart, User } from '@element-plus/icons-vue'
 
 import BrandMark from '@/components/BrandMark.vue'
 import QuotaMeter from '@/components/QuotaMeter.vue'
@@ -79,6 +79,7 @@ const adminGroups: NavGroup[] = [
     label: '系统',
     items: [
       { label: '系统设置', to: '/admin/system', icon: Setting },
+      { label: '插件市场', to: '/admin/plugins', icon: Goods },
       { label: '邮件日志', to: '/admin/mail-logs', icon: Message },
     ],
   },

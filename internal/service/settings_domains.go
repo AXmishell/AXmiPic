@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"strings"
 	"sync"
 
 	"github.com/AXmishell/axmipic/internal/imaging"
+	"github.com/AXmishell/axmipic/internal/notify"
 	"github.com/AXmishell/axmipic/internal/store"
 )
 
@@ -202,7 +204,10 @@ func ValidateSecuritySettings(v SecuritySettings) error {
 
 // SMSSettings 配置短信渠道。
 type SMSSettings struct {
-	Enabled  bool   `json:"enabled"`
+	Enabled bool `json:"enabled"`
+	// Channel 指定渠道类型："" 或 "http" 使用通用 HTTP 网关；"log" 使用日志
+	// 兜底；其它值视为已加载的短信插件名（如 "smsbao"）。旧配置可省略。
+	Channel  string `json:"channel"`
 	Provider string `json:"provider"`
 	Endpoint string `json:"endpoint"`
 	Method   string `json:"method"`
@@ -210,10 +215,52 @@ type SMSSettings struct {
 
 // ValidateSMSSettings 校验短信设置。
 func ValidateSMSSettings(v SMSSettings) error {
-	if v.Enabled && strings.TrimSpace(v.Endpoint) == "" {
-		return fmt.Errorf("%w: sms.endpoint must not be empty when enabled", ErrSettingsConfig)
+	if !v.Enabled {
+		return nil
+	}
+	if strings.TrimSpace(v.Channel) == "" && strings.TrimSpace(v.Endpoint) == "" {
+		return fmt.Errorf("%w: sms.endpoint or sms.channel must not be empty when enabled", ErrSettingsConfig)
 	}
 	return nil
+}
+
+// BuildSMSSender 依据短信设置与插件服务构造运行中的短信渠道。channel 为插件名
+// 时使用对应插件；否则回退到通用 HTTP 网关或日志渠道。构造失败时返回日志渠道，
+// 保证发送路径始终可用。
+func BuildSMSSender(ctx context.Context, v SMSSettings, pluginSvc *PluginService, logger *slog.Logger) notify.Sender {
+	if !v.Enabled {
+		return notify.NewLogSender("sms", logger)
+	}
+	switch channel := strings.TrimSpace(v.Channel); {
+	case channel == "log":
+		return notify.NewLogSender("sms", logger)
+	case channel != "" && channel != "http":
+		if pluginSvc == nil {
+			logger.Warn("sms plugin requested but plugins are unavailable", slog.String("channel", channel))
+			return notify.NewLogSender("sms", logger)
+		}
+		applyCtx, cancel := context.WithTimeout(ctx, pluginApplyTimeout)
+		defer cancel()
+		sender, err := pluginSvc.Sender(applyCtx, channel)
+		if err != nil {
+			logger.Warn("failed to initialize sms plugin", slog.String("channel", channel), slog.Any("error", err))
+			return notify.NewLogSender("sms", logger)
+		}
+		return sender
+	}
+	if strings.TrimSpace(v.Endpoint) != "" {
+		httpSender, err := notify.NewHTTPSSender(notify.HTTPOptions{
+			Name:     v.Provider,
+			Endpoint: v.Endpoint,
+			Method:   v.Method,
+		})
+		if err != nil {
+			logger.Warn("failed to initialize http sms channel", slog.Any("error", err))
+			return notify.NewLogSender("sms", logger)
+		}
+		return httpSender
+	}
+	return notify.NewLogSender("sms", logger)
 }
 
 // LimitsSettings 配置按调用方的速率限制（重启后生效）。

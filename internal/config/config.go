@@ -153,6 +153,7 @@ type Config struct {
 	Email       EmailConfig       `koanf:"email"`
 	Install     InstallConfig     `koanf:"install"`
 	Maintenance MaintenanceConfig `koanf:"maintenance"`
+	Plugins     PluginsConfig     `koanf:"plugins"`
 	Logging     LoggingConfig     `koanf:"logging"`
 }
 
@@ -356,7 +357,10 @@ type ModerationConfig struct {
 
 // SMSConfig 配置短信渠道。
 type SMSConfig struct {
-	Enabled  bool   `koanf:"enabled"`
+	Enabled bool `koanf:"enabled"`
+	// Channel 指定渠道类型："" 或 "http" 使用通用 HTTP 网关；"log" 使用日志
+	// 兜底；其它值视为运行时加载的短信插件名。
+	Channel  string `koanf:"channel"`
 	Provider string `koanf:"provider"`
 	// Endpoint 为通用 HTTP 短信网关地址。
 	Endpoint string `koanf:"endpoint"`
@@ -373,6 +377,26 @@ type EmailConfig struct {
 	Password string `koanf:"password"`
 	From     string `koanf:"from"`
 	UseTLS   bool   `koanf:"use_tls"`
+}
+
+// PluginsConfig 配置运行时插件系统。
+type PluginsConfig struct {
+	// Enabled 为 true 时扫描并加载插件目录。
+	Enabled bool `koanf:"enabled"`
+	// Dir 为插件根目录，每个子目录为一个插件。
+	Dir string `koanf:"dir"`
+	// HTTPTimeoutSec 为插件发起 HTTP 请求的超时（秒）。
+	HTTPTimeoutSec int `koanf:"http_timeout_sec"`
+	// MaxHTTPBodyKB 为插件单次 HTTP 请求/响应体的上限（KiB）。
+	MaxHTTPBodyKB int `koanf:"max_http_body_kb"`
+	// TrustedKeys 为 Ed25519 可信公钥（base64），用于校验在线安装的插件签名。
+	TrustedKeys []string `koanf:"trusted_keys"`
+	// RequireSignature 为 true 时，安装插件必须提供有效签名。
+	RequireSignature bool `koanf:"require_signature"`
+	// IndexURL 为插件市场索引（JSON）地址，供在线浏览与按名安装。
+	IndexURL string `koanf:"index_url"`
+	// MaxArchiveMB 为插件归档解压后的最大体积（MiB）。
+	MaxArchiveMB int `koanf:"max_archive_mb"`
 }
 
 // PaymentConfig 配置支付渠道。默认渠道需在已注册的渠道（manual、mock、
@@ -499,6 +523,13 @@ func defaultConfig() Config {
 		SMS:     SMSConfig{Method: "POST"},
 		Email:   EmailConfig{Port: 587},
 		Install: InstallConfig{LockFile: "./data/install.lock", ConfigPath: "./configs/config.yaml"},
+		Plugins: PluginsConfig{
+			Enabled:        true,
+			Dir:            "./plugins",
+			HTTPTimeoutSec: 10,
+			MaxHTTPBodyKB:  1024,
+			MaxArchiveMB:   64,
+		},
 		Maintenance: MaintenanceConfig{
 			OrphanCleanup:       true,
 			OrphanGraceHours:    72,
@@ -679,8 +710,8 @@ func (c Config) validate() error {
 	if c.Email.Enabled && strings.TrimSpace(c.Email.Host) == "" {
 		return fmt.Errorf("config: email.host must not be empty when email is enabled")
 	}
-	if c.SMS.Enabled && strings.TrimSpace(c.SMS.Endpoint) == "" {
-		return fmt.Errorf("config: sms.endpoint must not be empty when sms is enabled")
+	if c.SMS.Enabled && strings.TrimSpace(c.SMS.Endpoint) == "" && strings.TrimSpace(c.SMS.Channel) == "" {
+		return fmt.Errorf("config: sms.endpoint or sms.channel must not be empty when sms is enabled")
 	}
 	return nil
 }

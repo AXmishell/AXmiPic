@@ -3,6 +3,7 @@
 # Runtime data and build output
 /data/
 /bin/
+/plugins/
 *.db
 .env
 

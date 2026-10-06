@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/AXmishell/axmipic/internal/auth"
+	"github.com/AXmishell/axmipic/internal/plugin"
 	"github.com/AXmishell/axmipic/internal/service"
 	"github.com/AXmishell/axmipic/internal/storage"
 )
@@ -143,6 +144,15 @@ func (h *Handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, http.StatusConflict, http.StatusConflict, err.Error())
 	case errors.Is(err, service.ErrPolicyInUse):
 		writeError(w, http.StatusConflict, http.StatusConflict, err.Error())
+	case errors.Is(err, plugin.ErrNotFound):
+		writeError(w, http.StatusNotFound, http.StatusNotFound, err.Error())
+	case errors.Is(err, plugin.ErrCapabilityDenied):
+		writeError(w, http.StatusForbidden, http.StatusForbidden, err.Error())
+	case errors.Is(err, plugin.ErrSignatureRequired),
+		errors.Is(err, plugin.ErrSignatureInvalid),
+		errors.Is(err, plugin.ErrChecksumMismatch),
+		errors.Is(err, plugin.ErrArchiveInvalid):
+		writeError(w, http.StatusBadRequest, http.StatusBadRequest, err.Error())
 	case errors.Is(err, service.ErrNotFound):
 		writeError(w, http.StatusNotFound, http.StatusNotFound, "image not found")
 	case errors.Is(err, storage.ErrInvalidKey):

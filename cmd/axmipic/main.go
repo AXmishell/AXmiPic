@@ -23,6 +23,7 @@ import (
 	"github.com/AXmishell/axmipic/internal/imaging"
 	"github.com/AXmishell/axmipic/internal/moderation"
 	"github.com/AXmishell/axmipic/internal/notify"
+	"github.com/AXmishell/axmipic/internal/plugin"
 	"github.com/AXmishell/axmipic/internal/secret"
 	"github.com/AXmishell/axmipic/internal/security"
 	"github.com/AXmishell/axmipic/internal/server"
@@ -233,19 +234,21 @@ func run() error {
 		// none：不安装扫描器，直接放行。
 	}
 
-	// 通知渠道：短信与邮件。未配置服务商时回退到日志渠道。
+	// 通知渠道：短信与邮件。短信的实际渠道在设置域引导时按 channel 构建（支持
+	// 插件）；此处仅给出配置兜底的初始渠道，失败时回退日志渠道而非中止启动。
 	var smsSender notify.Sender = notify.NewLogSender("sms", logger)
-	if cfg.SMS.Enabled {
+	if cfg.SMS.Enabled && (cfg.SMS.Channel == "" || cfg.SMS.Channel == "http") && strings.TrimSpace(cfg.SMS.Endpoint) != "" {
 		httpSender, err := notify.NewHTTPSSender(notify.HTTPOptions{
 			Name:     cfg.SMS.Provider,
 			Endpoint: cfg.SMS.Endpoint,
 			Method:   cfg.SMS.Method,
 		})
 		if err != nil {
-			return fmt.Errorf("main: sms sender: %w", err)
+			logger.Warn("failed to initialize http sms channel", slog.Any("error", err))
+		} else {
+			smsSender = httpSender
+			logger.Info("sms notification channel enabled")
 		}
-		smsSender = httpSender
-		logger.Info("sms notification channel enabled")
 	}
 	var emailSender notify.Sender = notify.NewLogSender("email", logger)
 	if cfg.Email.Enabled {
@@ -276,9 +279,39 @@ func run() error {
 		UseTLS:   cfg.Email.UseTLS,
 	})
 
+	// 运行时插件：扫描插件目录并加载插件，供通知等渠道使用。加载失败不影响
+	// 服务启动；持久化的「暂停」状态在此应用。
+	var pluginMgr *plugin.Manager
+	var pluginSvc *service.PluginService
+	if cfg.Plugins.Enabled {
+		pluginMgr = plugin.NewManager(plugin.Options{
+			Dir:              cfg.Plugins.Dir,
+			Logger:           logger,
+			HTTPTimeout:      time.Duration(cfg.Plugins.HTTPTimeoutSec) * time.Second,
+			MaxHTTPBody:      int64(cfg.Plugins.MaxHTTPBodyKB) << 10,
+			TrustedKeys:      cfg.Plugins.TrustedKeys,
+			RequireSignature: cfg.Plugins.RequireSignature,
+			IndexURL:         cfg.Plugins.IndexURL,
+			MaxArchiveBytes:  int64(cfg.Plugins.MaxArchiveMB) << 20,
+		})
+		defer func() {
+			closeCtx, cancelClose := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancelClose()
+			if err := pluginMgr.Close(closeCtx); err != nil {
+				logger.Warn("failed to close plugins", slog.Any("error", err))
+			}
+		}()
+	}
+	pluginSvc = service.NewPluginService(pluginMgr, repo, cipher, logger)
+	bootCtx, cancelBoot := context.WithTimeout(context.Background(), 30*time.Second)
+	if err := pluginSvc.Bootstrap(bootCtx); err != nil {
+		logger.Warn("failed to bootstrap plugins", slog.Any("error", err))
+	}
+	cancelBoot()
+
 	// 通用设置域：config 为首次播种与兜底，DB 为运行值；可热应用的域即时生效。
 	clientIPResolver := api.NewClientIPResolver(cfg.Server.ClientIP, cfg.Server.TrustProxy, logger)
-	registerSettingDomains(settingsSvc, repo, cfg, uploadSvc, imagingSvc, notifySvc, clientIPResolver, logger)
+	registerSettingDomains(settingsSvc, repo, cfg, uploadSvc, imagingSvc, notifySvc, pluginSvc, clientIPResolver, logger)
 
 	// 权限开关（开放注册、上传鉴权、访客上传）：以配置文件为兜底，首次启动写入
 	// 数据库并支持后台热更新。实际应用在 Authenticator 就绪后进行（见下）。
@@ -407,6 +440,8 @@ func run() error {
 		return err
 	}
 
+	// 运行时插件已在设置引导前加载（见上），此处直接注入路由。
+
 	router := api.NewRouter(api.Deps{
 		Upload:        uploadSvc,
 		Imaging:       imagingSvc,
@@ -421,6 +456,7 @@ func run() error {
 		Notify:        notifySvc,
 		Install:       installSvc,
 		Settings:      settingsSvc,
+		Plugins:       pluginSvc,
 		Runtime:       runtimeInfo,
 		InstallRepo:   store.Open,
 		InstallSeed:   installSeed,
@@ -802,6 +838,7 @@ func registerSettingDomains(
 	uploadSvc *service.UploadService,
 	imagingSvc *service.ImagingService,
 	notifySvc *service.NotifyService,
+	pluginSvc *service.PluginService,
 	clientIPResolver *api.ClientIPResolver,
 	logger *slog.Logger,
 ) {
@@ -860,19 +897,10 @@ func registerSettingDomains(
 	))
 
 	settingsSvc.RegisterDomain(service.NewSettingDomain(repo, "sms",
-		service.SMSSettings{Enabled: cfg.SMS.Enabled, Provider: cfg.SMS.Provider, Endpoint: cfg.SMS.Endpoint, Method: cfg.SMS.Method},
+		service.SMSSettings{Enabled: cfg.SMS.Enabled, Channel: cfg.SMS.Channel, Provider: cfg.SMS.Provider, Endpoint: cfg.SMS.Endpoint, Method: cfg.SMS.Method},
 		service.ValidateSMSSettings,
 		func(v service.SMSSettings) {
-			var sender notify.Sender = notify.NewLogSender("sms", logger)
-			if v.Enabled {
-				httpSender, err := notify.NewHTTPSSender(notify.HTTPOptions{Name: v.Provider, Endpoint: v.Endpoint, Method: v.Method})
-				if err != nil {
-					logger.Warn("apply sms settings", slog.Any("error", err))
-				} else {
-					sender = httpSender
-				}
-			}
-			notifySvc.SetSMS(sender)
+			notifySvc.SetSMS(service.BuildSMSSender(context.Background(), v, pluginSvc, logger))
 		},
 	))
 

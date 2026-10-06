@@ -186,6 +186,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '系统设置' },
       },
       {
+        path: 'plugins',
+        name: 'admin-plugins',
+        component: () => import('@/views/PluginsView.vue'),
+        meta: { title: '插件市场' },
+      },
+      {
         path: 'mail-logs',
         name: 'admin-mail-logs',
         component: () => import('@/views/NotifyLogsView.vue'),

@@ -19,6 +19,12 @@ type Message struct {
 	To      string
 	Subject string
 	Body    string
+	// Template 与 Params 供模板化渠道（如云厂商短信）使用；直接发送正文的
+	// 渠道可忽略。
+	Template string
+	Params   map[string]string
+	// SignName 为短信签名，供需要签名的渠道使用。
+	SignName string
 }
 
 // Sender 是通知渠道的通用接口。
