@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"mime"
 	"net/http"
 	"path"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -142,15 +144,18 @@ type ImageDTO struct {
 	OwnerUsername string `json:"owner_username,omitempty"`
 	// OriginalName 为上传时的原始文件名；Filename 为重命名后的存储文件名；
 	// Hash 为内容 sha256 十六进制摘要。
-	OriginalName string    `json:"original_name"`
-	Filename     string    `json:"filename"`
-	Hash         string    `json:"hash"`
-	URL          string    `json:"url"`
-	Size         int64     `json:"size"`
-	MimeType     string    `json:"mime_type"`
-	Width        int       `json:"width"`
-	Height       int       `json:"height"`
-	CreatedAt    time.Time `json:"created_at"`
+	OriginalName string `json:"original_name"`
+	Filename     string `json:"filename"`
+	Hash         string `json:"hash"`
+	URL          string `json:"url"`
+	// Thumbnail 是为列表展示准备的缩略图 URL，始终经过本实例的即时处理端点，
+	// 因此对本地/S3/七牛等所有后端都生效。
+	Thumbnail string    `json:"thumbnail"`
+	Size      int64     `json:"size"`
+	MimeType  string    `json:"mime_type"`
+	Width     int       `json:"width"`
+	Height    int       `json:"height"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // ImageFilter 约束图片列表查询。
@@ -165,6 +170,8 @@ type ImageFilter struct {
 	Permission string
 	// UserID 非空时仅返回该用户的图片，用于图片广场按作者过滤。
 	UserID string
+	// Cursor 为不透明的 keyset 游标；非空时优先于 page 进行翻页。
+	Cursor string
 }
 
 // ListResult 是图片的分页集合。
@@ -173,6 +180,9 @@ type ListResult struct {
 	Total    int64      `json:"total"`
 	Page     int        `json:"page"`
 	PageSize int        `json:"page_size"`
+	// NextCursor 非空时可用于请求下一页（keyset 游标）。仅在按时间或大小排序
+	// 且本页已满时返回。
+	NextCursor string `json:"next_cursor,omitempty"`
 }
 
 // UploadService 协调校验、去重、存储和元数据。
@@ -182,6 +192,9 @@ type UploadService struct {
 	policy   UploadPolicy
 	resolver UploadPolicyResolver
 	scanner  security.Scanner
+
+	// mediaBaseURL 是构造缩略图/转换 URL 时使用的实例公开根地址。
+	mediaBaseURL string
 
 	// guestIPQuotaBytes 与 guestIPQuotaWindow 控制匿名访客按 IP 的累计上传配额；
 	// guestIPQuotaBytes<=0 表示不限。
@@ -202,6 +215,11 @@ func NewUploadService(repo *store.Repository, manager *storage.Manager, policy U
 // SetPolicyResolver 安装一个按调用方解析上传限制的解析器（例如角色组策略）。
 func (s *UploadService) SetPolicyResolver(resolver UploadPolicyResolver) {
 	s.resolver = resolver
+}
+
+// SetMediaBaseURL 设置实例公开根地址，用于构造列表缩略图 URL。
+func (s *UploadService) SetMediaBaseURL(baseURL string) {
+	s.mediaBaseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 }
 
 // SetScanner 安装一个上传内容安全扫描器。
@@ -370,7 +388,7 @@ func (s *UploadService) Upload(ctx context.Context, principal *auth.Principal, i
 	// 同一所有者的相同内容直接复用已有记录。
 	existing, err := s.repo.GetByHashAndUser(ctx, hash, ownerKey)
 	if err == nil {
-		return toDTO(existing), nil
+		return toDTO(existing, s.mediaBaseURL), nil
 	}
 	if !errors.Is(err, store.ErrNotFound) {
 		return nil, fmt.Errorf("upload: lookup existing image: %w", err)
@@ -430,12 +448,12 @@ func (s *UploadService) Upload(ctx context.Context, principal *auth.Principal, i
 		// 已有记录。
 		_ = backend.Delete(context.WithoutCancel(ctx), key)
 		if concurrent, getErr := s.repo.GetByHashAndUser(ctx, hash, ownerKey); getErr == nil {
-			return toDTO(concurrent), nil
+			return toDTO(concurrent, s.mediaBaseURL), nil
 		}
 		return nil, fmt.Errorf("upload: record image: %w", err)
 	}
 	committed = true
-	return toDTO(image), nil
+	return toDTO(image, s.mediaBaseURL), nil
 }
 
 // Presign 校验直传请求，从存储后端签发一个预签名请求，并记录一条待确认的
@@ -505,7 +523,7 @@ func (s *UploadService) Confirm(ctx context.Context, principal *auth.Principal, 
 		if !canAccess(principal, existing.UserID) {
 			return nil, ErrForbidden
 		}
-		return toDTO(existing), nil
+		return toDTO(existing, s.mediaBaseURL), nil
 	} else if !errors.Is(err, store.ErrNotFound) {
 		return nil, fmt.Errorf("confirm: lookup existing image: %w", err)
 	}
@@ -617,13 +635,13 @@ func (s *UploadService) Confirm(ctx context.Context, principal *auth.Principal, 
 	if err := s.repo.Create(ctx, image); err != nil {
 		if concurrent, getErr := s.repo.GetByKey(ctx, key); getErr == nil {
 			_ = s.repo.DeletePendingUpload(ctx, key)
-			return toDTO(concurrent), nil
+			return toDTO(concurrent, s.mediaBaseURL), nil
 		}
 		return nil, fmt.Errorf("confirm: record image: %w", err)
 	}
 	_ = s.repo.DeletePendingUpload(ctx, key)
 	committed = true
-	return toDTO(image), nil
+	return toDTO(image, s.mediaBaseURL), nil
 }
 
 // CleanupExpired 移除截至 now 已过期的待确认上传，并删除其未确认的存储
@@ -674,6 +692,7 @@ func (s *UploadService) List(ctx context.Context, principal *auth.Principal, pag
 			Keyword:    strings.TrimSpace(filter.Keyword),
 			Permission: filter.Permission,
 			AlbumID:    filter.AlbumID,
+			Cursor:     decodeImageCursor(filter.Cursor),
 		}, page, pageSize)
 	}
 	return s.listImages(ctx, store.ImageListOptions{
@@ -683,6 +702,7 @@ func (s *UploadService) List(ctx context.Context, principal *auth.Principal, pag
 		Keyword:    strings.TrimSpace(filter.Keyword),
 		Permission: filter.Permission,
 		AlbumID:    filter.AlbumID,
+		Cursor:     decodeImageCursor(filter.Cursor),
 	}, page, pageSize)
 }
 
@@ -697,6 +717,7 @@ func (s *UploadService) ListPlaza(ctx context.Context, page, pageSize int, filte
 		Order:      filter.Order,
 		Keyword:    strings.TrimSpace(filter.Keyword),
 		AlbumID:    filter.AlbumID,
+		Cursor:     decodeImageCursor(filter.Cursor),
 	}, page, pageSize)
 }
 
@@ -731,7 +752,7 @@ func (s *UploadService) listImages(ctx context.Context, opts store.ImageListOpti
 	ownerIDs := make([]string, 0)
 	seen := make(map[string]struct{})
 	for i := range images {
-		items = append(items, *toDTO(&images[i]))
+		items = append(items, *toDTO(&images[i], s.mediaBaseURL))
 		if images[i].UserID != nil {
 			if _, ok := seen[*images[i].UserID]; !ok {
 				seen[*images[i].UserID] = struct{}{}
@@ -748,7 +769,64 @@ func (s *UploadService) listImages(ctx context.Context, opts store.ImageListOpti
 			}
 		}
 	}
-	return &ListResult{Items: items, Total: total, Page: page, PageSize: pageSize}, nil
+	result := &ListResult{Items: items, Total: total, Page: page, PageSize: pageSize}
+	// 本页已满时提供下一页游标，供 keyset 翻页使用。
+	if opts.Limit > 0 && len(images) == opts.Limit {
+		last := &images[len(images)-1]
+		result.NextCursor = encodeImageCursor(normalizeOrder(opts.Order), last)
+	}
+	return result, nil
+}
+
+// normalizeOrder 把排序标识收敛到白名单中的一个已知取值，与存储层保持一致。
+func normalizeOrder(order string) string {
+	switch order {
+	case "earliest", "largest", "smallest":
+		return order
+	default:
+		return "newest"
+	}
+}
+
+// encodeImageCursor 把一页的最后一条记录编码为不透明游标。时间以 RFC3339Nano
+// 编码，从而保留原始时区偏移——数据库按文本比较时间时需要它。
+func encodeImageCursor(order string, image *store.Image) string {
+	raw := fmt.Sprintf("%s|%s|%d|%s", order, image.CreatedAt.Format(time.RFC3339Nano), image.Size, image.ID)
+	return base64.RawURLEncoding.EncodeToString([]byte(raw))
+}
+
+// decodeImageCursor 解析由 encodeImageCursor 生成的不透明游标；无效时返回 nil，
+// 由调用方回退到基于页码的翻页。
+func decodeImageCursor(raw string) *store.ImageCursor {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	data, err := base64.RawURLEncoding.DecodeString(raw)
+	if err != nil {
+		return nil
+	}
+	parts := strings.Split(string(data), "|")
+	if len(parts) != 4 {
+		return nil
+	}
+	createdAt, err := time.Parse(time.RFC3339Nano, parts[1])
+	if err != nil {
+		return nil
+	}
+	size, err := strconv.ParseInt(parts[2], 10, 64)
+	if err != nil {
+		return nil
+	}
+	if parts[3] == "" {
+		return nil
+	}
+	return &store.ImageCursor{
+		Order:     parts[0],
+		CreatedAt: createdAt,
+		Size:      size,
+		ID:        parts[3],
+	}
 }
 
 // normalizePagination 将页码与每页数量收敛到合理范围。
@@ -786,7 +864,7 @@ func (s *UploadService) Rename(ctx context.Context, principal *auth.Principal, i
 	if err != nil {
 		return nil, fmt.Errorf("rename image: %w", err)
 	}
-	return toDTO(updated), nil
+	return toDTO(updated, s.mediaBaseURL), nil
 }
 
 // Get 按 id 返回单张图片，并强制校验所有权。
@@ -798,7 +876,7 @@ func (s *UploadService) Get(ctx context.Context, principal *auth.Principal, id s
 	if !canAccess(principal, image.UserID) {
 		return nil, ErrForbidden
 	}
-	return toDTO(image), nil
+	return toDTO(image, s.mediaBaseURL), nil
 }
 
 // GetByKey 按其存储键返回单张图片。公开服务不强制校验所有权。
@@ -807,7 +885,17 @@ func (s *UploadService) GetByKey(ctx context.Context, key string) (*ImageDTO, er
 	if err != nil {
 		return nil, fmt.Errorf("get image by key: %w", err)
 	}
-	return toDTO(image), nil
+	return toDTO(image, s.mediaBaseURL), nil
+}
+
+// GetByKeyWithBackend 按其存储键返回图片及其所在的存储后端。它把元数据读取与
+// 后端路由合并为一次数据库查询，供 /i/* 热路径使用。
+func (s *UploadService) GetByKeyWithBackend(ctx context.Context, key string) (*ImageDTO, storage.Storage, error) {
+	image, err := s.repo.GetByKey(ctx, key)
+	if err != nil {
+		return nil, nil, fmt.Errorf("get image by key: %w", err)
+	}
+	return toDTO(image, s.mediaBaseURL), s.backendFor(image), nil
 }
 
 // PermissionResult 描述一次批量可见性变更的结果。
@@ -995,6 +1083,9 @@ const maxBatchImages = 200
 // moderationConcurrency 限制批量审查时的并发请求数，避免对视觉接口造成冲击。
 const moderationConcurrency = 4
 
+// purgeConcurrency 限制级联删除对象时的并发数。
+const purgeConcurrency = 8
+
 // Delete 移除一张图片对象及其元数据，强制校验所有权并释放所有者的配额。
 func (s *UploadService) Delete(ctx context.Context, principal *auth.Principal, id string) error {
 	image, err := s.repo.GetByID(ctx, id)
@@ -1004,20 +1095,91 @@ func (s *UploadService) Delete(ctx context.Context, principal *auth.Principal, i
 	if !canAccess(principal, image.UserID) {
 		return ErrForbidden
 	}
-	// 先删元数据，避免对象已删除但记录仍指向缺失对象；随后对象删除为尽力而为
-	// （失败最多残留一个孤立对象，不影响已删除的结果）。
-	if err := s.repo.Delete(ctx, id); err != nil {
+	return s.deleteImage(ctx, image)
+}
+
+// DeleteBatch 批量删除图片。它会先校验全部图片都归 principal 所有，再逐张删除，
+// 返回成功与失败的数量。未知 id 会被忽略。
+func (s *UploadService) DeleteBatch(ctx context.Context, principal *auth.Principal, ids []string) (deleted, failed int, err error) {
+	images, err := s.ownedImages(ctx, principal, ids)
+	if err != nil {
+		return 0, 0, err
+	}
+	for i := range images {
+		if delErr := s.deleteImage(ctx, &images[i]); delErr != nil {
+			failed++
+			continue
+		}
+		deleted++
+	}
+	return deleted, failed, nil
+}
+
+// deleteImage 删除一条已通过所有权校验的图片记录及其对象，并清理相关分享与配额。
+// 对象删除为尽力而为：先删元数据，避免记录指向缺失对象。
+func (s *UploadService) deleteImage(ctx context.Context, image *store.Image) error {
+	if err := s.repo.Delete(ctx, image.ID); err != nil {
 		return fmt.Errorf("delete image record: %w", err)
 	}
-	backend := s.backendFor(image)
-	_ = backend.Delete(context.WithoutCancel(ctx), image.Key)
-	_ = s.repo.DeleteSharesForTarget(context.WithoutCancel(ctx), store.ShareTargetImage, id)
+	if backend := s.backendFor(image); backend != nil {
+		_ = backend.Delete(context.WithoutCancel(ctx), image.Key)
+	}
+	_ = s.repo.DeleteSharesForTarget(context.WithoutCancel(ctx), store.ShareTargetImage, image.ID)
 	if image.UserID != nil {
 		if err := s.repo.ReleaseQuota(context.WithoutCancel(ctx), *image.UserID, image.Size); err != nil {
 			return fmt.Errorf("delete image: release quota: %w", err)
 		}
 	}
 	return nil
+}
+
+// PurgeOwner 删除某个用户拥有的全部图片对象与元数据，以及其相册、分享与 API
+// 令牌记录。它用于管理员删除客户时的级联清理；对象删除为尽力而为。返回已处理的
+// 图片数量。
+func (s *UploadService) PurgeOwner(ctx context.Context, ownerID string) (int, error) {
+	refs, err := s.repo.ObjectRefsByUser(ctx, ownerID)
+	if err != nil {
+		return 0, err
+	}
+	s.purgeObjects(ctx, refs)
+	if _, err := s.repo.DeleteImagesByUser(ctx, ownerID); err != nil {
+		return 0, err
+	}
+	if _, err := s.repo.DeleteAlbumsByUser(ctx, ownerID); err != nil {
+		return 0, err
+	}
+	if _, err := s.repo.DeleteSharesByUser(ctx, ownerID); err != nil {
+		return 0, err
+	}
+	if _, err := s.repo.DeleteTokensByUser(ctx, ownerID); err != nil {
+		return 0, err
+	}
+	return len(refs), nil
+}
+
+// purgeObjects 以有界并发删除一批存储对象。失败仅忽略，以便元数据清理继续进行。
+func (s *UploadService) purgeObjects(ctx context.Context, refs []store.ImageObjectRef) {
+	if len(refs) == 0 {
+		return
+	}
+	ctx = context.WithoutCancel(ctx)
+	sem := make(chan struct{}, purgeConcurrency)
+	var wg sync.WaitGroup
+	for i := range refs {
+		ref := refs[i]
+		wg.Add(1)
+		sem <- struct{}{}
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+			backend := s.manager.Resolve(storageIDValue(ref.StorageID))
+			if backend == nil {
+				return
+			}
+			_ = backend.Delete(ctx, ref.Key)
+		}()
+	}
+	wg.Wait()
 }
 
 // reserveQuota 为 ownerID 预留 amount 字节。它返回一个释放函数（对访客与
@@ -1075,10 +1237,14 @@ func sameOwner(principal *auth.Principal, ownerID *string) bool {
 	}
 }
 
-func toDTO(image *store.Image) *ImageDTO {
+func toDTO(image *store.Image, mediaBaseURL string) *ImageDTO {
 	permission := image.Permission
 	if permission == "" {
 		permission = store.PermissionPrivate
+	}
+	thumbnail := mediaThumbnailURL(mediaBaseURL, image.Key)
+	if thumbnail == "" {
+		thumbnail = image.URL
 	}
 	return &ImageDTO{
 		ID:           image.ID,
@@ -1090,12 +1256,31 @@ func toDTO(image *store.Image) *ImageDTO {
 		Filename:     image.Filename,
 		Hash:         image.Hash,
 		URL:          image.URL,
+		Thumbnail:    thumbnail,
 		Size:         image.Size,
 		MimeType:     image.MimeType,
 		Width:        image.Width,
 		Height:       image.Height,
 		CreatedAt:    image.CreatedAt,
 	}
+}
+
+// thumbnailWidth 与 thumbnailQuality 是列表缩略图的默认参数。缩略图始终经
+// 由本实例的 /i/* 端点生成，因此与存储后端无关。
+const (
+	thumbnailWidth   = 480
+	thumbnailQuality = 75
+)
+
+// mediaThumbnailURL 构造一张图片的缩略图 URL。baseURL 为空或无 key 时返回
+// 空字符串，由调用方回退到原图 URL。
+func mediaThumbnailURL(baseURL, key string) string {
+	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if base == "" || key == "" {
+		return ""
+	}
+	return base + "/i/" + key + "?w=" + strconv.Itoa(thumbnailWidth) +
+		"&q=" + strconv.Itoa(thumbnailQuality)
 }
 
 // storageIDPtr 将非空字符串转换为指针；空字符串返回 nil。

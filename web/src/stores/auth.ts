@@ -4,12 +4,21 @@ import { defineStore } from 'pinia'
 import {
   fetchMe as fetchMeApi,
   fetchPolicies as fetchPoliciesApi,
+  fetchPreferences as fetchPreferencesApi,
+  updatePreferences as updatePreferencesApi,
   adminLogin as adminLoginApi,
   login as loginApi,
   register as registerApi,
   verifyTOTPLogin as verifyTOTPLoginApi,
 } from '@/api/auth'
-import type { Credentials, EffectivePolicies, LoginResult, RegisterPayload, User } from '@/api/types'
+import type {
+  Credentials,
+  EffectivePolicies,
+  LoginResult,
+  RegisterPayload,
+  User,
+  UserPreferences,
+} from '@/api/types'
 
 /** 登录结果：直接成功，或需要完成 TOTP 二次验证。 */
 export type LoginOutcome =
@@ -51,6 +60,7 @@ export const useAuthStore = defineStore('auth', () => {
   const expiresAt = ref('')
   const user = ref<User | null>(null)
   const policies = ref<EffectivePolicies | null>(null)
+  const preferences = ref<UserPreferences | null>(null)
   const hydrated = ref(false)
 
   const isAuthenticated = computed(() => Boolean(token.value))
@@ -72,6 +82,29 @@ export const useAuthStore = defineStore('auth', () => {
       return policies.value
     } catch {
       return null
+    }
+  }
+
+  /** 拉取当前账户保存的界面偏好。 */
+  async function loadPreferences(): Promise<UserPreferences | null> {
+    if (!token.value) return null
+    try {
+      preferences.value = await fetchPreferencesApi()
+      return preferences.value
+    } catch {
+      return null
+    }
+  }
+
+  /** 乐观地合并保存界面偏好；失败时回滚。 */
+  async function savePreferences(patch: UserPreferences): Promise<void> {
+    if (!token.value) return
+    const previous = preferences.value
+    preferences.value = { ...(preferences.value ?? {}), ...patch }
+    try {
+      preferences.value = await updatePreferencesApi(patch)
+    } catch {
+      preferences.value = previous
     }
   }
 
@@ -97,6 +130,7 @@ export const useAuthStore = defineStore('auth', () => {
     expiresAt.value = ''
     user.value = null
     policies.value = null
+    preferences.value = null
     try {
       localStorage.removeItem(STORAGE_KEY)
     } catch {
@@ -118,6 +152,7 @@ export const useAuthStore = defineStore('auth', () => {
     expiresAt.value = session.expiresAt
     user.value = session.user
     void loadPolicies()
+    void loadPreferences()
   }
 
   async function login(credentials: Credentials): Promise<LoginOutcome> {
@@ -154,6 +189,7 @@ export const useAuthStore = defineStore('auth', () => {
     user.value = result.user
     persist()
     void loadPolicies()
+    void loadPreferences()
     return result.user
   }
 
@@ -186,6 +222,9 @@ export const useAuthStore = defineStore('auth', () => {
     isAdmin,
     username,
     havePolicies: computed(() => policies.value !== null),
+    preferences,
+    loadPreferences,
+    savePreferences,
     hydrate,
     login,
     adminLogin,

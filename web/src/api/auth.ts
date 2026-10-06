@@ -1,5 +1,5 @@
 import { request } from './client'
-import type { Credentials, EffectivePolicies, LoginResult, RegisterPayload, User } from './types'
+import type { Credentials, EffectivePolicies, LoginResult, RegisterPayload, User, UserPreferences } from './types'
 
 export function login(payload: Credentials): Promise<LoginResult> {
   return request<LoginResult>({ method: 'POST', url: '/auth/login', data: payload })
@@ -25,6 +25,16 @@ export function fetchMe(): Promise<User> {
 /** 当前账户最终生效的角色策略。 */
 export function fetchPolicies(): Promise<EffectivePolicies> {
   return request<EffectivePolicies>({ method: 'GET', url: '/auth/policies' })
+}
+
+/** 当前账户保存的界面偏好（跨设备）。 */
+export function fetchPreferences(): Promise<UserPreferences> {
+  return request<UserPreferences>({ method: 'GET', url: '/auth/preferences' })
+}
+
+/** 合并保存界面偏好，返回合并后的完整偏好。 */
+export function updatePreferences(patch: UserPreferences): Promise<UserPreferences> {
+  return request<UserPreferences>({ method: 'PUT', url: '/auth/preferences', data: patch })
 }
 
 /** 安装状态。 */

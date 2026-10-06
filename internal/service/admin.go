@@ -4,10 +4,15 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/AXmishell/axmipic/internal/imaging"
 	"github.com/AXmishell/axmipic/internal/store"
 )
+
+// statsCacheTTL 是后台统计结果的缓存时长，避免每次刷新都做全表 COUNT/SUM。
+const statsCacheTTL = 30 * time.Second
 
 // StatsDTO 汇总实例级别的指标。
 type StatsDTO struct {
@@ -34,6 +39,18 @@ type AdminService struct {
 	storageDriver string
 	processor     imaging.Processor
 	policies      *PolicyService
+
+	// purger 在删除客户时清理其图片与存储对象；未安装时仅删除账户记录。
+	purger ImagePurger
+
+	statsMu     sync.Mutex
+	statsCache  *StatsDTO
+	statsExpiry time.Time
+}
+
+// ImagePurger 负责清理某个用户拥有的全部图片与存储对象。
+type ImagePurger interface {
+	PurgeOwner(ctx context.Context, userID string) (int, error)
 }
 
 // NewAdminService 构造一个 AdminService。
@@ -46,8 +63,34 @@ func (s *AdminService) SetPolicyService(policies *PolicyService) {
 	s.policies = policies
 }
 
-// Stats 返回聚合的实例指标。
+// SetImagePurger 安装图片清理器，使删除客户时能级联清理其图片与存储对象。
+func (s *AdminService) SetImagePurger(purger ImagePurger) {
+	s.purger = purger
+}
+
+// Stats 返回聚合的实例指标。结果会被短暂缓存，避免频繁的全表扫描。
 func (s *AdminService) Stats(ctx context.Context) (*StatsDTO, error) {
+	s.statsMu.Lock()
+	if s.statsCache != nil && time.Now().Before(s.statsExpiry) {
+		cached := s.statsCache
+		s.statsMu.Unlock()
+		return cached, nil
+	}
+	s.statsMu.Unlock()
+
+	stats, err := s.computeStats(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s.statsMu.Lock()
+	s.statsCache = stats
+	s.statsExpiry = time.Now().Add(statsCacheTTL)
+	s.statsMu.Unlock()
+	return stats, nil
+}
+
+// computeStats 实际聚合实例指标。
+func (s *AdminService) computeStats(ctx context.Context) (*StatsDTO, error) {
 	admins, err := s.repo.CountAdmins(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("stats: count admins: %w", err)
@@ -167,10 +210,34 @@ func (s *AdminService) UpdateAdmin(ctx context.Context, actorID, id string, in U
 
 // DeleteCustomer 移除某个客户账户。
 func (s *AdminService) DeleteCustomer(ctx context.Context, id string) error {
+	if _, err := s.repo.GetAccountByID(ctx, store.RoleCustomer, id); err != nil {
+		return fmt.Errorf("delete customer: %w", err)
+	}
+	// 先清理该用户的内容，避免留下孤儿图片记录与孤儿存储对象。
+	if s.purger != nil {
+		if _, err := s.purger.PurgeOwner(ctx, id); err != nil {
+			return fmt.Errorf("delete customer: purge content: %w", err)
+		}
+	} else if _, err := s.repo.DeleteImagesByUser(ctx, id); err != nil {
+		return fmt.Errorf("delete customer: %w", err)
+	}
+	// 移除其余从属记录。这里尽力而为：即使部分失败也不阻塞账户删除。
+	_, _ = s.repo.DeleteSharesByUser(ctx, id)
+	_, _ = s.repo.DeleteAlbumsByUser(ctx, id)
+	_, _ = s.repo.DeleteTokensByUser(ctx, id)
 	if err := s.repo.DeleteAccount(ctx, store.RoleCustomer, id); err != nil {
 		return fmt.Errorf("delete customer: %w", err)
 	}
+	s.invalidateStats()
 	return nil
+}
+
+// invalidateStats 使缓存的后台统计立即失效。
+func (s *AdminService) invalidateStats() {
+	s.statsMu.Lock()
+	s.statsCache = nil
+	s.statsExpiry = time.Time{}
+	s.statsMu.Unlock()
 }
 
 // DeleteAdmin 移除某个管理员账户。它拒绝删除操作者本人或最后一个已启用

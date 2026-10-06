@@ -92,6 +92,31 @@ func (h *Handler) me(w http.ResponseWriter, r *http.Request) {
 	writeOK(w, user)
 }
 
+// getPreferences 返回当前账户保存的界面偏好（JSON 对象）。
+func (h *Handler) getPreferences(w http.ResponseWriter, r *http.Request) {
+	prefs, err := h.accounts.Preferences(r.Context(), principalOf(r))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeOK(w, prefs)
+}
+
+// updatePreferences 合并保存当前账户的界面偏好，返回合并后的完整偏好。
+func (h *Handler) updatePreferences(w http.ResponseWriter, r *http.Request) {
+	var patch map[string]any
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxJSONBody)).Decode(&patch); err != nil {
+		writeError(w, http.StatusBadRequest, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	prefs, err := h.accounts.UpdatePreferences(r.Context(), principalOf(r), patch)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeOK(w, prefs)
+}
+
 type createTokenRequest struct {
 	Name string `json:"name"`
 }

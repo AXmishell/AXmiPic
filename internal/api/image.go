@@ -61,6 +61,7 @@ func imageFilterFromQuery(r *http.Request) service.ImageFilter {
 		Keyword:    query.Get("keyword"),
 		Permission: query.Get("permission"),
 		UserID:     query.Get("user_id"),
+		Cursor:     strings.TrimSpace(query.Get("cursor")),
 	}
 	if album := strings.TrimSpace(query.Get("album_id")); album != "" {
 		filter.AlbumID = &album
@@ -160,6 +161,26 @@ func (h *Handler) batchImages(w http.ResponseWriter, r *http.Request) {
 	writeOK(w, response)
 }
 
+// batchDeleteRequest 是 POST /api/v1/images/batch-delete 的请求体。
+type batchDeleteRequest struct {
+	IDs []string `json:"ids"`
+}
+
+// batchDeleteImages 批量删除一组图片，返回成功与失败的数量。
+func (h *Handler) batchDeleteImages(w http.ResponseWriter, r *http.Request) {
+	var body batchDeleteRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxJSONBody)).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	deleted, failed, err := h.svc.DeleteBatch(r.Context(), principalOf(r), body.IDs)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeOK(w, map[string]any{"deleted": deleted, "failed": failed})
+}
+
 // serveImage 按以斜杠分隔的键流式传输已存储的对象，当查询参数要求时
 // 应用即时的转换。
 func (h *Handler) serveImage(w http.ResponseWriter, r *http.Request) {
@@ -171,19 +192,17 @@ func (h *Handler) serveImage(w http.ResponseWriter, r *http.Request) {
 	}
 	// 要求存在已注册的元数据，这样即时转换就无法直接从存储后端
 	// 提供任意对象。
-	dto, err := h.svc.GetByKey(r.Context(), key)
+	dto, backend, err := h.svc.GetByKeyWithBackend(r.Context(), key)
 	if err != nil {
 		h.fail(w, r, err)
+		return
+	}
+	if backend == nil {
+		h.fail(w, r, service.ErrStorageConfig)
 		return
 	}
 	if h.imaging == nil || !h.imaging.Enabled() || req.Empty() {
-		h.serveOriginal(w, r, dto)
-		return
-	}
-
-	backend, err := h.svc.BackendForKey(r.Context(), key)
-	if err != nil {
-		h.fail(w, r, err)
+		h.serveOriginal(w, r, dto, backend)
 		return
 	}
 
@@ -218,12 +237,7 @@ func (h *Handler) serveImage(w http.ResponseWriter, r *http.Request) {
 }
 
 // serveOriginal 原样流式传输已存储的对象。
-func (h *Handler) serveOriginal(w http.ResponseWriter, r *http.Request, dto *service.ImageDTO) {
-	backend, err := h.svc.BackendForKey(r.Context(), dto.Key)
-	if err != nil {
-		h.fail(w, r, err)
-		return
-	}
+func (h *Handler) serveOriginal(w http.ResponseWriter, r *http.Request, dto *service.ImageDTO, backend storage.Storage) {
 	object, err := backend.Get(r.Context(), dto.Key)
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
@@ -329,7 +343,7 @@ func parseBool(raw string) bool {
 
 // transformETag 为原始键加上转换返回一个稳定的 ETag。
 func transformETag(key string, opts imaging.Options) string {
-	sum := sha256.Sum256([]byte(key + "|" + fmt.Sprintf("%+v", opts)))
+	sum := sha256.Sum256([]byte(key + "|" + imaging.OptionsDigest(opts)))
 	return fmt.Sprintf(`"%x"`, sum[:16])
 }
 

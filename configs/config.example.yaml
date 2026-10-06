@@ -77,6 +77,23 @@ processing:
   allow_watermark: true
   # When non-empty, this watermark is always applied.
   watermark_text: ""
+  # In-process cache for derived images (thumbnails/transforms) in MiB.
+  # 0 disables the cache.
+  cache_mb: 128
+  # Maximum number of concurrent image renders. 0 derives it from CPU count.
+  max_concurrency: 0
+
+maintenance:
+  # Daily reconciliation of stored objects against the database: objects that
+  # exist in storage but have no image row (orphans) are removed after the
+  # grace period below. Objects are only considered when their key matches the
+  # date-partitioned format this app generates.
+  orphan_cleanup: true
+  # Minimum age (hours) before an orphan object may be deleted. Keeps recently
+  # uploaded-but-unconfirmed presigned objects safe.
+  orphan_grace_hours: 72
+  # How often (hours) the reconciliation runs.
+  orphan_interval_hours: 24
 
 auth:
   # Leave empty to auto-generate a persisted secret on first run (stored next

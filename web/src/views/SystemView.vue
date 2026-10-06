@@ -925,8 +925,8 @@ onBeforeUnmount(() => {
                   <el-input
                     v-model="moderationForm.prompt"
                     type="textarea"
-                    :rows="3"
-                    placeholder="留空使用默认提示词（要求模型只回答 SAFE 或 UNSAFE）"
+                    :rows="4"
+                    placeholder="留空将恢复内置默认提示词（要求模型只回答 SAFE 或 UNSAFE）"
                   />
                 </el-form-item>
               </div>

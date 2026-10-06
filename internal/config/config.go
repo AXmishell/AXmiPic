@@ -59,6 +59,11 @@ var envPaths = map[string]string{
 	"processing_allow_effects":           "processing.allow_effects",
 	"processing_allow_watermark":         "processing.allow_watermark",
 	"processing_watermark_text":          "processing.watermark_text",
+	"processing_cache_mb":                "processing.cache_mb",
+	"processing_max_concurrency":         "processing.max_concurrency",
+	"maintenance_orphan_cleanup":         "maintenance.orphan_cleanup",
+	"maintenance_orphan_grace_hours":     "maintenance.orphan_grace_hours",
+	"maintenance_orphan_interval_hours":  "maintenance.orphan_interval_hours",
 	"auth_jwt_secret":                    "auth.jwt_secret",
 	"auth_encryption_key":                "auth.encryption_key",
 	"auth_session_ttl_hours":             "auth.session_ttl_hours",
@@ -129,20 +134,21 @@ var envPaths = map[string]string{
 
 // Config 是顶层应用配置。
 type Config struct {
-	Server     ServerConfig     `koanf:"server"`
-	Database   DatabaseConfig   `koanf:"database"`
-	Storage    StorageConfig    `koanf:"storage"`
-	Upload     UploadConfig     `koanf:"upload"`
-	Processing ProcessingConfig `koanf:"processing"`
-	Auth       AuthConfig       `koanf:"auth"`
-	Limits     LimitsConfig     `koanf:"limits"`
-	Payment    PaymentConfig    `koanf:"payment"`
-	Security   SecurityConfig   `koanf:"security"`
-	Moderation ModerationConfig `koanf:"moderation"`
-	SMS        SMSConfig        `koanf:"sms"`
-	Email      EmailConfig      `koanf:"email"`
-	Install    InstallConfig    `koanf:"install"`
-	Logging    LoggingConfig    `koanf:"logging"`
+	Server      ServerConfig      `koanf:"server"`
+	Database    DatabaseConfig    `koanf:"database"`
+	Storage     StorageConfig     `koanf:"storage"`
+	Upload      UploadConfig      `koanf:"upload"`
+	Processing  ProcessingConfig  `koanf:"processing"`
+	Auth        AuthConfig        `koanf:"auth"`
+	Limits      LimitsConfig      `koanf:"limits"`
+	Payment     PaymentConfig     `koanf:"payment"`
+	Security    SecurityConfig    `koanf:"security"`
+	Moderation  ModerationConfig  `koanf:"moderation"`
+	SMS         SMSConfig         `koanf:"sms"`
+	Email       EmailConfig       `koanf:"email"`
+	Install     InstallConfig     `koanf:"install"`
+	Maintenance MaintenanceConfig `koanf:"maintenance"`
+	Logging     LoggingConfig     `koanf:"logging"`
 }
 
 // ServerConfig 配置 HTTP 监听器。
@@ -226,6 +232,22 @@ type ProcessingConfig struct {
 	AllowWatermark bool `koanf:"allow_watermark"`
 	// WatermarkText 为强制水印文字；非空时所有变换结果都会叠加。
 	WatermarkText string `koanf:"watermark_text"`
+	// CacheMB 为派生图（缩略图/转换结果）进程内缓存容量（MiB）；0 表示禁用。
+	CacheMB int `koanf:"cache_mb"`
+	// MaxConcurrency 限制同时进行的图片渲染数量；0 表示按 CPU 核数自动设置。
+	MaxConcurrency int `koanf:"max_concurrency"`
+}
+
+// MaintenanceConfig 配置后台维护任务。
+type MaintenanceConfig struct {
+	// OrphanCleanup 启用每日孤儿对象对账（存储中存在但数据库无记录的图片
+	// 对象会被删除）。
+	OrphanCleanup bool `koanf:"orphan_cleanup"`
+	// OrphanGraceHours 为孤儿对象的最短保留时长；早于该时长的对象才会被删除，
+	// 以避免误删尚未确认的直传对象。
+	OrphanGraceHours int `koanf:"orphan_grace_hours"`
+	// OrphanIntervalHours 为对账任务的执行间隔。
+	OrphanIntervalHours int `koanf:"orphan_interval_hours"`
 }
 
 // AuthConfig 配置账户、会话和 API 令牌。
@@ -424,6 +446,8 @@ func defaultConfig() Config {
 			AllowEnlarge:   false,
 			AllowEffects:   true,
 			AllowWatermark: true,
+			CacheMB:        128,
+			MaxConcurrency: 0,
 		},
 		Auth: AuthConfig{
 			SessionTTLHours:   24,
@@ -452,6 +476,11 @@ func defaultConfig() Config {
 		SMS:     SMSConfig{Method: "POST"},
 		Email:   EmailConfig{Port: 587},
 		Install: InstallConfig{LockFile: "./data/install.lock", ConfigPath: "./configs/config.yaml"},
+		Maintenance: MaintenanceConfig{
+			OrphanCleanup:       true,
+			OrphanGraceHours:    72,
+			OrphanIntervalHours: 24,
+		},
 		Logging: LoggingConfig{Level: "info"},
 	}
 }
@@ -553,6 +582,18 @@ func (c Config) validate() error {
 				return fmt.Errorf("config: processing.allowed_formats contains unknown format %q", name)
 			}
 		}
+	}
+	if c.Processing.CacheMB < 0 {
+		return fmt.Errorf("config: processing.cache_mb must not be negative")
+	}
+	if c.Processing.MaxConcurrency < 0 {
+		return fmt.Errorf("config: processing.max_concurrency must not be negative")
+	}
+	if c.Maintenance.OrphanGraceHours < 0 {
+		return fmt.Errorf("config: maintenance.orphan_grace_hours must not be negative")
+	}
+	if c.Maintenance.OrphanCleanup && c.Maintenance.OrphanIntervalHours < 1 {
+		return fmt.Errorf("config: maintenance.orphan_interval_hours must be at least 1")
 	}
 	switch strings.ToLower(strings.TrimSpace(c.Processing.Driver)) {
 	case "", "purego", "libvips", "magick":

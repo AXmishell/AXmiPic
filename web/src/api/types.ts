@@ -35,6 +35,8 @@ export interface ImageItem {
   id: string
   key: string
   url: string
+  /** 列表缩略图 URL；后端未提供时回退到 url。 */
+  thumbnail?: string
   original_name: string
   filename: string
   hash: string
@@ -89,6 +91,8 @@ export interface PageData<T> {
   total: number
   page: number
   page_size: number
+  /** 游标分页的下一页游标；为空表示没有更多。 */
+  next_cursor?: string
 }
 
 export interface AdminStats {
@@ -192,6 +196,16 @@ export interface EffectivePolicies {
     allowed_formats: string[]
   }
   features: string[]
+}
+
+/** 用户界面偏好（跨设备同步）。 */
+export interface UserPreferences {
+  /** 查看器默认显示模式：fit=适应窗口，actual=原始像素 1:1。 */
+  viewer_mode?: 'fit' | 'actual'
+  /** 图片广场布局：grid=网格，masonry=瀑布流。 */
+  plaza_layout?: 'grid' | 'masonry'
+  /** 图片管理布局：grid=网格，masonry=瀑布流。 */
+  images_layout?: 'grid' | 'masonry'
 }
 
 export type StorageDriver = 'local' | 's3' | 'qiniu'

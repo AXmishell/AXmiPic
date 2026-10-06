@@ -55,6 +55,12 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/InstallView.vue'),
     meta: { title: '安装向导', public: true },
   },
+  {
+    path: '/plaza',
+    name: 'public-plaza',
+    component: () => import('@/views/PublicPlazaView.vue'),
+    meta: { title: '图片广场', public: true },
+  },
 
   // ---- 普通用户控制台 ----
   {

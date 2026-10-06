@@ -19,6 +19,14 @@ type ObjectInfo struct {
 	Key         string
 	Size        int64
 	ContentType string
+	// LastModified 是对象最后修改时间；后端不提供时为零值。
+	LastModified time.Time
+}
+
+// ObjectLister 由能够枚举对象的后端实现，用于孤儿对象对账。prefix 为空时
+// 枚举全部对象。
+type ObjectLister interface {
+	List(ctx context.Context, prefix string) ([]ObjectInfo, error)
 }
 
 // Storage 存储并提供图片对象。实现必须支持并发安全使用。键是由应用程序

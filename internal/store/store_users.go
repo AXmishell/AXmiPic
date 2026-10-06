@@ -170,15 +170,25 @@ func (r *Repository) UsernamesByIDs(ctx context.Context, ids []string) (map[stri
 		ID       string
 		Username string
 	}
-	var rows []row
-	if err := r.db.WithContext(ctx).Model(&Customer{}).
-		Select("id, username").
-		Where("id IN ?", ids).
-		Scan(&rows).Error; err != nil {
+	collect := func(model any) error {
+		var rows []row
+		if err := r.db.WithContext(ctx).Model(model).
+			Select("id, username").
+			Where("id IN ?", ids).
+			Scan(&rows).Error; err != nil {
+			return err
+		}
+		for _, row := range rows {
+			result[row.ID] = row.Username
+		}
+		return nil
+	}
+	// 公开图片可能由客户或管理员拥有，两者都要解析用户名。
+	if err := collect(&Customer{}); err != nil {
 		return nil, fmt.Errorf("store: usernames by ids: %w", err)
 	}
-	for _, row := range rows {
-		result[row.ID] = row.Username
+	if err := collect(&Admin{}); err != nil {
+		return nil, fmt.Errorf("store: usernames by ids: %w", err)
 	}
 	return result, nil
 }

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/AXmishell/axmipic/internal/config"
+	"github.com/AXmishell/axmipic/internal/moderation"
 	"github.com/AXmishell/axmipic/internal/store"
 )
 
@@ -238,6 +239,10 @@ func normalizeModerationConfig(cfg *config.ModerationConfig) {
 	}
 	if cfg.Model == "" {
 		cfg.Model = "gpt-4o-mini"
+	}
+	// 提示词留空时回填内置默认值，使后台直接展示可编辑的默认提示词。
+	if cfg.Prompt == "" {
+		cfg.Prompt = moderation.DefaultPrompt
 	}
 	if cfg.TimeoutSec <= 0 {
 		cfg.TimeoutSec = 30

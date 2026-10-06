@@ -121,6 +121,26 @@ func (s *S3) URL(key string) string {
 	return fmt.Sprintf("%s://%s.%s/%s", scheme, s.bucket, s.endpointHost, key)
 }
 
+// List 枚举桶中的全部对象，供孤儿对象对账使用。
+func (s *S3) List(ctx context.Context, prefix string) ([]ObjectInfo, error) {
+	var objects []ObjectInfo
+	for obj := range s.client.ListObjects(ctx, s.bucket, minio.ListObjectsOptions{
+		Prefix:    prefix,
+		Recursive: true,
+	}) {
+		if obj.Err != nil {
+			return nil, fmt.Errorf("storage: s3 list: %w", obj.Err)
+		}
+		objects = append(objects, ObjectInfo{
+			Key:          obj.Key,
+			Size:         obj.Size,
+			ContentType:  obj.ContentType,
+			LastModified: obj.LastModified,
+		})
+	}
+	return objects, nil
+}
+
 // PresignPut 签发一个 S3 POST 策略，客户端用它来直接上传。
 // 该策略固定确切的键、媒体类型和大小范围。
 func (s *S3) PresignPut(ctx context.Context, key string, opts PresignOptions) (*PresignedRequest, error) {

@@ -11,8 +11,10 @@ export interface ListImagesParams {
   keyword?: string
   albumId?: string
   permission?: ImagePermission
-  /** 图片广场按作者过滤。 */
+  /** 图片广场按上传者过滤。 */
   userId?: string
+  /** keyset 游标；提供时后端跳过总数统计。 */
+  cursor?: string
 }
 
 /** 将查询参数转换为后端使用的下划线命名。 */
@@ -25,6 +27,7 @@ function listParams(params: ListImagesParams): Record<string, unknown> {
     album_id: params.albumId || undefined,
     permission: params.permission || undefined,
     user_id: params.userId || undefined,
+    cursor: params.cursor || undefined,
   }
 }
 
@@ -112,6 +115,21 @@ export function transformUrl(baseUrl: string, params: TransformParams): string {
 
 export function deleteImage(id: string): Promise<void> {
   return request<void>({ method: 'DELETE', url: `/images/${id}` })
+}
+
+/** 批量删除的结果。 */
+export interface BatchDeleteResult {
+  deleted: number
+  failed: number
+}
+
+/** 批量删除图片；一次请求即可删除多张，避免逐张往返。 */
+export function deleteImages(ids: string[]): Promise<BatchDeleteResult> {
+  return request<BatchDeleteResult>({
+    method: 'POST',
+    url: '/images/batch-delete',
+    data: { ids },
+  })
 }
 
 /** 批量更新图片的可见性或所属相册。 */

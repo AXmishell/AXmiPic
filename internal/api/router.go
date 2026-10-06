@@ -190,6 +190,8 @@ func NewRouter(d Deps) http.Handler {
 			r.Group(func(r chi.Router) {
 				r.Use(auth.RequireAuth)
 				r.Get("/auth/me", h.me)
+				r.Get("/auth/preferences", h.getPreferences)
+				r.Put("/auth/preferences", h.updatePreferences)
 				r.Get("/auth/security", h.securityInfo)
 				r.Post("/auth/totp/setup", h.setupTOTP)
 				r.Post("/auth/totp/enable", h.enableTOTP)
@@ -207,6 +209,7 @@ func NewRouter(d Deps) http.Handler {
 				r.Patch("/images/{id}", h.renameImage)
 				r.Delete("/images/{id}", h.deleteImage)
 				r.Post("/images/batch", h.batchImages)
+				r.Post("/images/batch-delete", h.batchDeleteImages)
 				r.Get("/albums", h.listAlbums)
 				r.Post("/albums", h.createAlbum)
 				r.Patch("/albums/{id}", h.updateAlbum)

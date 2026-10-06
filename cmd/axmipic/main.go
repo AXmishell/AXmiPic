@@ -133,6 +133,7 @@ func run() error {
 		AllowedMIMETypes: cfg.Upload.AllowedMIMETypes,
 		PresignExpiry:    storagePresignExpiry(cfg),
 	})
+	uploadSvc.SetMediaBaseURL(cfg.Server.BaseURL)
 
 	processor, processorName, err := imaging.ResolveWithFallback(cfg.Processing.Driver)
 	if err != nil {
@@ -155,11 +156,18 @@ func run() error {
 		AllowWatermark: cfg.Processing.AllowWatermark,
 		WatermarkText:  cfg.Processing.WatermarkText,
 	})
+	imagingSvc.SetRenderCache(int64(cfg.Processing.CacheMB) << 20)
+	renderConcurrency := cfg.Processing.MaxConcurrency
+	if renderConcurrency <= 0 {
+		renderConcurrency = runtime.NumCPU()
+	}
+	imagingSvc.SetMaxConcurrency(renderConcurrency)
 
 	issuer := auth.NewSessionIssuer(jwtKey, time.Duration(cfg.Auth.SessionTTLHours)*time.Hour)
 	accounts := service.NewAccountService(repo, issuer, cfg.Auth.AllowRegistration, int64(cfg.Auth.DefaultQuotaMB)<<20)
 	accounts.SetCipher(cipher)
 	adminSvc := service.NewAdminService(repo, cfg.Storage.Driver, processor)
+	adminSvc.SetImagePurger(uploadSvc)
 	albumSvc := service.NewAlbumService(repo)
 
 	policies := service.NewPolicyService(repo, service.PolicyDefaults{
@@ -423,6 +431,13 @@ func run() error {
 	go runExpiredPlanJanitor(ctx, billingSvc, logger)
 	go runNotifyLogJanitor(ctx, repo, logger)
 	go runGuestJanitor(ctx, repo, logger)
+	if cfg.Maintenance.OrphanCleanup {
+		reconciler := service.NewOrphanReconciler(
+			repo, manager,
+			time.Duration(cfg.Maintenance.OrphanGraceHours)*time.Hour,
+		)
+		go runOrphanJanitor(ctx, reconciler, time.Duration(cfg.Maintenance.OrphanIntervalHours)*time.Hour, logger)
+	}
 
 	return srv.Run(ctx)
 }
@@ -721,6 +736,34 @@ func runGuestJanitor(ctx context.Context, repo *store.Repository, logger *slog.L
 			logger.Warn("empty guest account cleanup failed", slog.Any("error", err))
 		} else if removed > 0 {
 			logger.Info("cleaned up empty guest accounts", slog.Int64("count", removed))
+		}
+	}
+	cleanup()
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			cleanup()
+		}
+	}
+}
+
+// runOrphanJanitor 定期对账存储对象与数据库记录，删除存储中存在、但数据库无
+// 对应记录且超过保留期的孤儿对象。它运行直到 ctx 被取消。
+func runOrphanJanitor(ctx context.Context, reconciler *service.OrphanReconciler, interval time.Duration, logger *slog.Logger) {
+	cleanup := func() {
+		cleanupCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+		defer cancel()
+		removed, err := reconciler.Reconcile(cleanupCtx, time.Now())
+		if err != nil {
+			logger.Warn("orphan object reconciliation failed", slog.Any("error", err))
+			return
+		}
+		if removed > 0 {
+			logger.Info("removed orphan storage objects", slog.Int("count", removed))
 		}
 	}
 	cleanup()

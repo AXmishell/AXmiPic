@@ -1,16 +1,22 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { ArrowDown, CopyDocument, Picture, Refresh, Search } from '@element-plus/icons-vue'
+import { ArrowDown, CopyDocument, Grid, Histogram, Refresh, Search } from '@element-plus/icons-vue'
 
 import { toApiError } from '@/api/client'
 import { listPlaza, type ImageOrder } from '@/api/images'
 import type { ImageItem } from '@/api/types'
 import EmptyState from '@/components/EmptyState.vue'
 import ErrorState from '@/components/ErrorState.vue'
+import ImageViewer from '@/components/ImageViewer.vue'
 import PageHeader from '@/components/PageHeader.vue'
+import PlazaCard from '@/components/PlazaCard.vue'
+import { useAuthStore } from '@/stores/auth'
 import { copyText } from '@/utils/clipboard'
-import { formatBytes, formatDateTime, formatDimensions, formatMime, formatNumber } from '@/utils/format'
+import { formatNumber } from '@/utils/format'
+import { buildMasonryColumns, masonryColumnCount } from '@/utils/masonry'
+
+const auth = useAuthStore()
 
 const items = ref<ImageItem[]>([])
 const total = ref(0)
@@ -28,6 +34,55 @@ const orderOptions: { value: ImageOrder; label: string }[] = [
   { value: 'largest', label: '最大' },
   { value: 'smallest', label: '最小' },
 ]
+
+// 布局：来自用户偏好（跨设备），默认网格。
+const layout = computed<'grid' | 'masonry'>(() =>
+  auth.preferences?.plaza_layout === 'masonry' ? 'masonry' : 'grid',
+)
+
+const masonryRef = ref<HTMLElement | null>(null)
+const columnCount = ref(4)
+const columns = ref<ImageItem[][]>([])
+let resizeObserver: ResizeObserver | null = null
+
+function rebuildColumns(): void {
+  columns.value = buildMasonryColumns(items.value, columnCount.value)
+}
+
+function updateColumnCount(): void {
+  const width = masonryRef.value?.clientWidth ?? window.innerWidth
+  const next = masonryColumnCount(width)
+  if (next !== columnCount.value) {
+    columnCount.value = next
+    rebuildColumns()
+  }
+}
+
+function observeMasonry(): void {
+  if (resizeObserver || !masonryRef.value) return
+  resizeObserver = new ResizeObserver(() => updateColumnCount())
+  resizeObserver.observe(masonryRef.value)
+}
+
+function teardownMasonry(): void {
+  resizeObserver?.disconnect()
+  resizeObserver = null
+}
+
+function toggleLayout(): void {
+  const next = layout.value === 'masonry' ? 'grid' : 'masonry'
+  void auth.savePreferences({ plaza_layout: next })
+}
+
+// 全屏查看器
+const viewerOpen = ref(false)
+const viewerIndex = ref(0)
+
+function openViewer(item: ImageItem): void {
+  const idx = items.value.findIndex((i) => i.id === item.id)
+  viewerIndex.value = idx < 0 ? 0 : idx
+  viewerOpen.value = true
+}
 
 let requestSeq = 0
 
@@ -86,7 +141,33 @@ async function copyLink(item: ImageItem): Promise<void> {
   }
 }
 
-onMounted(load)
+watch(layout, async (value) => {
+  if (value === 'masonry') {
+    await nextTick()
+    updateColumnCount()
+    rebuildColumns()
+    observeMasonry()
+  } else {
+    teardownMasonry()
+  }
+})
+
+watch(items, () => {
+  if (layout.value === 'masonry') rebuildColumns()
+})
+
+onMounted(async () => {
+  if (!auth.preferences) void auth.loadPreferences()
+  await load()
+  if (layout.value === 'masonry') {
+    await nextTick()
+    updateColumnCount()
+    rebuildColumns()
+    observeMasonry()
+  }
+})
+
+onBeforeUnmount(teardownMasonry)
 </script>
 
 <template>
@@ -119,6 +200,13 @@ onMounted(load)
             </el-dropdown-menu>
           </template>
         </el-dropdown>
+        <el-button
+          :icon="layout === 'masonry' ? Grid : Histogram"
+          :title="layout === 'masonry' ? '切换为网格' : '切换为瀑布流'"
+          @click="toggleLayout"
+        >
+          {{ layout === 'masonry' ? '网格' : '瀑布流' }}
+        </el-button>
         <el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button>
       </template>
     </PageHeader>
@@ -146,39 +234,48 @@ onMounted(load)
 
     <template v-else>
       <p class="plaza-count">共 {{ formatNumber(total) }} 张公开图片</p>
-      <section class="ax-grid plaza-grid" :aria-busy="loading" aria-label="图片广场">
-        <article v-for="item in items" :key="item.id" class="plaza-card">
-          <div class="plaza-card__preview">
-            <el-image
-              v-if="!failedIds.has(item.id)"
-              class="plaza-card__img"
-              :src="item.url"
-              :preview-src-list="items.map((i) => i.url)"
-              :initial-index="items.findIndex((i) => i.id === item.id)"
-              fit="cover"
-              loading="lazy"
-              :alt="item.original_name || item.key"
-              @error="onPreviewError(item.id)"
-            />
-            <span v-else class="plaza-card__fallback">
-              <el-icon :size="20"><Picture /></el-icon>
-              <span>预览不可用</span>
-            </span>
-          </div>
-          <div class="plaza-card__body">
-            <p class="plaza-card__name" :title="item.original_name || item.filename || item.key">
-              {{ item.original_name || item.filename || item.key }}
-            </p>
-            <p class="plaza-card__meta">
-              {{ formatMime(item.mime_type) }} · {{ formatBytes(item.size) }} ·
-              {{ formatDimensions(item.width, item.height) }}
-            </p>
-            <p class="plaza-card__meta">作者：{{ item.owner_username || '匿名' }}</p>
-            <p class="plaza-card__meta">{{ formatDateTime(item.created_at) }}</p>
-            <el-button size="small" :icon="CopyDocument" @click="copyLink(item)">复制链接</el-button>
-          </div>
-        </article>
+
+      <section
+        v-if="layout === 'grid'"
+        class="ax-grid plaza-grid"
+        :aria-busy="loading"
+        aria-label="图片广场"
+      >
+        <PlazaCard
+          v-for="item in items"
+          :key="item.id"
+          :item="item"
+          :failed="failedIds.has(item.id)"
+          @open="openViewer"
+          @error="onPreviewError"
+        >
+          <template #actions="{ item: target }">
+            <el-button size="small" :icon="CopyDocument" @click="copyLink(target)">
+              复制链接
+            </el-button>
+          </template>
+        </PlazaCard>
       </section>
+
+      <div v-else ref="masonryRef" class="plaza-masonry" :aria-busy="loading" aria-label="图片广场">
+        <div v-for="(col, ci) in columns" :key="ci" class="plaza-masonry__col">
+          <PlazaCard
+            v-for="item in col"
+            :key="item.id"
+            :item="item"
+            masonry
+            :failed="failedIds.has(item.id)"
+            @open="openViewer"
+            @error="onPreviewError"
+          >
+            <template #actions="{ item: target }">
+              <el-button size="small" :icon="CopyDocument" @click="copyLink(target)">
+                复制链接
+              </el-button>
+            </template>
+          </PlazaCard>
+        </div>
+      </div>
 
       <div class="plaza-pager">
         <el-pagination
@@ -193,6 +290,9 @@ onMounted(load)
         />
       </div>
     </template>
+
+    <!-- 全屏查看器（与图片管理共用） -->
+    <ImageViewer v-model="viewerOpen" v-model:index="viewerIndex" :items="items" />
   </div>
 </template>
 
@@ -215,61 +315,18 @@ onMounted(load)
   grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr));
 }
 
-.plaza-card {
+.plaza-masonry {
   display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  background: var(--ax-tint-weak);
-  border: 1px solid var(--ax-border-subtle);
-  border-radius: var(--ax-radius-lg);
+  align-items: flex-start;
+  gap: var(--ax-space-3);
 }
 
-.plaza-card__preview {
-  position: relative;
-  aspect-ratio: 16 / 10;
-  overflow: hidden;
-  background: var(--ax-checker-b);
-  border-bottom: 1px solid var(--ax-border-subtle);
-}
-
-.plaza-card__img {
-  width: 100%;
-  height: 100%;
-}
-
-.plaza-card__fallback {
-  position: absolute;
-  inset: 0;
+.plaza-masonry__col {
   display: flex;
+  flex: 1;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--ax-space-2);
-  color: var(--ax-text-4);
-  font-size: var(--ax-text-xs);
-}
-
-.plaza-card__body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--ax-space-2);
-  padding: var(--ax-space-3) var(--ax-space-4) var(--ax-space-4);
-}
-
-.plaza-card__name {
-  display: -webkit-box;
-  overflow: hidden;
-  color: var(--ax-text);
-  font-size: var(--ax-text-sm);
-  font-weight: var(--ax-weight-medium);
-  overflow-wrap: anywhere;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
-.plaza-card__meta {
-  color: var(--ax-text-4);
-  font-size: var(--ax-text-xs);
+  gap: var(--ax-space-3);
+  min-width: 0;
 }
 
 .plaza-pager {

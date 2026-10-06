@@ -6,10 +6,15 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/AXmishell/axmipic/internal/imaging"
 	"github.com/AXmishell/axmipic/internal/storage"
 )
+
+// renderCacheTTL 是派生图缓存条目的存活时间。键是随机且不可变的，因此缓存
+// 本身不需要失效逻辑；TTL 只是为了避免长时间驻留过期内容。
+const renderCacheTTL = 24 * time.Hour
 
 // ErrProcessingFailed 在无法应用某种变换时返回。
 var ErrProcessingFailed = errors.New("service: image processing failed")
@@ -83,6 +88,11 @@ type ImagingService struct {
 	processor imaging.Processor
 	policy    ProcessingPolicy
 	allowed   map[imaging.Format]struct{}
+
+	// cache 缓存派生图，避免对同一 (key, opts) 重复下载与重编码。
+	cache *renderCache
+	// sem 限制同时进行的渲染数量，防止并发解码造成内存尖峰。
+	sem chan struct{}
 }
 
 // NewImagingService 构造一个 ImagingService。
@@ -92,6 +102,38 @@ func NewImagingService(manager *storage.Manager, processor imaging.Processor, po
 		allowed[f] = struct{}{}
 	}
 	return &ImagingService{manager: manager, processor: processor, policy: policy, allowed: allowed}
+}
+
+// SetRenderCache 启用派生图缓存，容量以字节计（<=0 表示禁用）。
+func (s *ImagingService) SetRenderCache(maxBytes int64) {
+	s.cache = newRenderCache(maxBytes, renderCacheTTL)
+}
+
+// SetMaxConcurrency 限制同时进行的渲染数量；n<=0 表示不限制。
+func (s *ImagingService) SetMaxConcurrency(n int) {
+	if n > 0 {
+		s.sem = make(chan struct{}, n)
+	}
+}
+
+// acquire 获取一个渲染槽位，尊重 ctx 取消。
+func (s *ImagingService) acquire(ctx context.Context) error {
+	if s.sem == nil {
+		return nil
+	}
+	select {
+	case s.sem <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// release 释放一个渲染槽位。
+func (s *ImagingService) release() {
+	if s.sem != nil {
+		<-s.sem
+	}
 }
 
 // Enabled 报告变换功能是否可用。
@@ -214,11 +256,24 @@ func (s *ImagingService) canEncode(f imaging.Format) bool {
 }
 
 // Render 获取原始对象并应用 opts。backend 指定对象所在的存储后端，由调用方
-// 按图片记录解析后传入。
+// 按图片记录解析后传入。命中派生图缓存时直接返回，不触碰存储与处理器。
 func (s *ImagingService) Render(ctx context.Context, backend storage.Storage, key string, opts imaging.Options) (*imaging.Result, error) {
 	if !s.Enabled() {
 		return nil, ErrProcessingUnsupported
 	}
+	cacheKey := key + "|" + imaging.OptionsDigest(opts)
+	if cached, ok := s.cache.Get(cacheKey); ok {
+		return cached, nil
+	}
+	if err := s.acquire(ctx); err != nil {
+		return nil, err
+	}
+	defer s.release()
+	// 等待闸门期间可能已有并发请求完成同一变换，做一次双重检查。
+	if cached, ok := s.cache.Get(cacheKey); ok {
+		return cached, nil
+	}
+
 	object, err := backend.Get(ctx, key)
 	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
@@ -250,5 +305,6 @@ func (s *ImagingService) Render(ctx context.Context, backend storage.Storage, ke
 			return nil, fmt.Errorf("%w: %v", ErrProcessingFailed, err)
 		}
 	}
+	s.cache.Put(cacheKey, &result)
 	return &result, nil
 }

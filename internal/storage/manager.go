@@ -155,6 +155,25 @@ type BackendInfo struct {
 	Current bool
 }
 
+// Backend 是一个已注册后端的快照，供后台维护任务遍历。
+type Backend struct {
+	ID      string
+	Name    string
+	Driver  string
+	Storage Storage
+}
+
+// All 返回所有已注册后端的快照。它用于孤儿对象对账等需要遍历后端的维护任务。
+func (m *Manager) All() []Backend {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make([]Backend, 0, len(m.backends))
+	for _, b := range m.backends {
+		out = append(out, Backend{ID: b.id, Name: b.name, Driver: b.driver, Storage: b.storage})
+	}
+	return out
+}
+
 // asPresigner 将支持直传的存储实例转换为 Presigner，否则返回 nil。
 func asPresigner(store Storage) Presigner {
 	if p, ok := store.(Presigner); ok {

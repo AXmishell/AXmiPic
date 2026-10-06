@@ -8,7 +8,7 @@
 | PATCH | `/albums/{id}` | 修改相册名称/简介/可见性（仅所有者） |
 | DELETE | `/albums/{id}` | 删除相册（图片保留，仅移出相册） |
 | GET | `/albums/{id}/images` | 相册中的图片（公开相册无需登录） |
-| GET | `/plaza` | 公开图片广场（跨用户，返回 `permission=public` 的图片，支持 `user_id` 按作者过滤） |
+| GET | `/plaza` | 公开图片广场（跨用户，返回 `permission=public` 的图片，支持 `user_id` 按上传者过滤） |
 | GET | `/plaza/albums` | 公开相册列表（支持 `user_id` 过滤） |
 | GET | `/users/{id}` | 用户公开资料：用户名、公开图片数与公开相册 |
 

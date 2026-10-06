@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -967,6 +968,106 @@ func (s *AccountService) Me(ctx context.Context, principal *auth.Principal) (*Us
 		return nil, fmt.Errorf("me: %w", err)
 	}
 	return toUserDTO(account), nil
+}
+
+// allowedPreferenceKeys 限定可写入的偏好键及其取值校验。未知键会被忽略，
+// 已知键的非法取值会报错，从而在保持可扩展的同时约束数据。
+var allowedPreferenceKeys = map[string]func(any) (any, bool){
+	"viewer_mode": func(v any) (any, bool) {
+		mode, ok := v.(string)
+		if !ok {
+			return nil, false
+		}
+		switch mode {
+		case "fit", "actual":
+			return mode, true
+		default:
+			return nil, false
+		}
+	},
+	"plaza_layout": func(v any) (any, bool) {
+		layout, ok := v.(string)
+		if !ok {
+			return nil, false
+		}
+		switch layout {
+		case "grid", "masonry":
+			return layout, true
+		default:
+			return nil, false
+		}
+	},
+	"images_layout": func(v any) (any, bool) {
+		layout, ok := v.(string)
+		if !ok {
+			return nil, false
+		}
+		switch layout {
+		case "grid", "masonry":
+			return layout, true
+		default:
+			return nil, false
+		}
+	},
+}
+
+// Preferences 返回某个用户保存的界面偏好。无记录或内容损坏时返回空对象。
+func (s *AccountService) Preferences(ctx context.Context, principal *auth.Principal) (map[string]any, error) {
+	userID, err := preferenceOwner(principal)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := s.repo.GetUserPreference(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	prefs := map[string]any{}
+	if raw == "" {
+		return prefs, nil
+	}
+	if err := json.Unmarshal([]byte(raw), &prefs); err != nil {
+		return map[string]any{}, nil
+	}
+	return prefs, nil
+}
+
+// UpdatePreferences 合并并保存用户的界面偏好，返回合并后的完整偏好。
+func (s *AccountService) UpdatePreferences(ctx context.Context, principal *auth.Principal, patch map[string]any) (map[string]any, error) {
+	current, err := s.Preferences(ctx, principal)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range patch {
+		validate, ok := allowedPreferenceKeys[key]
+		if !ok {
+			continue
+		}
+		normalized, valid := validate(value)
+		if !valid {
+			return nil, fmt.Errorf("%w: invalid value for preference %q", ErrInvalidInput, key)
+		}
+		current[key] = normalized
+	}
+	encoded, err := json.Marshal(current)
+	if err != nil {
+		return nil, fmt.Errorf("update preferences: encode: %w", err)
+	}
+	userID, err := preferenceOwner(principal)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.repo.UpsertUserPreference(ctx, userID, string(encoded)); err != nil {
+		return nil, err
+	}
+	return current, nil
+}
+
+// preferenceOwner 返回偏好归属的用户 id。
+func preferenceOwner(principal *auth.Principal) (string, error) {
+	if principal == nil || principal.UserID == "" {
+		return "", fmt.Errorf("%w: authentication required", ErrForbidden)
+	}
+	return principal.UserID, nil
 }
 
 // CreateToken 为用户签发一个新的 API 令牌，并仅返回一次明文。

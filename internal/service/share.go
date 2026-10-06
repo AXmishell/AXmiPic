@@ -235,7 +235,7 @@ func (s *ShareService) buildPayload(ctx context.Context, share *store.Share) (*S
 			}
 			return nil, fmt.Errorf("share payload: %w", err)
 		}
-		payload.Image = toDTO(image)
+		payload.Image = toDTO(image, s.baseURL)
 	case store.ShareTargetAlbum:
 		album, err := s.repo.GetAlbumByID(ctx, share.TargetID)
 		if err != nil {
@@ -266,7 +266,7 @@ func (s *ShareService) buildPayload(ctx context.Context, share *store.Share) (*S
 		}
 		dtos := make([]ImageDTO, 0, len(images))
 		for i := range images {
-			dto := toDTO(&images[i])
+			dto := toDTO(&images[i], s.baseURL)
 			dto.OwnerUsername = ownerName
 			dtos = append(dtos, *dto)
 		}

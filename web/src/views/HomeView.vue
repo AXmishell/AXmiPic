@@ -1,13 +1,11 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
-  ArrowRight,
   CopyDocument,
   Grid,
   Moon,
-  Picture,
   Sunny,
   Upload,
   UploadFilled,
@@ -15,13 +13,13 @@ import {
 } from '@element-plus/icons-vue'
 
 import { listAnnouncements } from '@/api/site'
-import { listPlaza, uploadImage } from '@/api/images'
+import { uploadImage } from '@/api/images'
 import { toApiError } from '@/api/client'
 import type { Announcement, ImageItem } from '@/api/types'
 import CopyField from '@/components/CopyField.vue'
+import PlazaMasonry from '@/components/PlazaMasonry.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
-import { formatDateTime } from '@/utils/format'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -32,49 +30,7 @@ const uploading = ref(false)
 const dragActive = ref(false)
 const uploaded = ref<ImageItem | null>(null)
 const announcements = ref<Announcement[]>([])
-const plaza = ref<ImageItem[]>([])
 const ACCEPT = 'image/jpeg,image/png,image/gif,image/webp'
-
-// ---- 首页图片广场：瀑布流 + 无感自动加载 ----
-const PLAZA_PAGE_SIZE = 20
-const plazaPage = ref(1)
-const plazaTotal = ref(0)
-const plazaLoading = ref(false)
-const plazaHasMore = ref(true)
-const plazaSentinel = ref<HTMLElement | null>(null)
-let plazaObserver: IntersectionObserver | null = null
-
-async function loadPlaza(): Promise<void> {
-  if (plazaLoading.value || !plazaHasMore.value) return
-  plazaLoading.value = true
-  try {
-    const data = await listPlaza({ page: plazaPage.value, pageSize: PLAZA_PAGE_SIZE, order: 'newest' })
-    const items = data.items ?? []
-    plaza.value = plazaPage.value === 1 ? items : [...plaza.value, ...items]
-    plazaTotal.value = data.total ?? plaza.value.length
-    // 返回不足一页或已达总数即认为没有更多。
-    plazaHasMore.value = items.length === PLAZA_PAGE_SIZE && plaza.value.length < plazaTotal.value
-    plazaPage.value += 1
-  } catch {
-    // 广场为可选内容，失败时停止加载，不影响首页其他部分。
-    plazaHasMore.value = false
-  } finally {
-    plazaLoading.value = false
-  }
-}
-
-// 监听哨兵元素进入视口，自动加载下一页。
-watch(plazaSentinel, (el) => {
-  plazaObserver?.disconnect()
-  if (!el) return
-  plazaObserver = new IntersectionObserver(
-    (entries) => {
-      if (entries.some((entry) => entry.isIntersecting)) void loadPlaza()
-    },
-    { rootMargin: '300px 0px' },
-  )
-  plazaObserver.observe(el)
-})
 
 const displayName = computed(() => (auth.isAuthenticated ? auth.username : '访客'))
 
@@ -149,11 +105,6 @@ onMounted(async () => {
   } catch {
     // 首页公告为可选内容。
   }
-  void loadPlaza()
-})
-
-onBeforeUnmount(() => {
-  plazaObserver?.disconnect()
 })
 </script>
 
@@ -289,46 +240,15 @@ onBeforeUnmount(() => {
 
     <footer class="home__footer">
       <span>AXmiPic · 自托管图床</span>
-      <router-link to="/login" class="home__footer-link">登录 / 注册</router-link>
+      <el-button size="small" type="primary" @click="router.push('/login')">登录 / 注册</el-button>
     </footer>
 
     <section class="home__plaza" aria-label="图片广场">
       <div class="home__plaza-inner">
         <div class="home__section-head">
           <h2 class="home__section-title"><el-icon :size="16"><Grid /></el-icon>图片广场</h2>
-          <router-link v-if="auth.isAuthenticated" to="/user/plaza" class="home__section-link">
-            查看全部<el-icon :size="12"><ArrowRight /></el-icon>
-          </router-link>
         </div>
-
-        <div v-if="plaza.length === 0 && plazaLoading" class="home__plaza-skeleton">
-          <el-skeleton :rows="3" animated />
-        </div>
-
-        <div v-else-if="plaza.length > 0" class="home__plaza-masonry">
-          <router-link
-            v-for="item in plaza"
-            :key="item.id"
-            :to="auth.isAuthenticated ? '/user/plaza' : '/login'"
-            class="home__plaza-card"
-          >
-            <span class="home__plaza-thumb">
-              <img :src="item.url" :alt="item.original_name || item.key" loading="lazy" />
-            </span>
-            <span class="home__plaza-meta">
-              <el-icon :size="12"><Picture /></el-icon>
-              {{ item.owner_username || '匿名' }}
-              <span class="home__plaza-time">{{ formatDateTime(item.created_at) }}</span>
-            </span>
-          </router-link>
-        </div>
-
-        <p v-else class="home__plaza-empty">暂无公开图片</p>
-
-        <div ref="plazaSentinel" class="home__plaza-sentinel" aria-hidden="true">
-          <span v-if="plazaLoading && plaza.length > 0">正在加载更多…</span>
-          <span v-else-if="!plazaHasMore && plaza.length > 0">已经到底啦</span>
-        </div>
+        <PlazaMasonry />
       </div>
     </section>
 
@@ -586,80 +506,6 @@ onBeforeUnmount(() => {
   font-size: var(--ax-text-lg);
 }
 
-.home__section-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--ax-accent-hover);
-  font-size: var(--ax-text-sm);
-}
-
-.home__plaza-masonry {
-  column-count: 3;
-  column-gap: var(--ax-space-3);
-}
-
-.home__plaza-card {
-  display: block;
-  break-inside: avoid;
-  margin-bottom: var(--ax-space-3);
-  overflow: hidden;
-  background: var(--ax-tint-weak);
-  border: 1px solid var(--ax-border-subtle);
-  border-radius: var(--ax-radius-md);
-}
-
-.home__plaza-thumb {
-  display: block;
-  aspect-ratio: 16 / 10;
-  overflow: hidden;
-  background: var(--ax-tint-weak);
-}
-
-.home__plaza-card img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.home__plaza-skeleton {
-  padding: var(--ax-space-2) 0;
-}
-
-.home__plaza-empty {
-  margin: 0;
-  padding: var(--ax-space-6) 0;
-  color: var(--ax-text-4);
-  font-size: var(--ax-text-sm);
-  text-align: center;
-}
-
-.home__plaza-sentinel {
-  display: flex;
-  justify-content: center;
-  min-height: 24px;
-  padding: var(--ax-space-3) 0;
-  color: var(--ax-text-4);
-  font-size: var(--ax-text-xs);
-}
-
-.home__plaza-meta {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 6px var(--ax-space-2);
-  overflow: hidden;
-  color: var(--ax-text-4);
-  font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.home__plaza-time {
-  margin-left: auto;
-}
-
 .home__footer {
   display: flex;
   align-items: center;
@@ -670,10 +516,6 @@ onBeforeUnmount(() => {
   color: var(--ax-text-4);
   font-size: var(--ax-text-xs);
   border-top: 1px solid var(--ax-border-subtle);
-}
-
-.home__footer-link {
-  color: var(--ax-accent-hover);
 }
 
 .home__dropzone {
@@ -696,16 +538,6 @@ onBeforeUnmount(() => {
 @media (max-width: 640px) {
   .upload-result {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .home__plaza-masonry {
-    column-count: 2;
-  }
-}
-
-@media (min-width: 1200px) {
-  .home__plaza-masonry {
-    column-count: 4;
   }
 }
 </style>

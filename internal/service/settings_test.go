@@ -294,6 +294,9 @@ func TestModerationUpdateAndHotReload(t *testing.T) {
 	if got := svc.Moderation(); !got.Enabled || !got.APIKeySet {
 		t.Fatalf("after bootstrap = %+v", got)
 	}
+	if svc.Moderation().Prompt == "" {
+		t.Fatalf("default moderation prompt should be surfaced to the admin UI")
+	}
 
 	// 更新时留空密钥应沿用原值。
 	updated, err := svc.UpdateModeration(ctx, service.ModerationSettingsInput{

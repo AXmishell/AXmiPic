@@ -164,6 +164,38 @@ func (q *Qiniu) URL(key string) string {
 	return q.domain + "/" + key
 }
 
+// List 枚举七牛桶中的全部对象，供孤儿对象对账使用。
+func (q *Qiniu) List(ctx context.Context, prefix string) ([]ObjectInfo, error) {
+	manager, err := q.bucketManager(ctx)
+	if err != nil {
+		return nil, err
+	}
+	const pageSize = 1000
+	var objects []ObjectInfo
+	marker := ""
+	for {
+		entries, _, next, hasNext, listErr := manager.ListFiles(q.bucket, prefix, "", marker, pageSize)
+		if listErr != nil {
+			return nil, fmt.Errorf("storage: qiniu list: %w", listErr)
+		}
+		for i := range entries {
+			// 七牛的 PutTime 以 100 纳秒为单位。
+			modified := time.Unix(0, entries[i].PutTime*100).UTC()
+			objects = append(objects, ObjectInfo{
+				Key:          entries[i].Key,
+				Size:         entries[i].Fsize,
+				ContentType:  entries[i].MimeType,
+				LastModified: modified,
+			})
+		}
+		if !hasNext || next == "" {
+			break
+		}
+		marker = next
+	}
+	return objects, nil
+}
+
 // PresignPut 签发一个七牛上传凭证，客户端用它来直接上传。
 // 该策略固定确切的键、大小限制和允许的媒体类型。
 func (q *Qiniu) PresignPut(_ context.Context, key string, opts PresignOptions) (*PresignedRequest, error) {

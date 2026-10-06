@@ -6,24 +6,24 @@ import "time"
 type Image struct {
 	ID     string  `gorm:"primaryKey;size:36"`
 	Key    string  `gorm:"uniqueIndex;size:255;not null"`
-	UserID *string `gorm:"index;size:36"`
+	UserID *string `gorm:"index;index:idx_images_user_created,priority:1;index:idx_images_hash_user,priority:2;size:36"`
 	// StorageID 指向对象所在的存储后端；为空时回退到当前默认后端。
 	StorageID *string `gorm:"index;size:36"`
 	// AlbumID 指向所属相册；为空表示未归入任何相册。
-	AlbumID *string `gorm:"index;size:36"`
+	AlbumID *string `gorm:"index;index:idx_images_album_created,priority:1;size:36"`
 	// Permission 为图片可见性：public（可出现在图片广场）或 private（默认）。
-	Permission string `gorm:"size:16;not null;default:'private'"`
+	Permission string `gorm:"size:16;not null;default:'private';index:idx_images_permission_created,priority:1"`
 	// OriginalName 是上传时的原始文件名；Filename 是重命名后的存储文件名
 	// （即 Key 的最后一段）；Hash 是内容的 sha256 十六进制摘要。
 	OriginalName string `gorm:"size:255;not null;default:''"`
 	Filename     string `gorm:"size:255;not null;default:''"`
-	Hash         string `gorm:"size:64;index;not null;default:''"`
+	Hash         string `gorm:"size:64;index;index:idx_images_hash_user,priority:1;not null;default:''"`
 	URL          string `gorm:"size:512;not null"`
-	Size         int64  `gorm:"not null"`
+	Size         int64  `gorm:"not null;index"`
 	MimeType     string `gorm:"size:100;not null"`
 	Width        int
 	Height       int
-	CreatedAt    time.Time
+	CreatedAt    time.Time `gorm:"index:idx_images_user_created,priority:2;index:idx_images_album_created,priority:2;index:idx_images_permission_created,priority:2;index"`
 	UpdatedAt    time.Time
 }
 
@@ -199,6 +199,19 @@ type Setting struct {
 // TableName 返回存储 Setting 的表名。
 func (Setting) TableName() string {
 	return "settings"
+}
+
+// UserPreference 按用户（管理员或客户）保存界面偏好，值为 JSON 对象。
+// 它用于跨设备同步查看器等前端设置。
+type UserPreference struct {
+	UserID    string `gorm:"primaryKey;size:36"`
+	Data      string `gorm:"type:text;not null;default:''"`
+	UpdatedAt time.Time
+}
+
+// TableName 返回存储 UserPreference 的表名。
+func (UserPreference) TableName() string {
+	return "user_preferences"
 }
 
 // RoleGroup 是管理员定义的一组权限与策略集合，可分配给普通用户，从而

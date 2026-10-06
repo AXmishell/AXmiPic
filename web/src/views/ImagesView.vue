@@ -9,6 +9,8 @@ import {
   Delete,
   EditPen,
   Folder,
+  Grid,
+  Histogram,
   InfoFilled,
   Lock,
   Picture,
@@ -25,6 +27,7 @@ import { toApiError } from '@/api/client'
 import {
   batchUpdateImages,
   deleteImage,
+  deleteImages,
   listImages,
   renameImage,
   uploadImage,
@@ -33,6 +36,7 @@ import {
 import type { Album, ImageItem, ImagePermission } from '@/api/types'
 import EmptyState from '@/components/EmptyState.vue'
 import ErrorState from '@/components/ErrorState.vue'
+import ImageViewer from '@/components/ImageViewer.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import ShareDialog from '@/components/ShareDialog.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -124,7 +128,32 @@ const menuTarget = ref<ImageItem | null>(null)
 let requestSeq = 0
 
 const selectedCount = computed(() => selectedIds.value.size)
-const previewList = computed(() => items.value.map((i) => i.url))
+
+// 全屏查看器
+const viewerOpen = ref(false)
+const viewerIndex = ref(0)
+
+function openViewer(item: ImageItem): void {
+  const idx = items.value.findIndex((i) => i.id === item.id)
+  viewerIndex.value = idx < 0 ? 0 : idx
+  viewerOpen.value = true
+}
+
+// 布局：来自用户偏好（跨设备），默认网格。
+const layout = computed<'grid' | 'masonry'>(() =>
+  auth.preferences?.images_layout === 'masonry' ? 'masonry' : 'grid',
+)
+
+function toggleLayout(): void {
+  void auth.savePreferences({ images_layout: layout.value === 'masonry' ? 'grid' : 'masonry' })
+}
+
+/** 瀑布流下按原图比例预留高度，避免加载后跳动。 */
+function previewStyle(item: ImageItem): Record<string, string> {
+  return layout.value === 'masonry' && item.width > 0 && item.height > 0
+    ? { aspectRatio: `${item.width} / ${item.height}` }
+    : {}
+}
 
 const description = computed(() =>
   loading.value && items.value.length === 0
@@ -563,23 +592,22 @@ async function deleteSelected(): Promise<void> {
   } catch {
     return
   }
-  let ok = 0
-  let failed = 0
-  for (const id of ids) {
-    try {
-      await deleteImage(id)
-      ok += 1
-    } catch {
-      failed += 1
+  try {
+    const result = await deleteImages(ids)
+    clearSelection()
+    if (result.deleted > 0) {
+      ElMessage.success(
+        result.failed > 0
+          ? `已删除 ${result.deleted} 张，${result.failed} 张失败`
+          : `已删除 ${result.deleted} 张图片`,
+      )
+      page.value = 1
+      await load()
+    } else {
+      ElMessage.error('删除失败')
     }
-  }
-  clearSelection()
-  if (ok > 0) {
-    ElMessage.success(failed > 0 ? `已删除 ${ok} 张，${failed} 张失败` : `已删除 ${ok} 张图片`)
-    page.value = 1
-    await load()
-  } else {
-    ElMessage.error('删除失败')
+  } catch (error) {
+    ElMessage.error(toApiError(error).message)
   }
 }
 
@@ -646,6 +674,8 @@ function menuAssign(): void {
 
 // ---- 键盘 ----
 function onKeydown(event: KeyboardEvent): void {
+  // 全屏查看器打开时由它接管键盘事件。
+  if (viewerOpen.value) return
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') {
     // 仅在图片页且焦点不在输入框内时全选。
     const target = event.target as HTMLElement | null
@@ -663,6 +693,7 @@ onMounted(() => {
   const queryAlbum = route.query.album_id
   if (typeof queryAlbum === 'string') albumFilter.value = queryAlbum
   if (!auth.policies) void auth.loadPolicies()
+  if (!auth.preferences) void auth.loadPreferences()
   void loadAlbums()
   void load()
   document.addEventListener('paste', onPaste)
@@ -744,6 +775,13 @@ onBeforeUnmount(() => {
         >
           <el-button type="primary" :icon="Upload" :loading="uploadRunning">上传图片</el-button>
         </el-upload>
+        <el-button
+          :icon="layout === 'masonry' ? Grid : Histogram"
+          :title="layout === 'masonry' ? '切换为网格' : '切换为瀑布流'"
+          @click="toggleLayout"
+        >
+          {{ layout === 'masonry' ? '网格' : '瀑布流' }}
+        </el-button>
         <el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button>
       </template>
     </PageHeader>
@@ -807,7 +845,7 @@ onBeforeUnmount(() => {
       </div>
 
       <section
-        class="ax-grid image-grid"
+        :class="layout === 'masonry' ? 'image-masonry' : 'ax-grid image-grid'"
         :aria-busy="loading"
         aria-label="图片列表"
         @contextmenu.self.prevent="openMenu($event, null)"
@@ -819,14 +857,22 @@ onBeforeUnmount(() => {
           :class="{ 'is-selected': isSelected(item.id) }"
           @contextmenu="openMenu($event, item)"
         >
-          <div class="image-card__preview">
-            <el-image
+          <div
+            class="image-card__preview"
+            :class="{ 'is-masonry': layout === 'masonry' }"
+            :style="previewStyle(item)"
+            @click="openViewer(item)"
+          >
+            <div
+              v-if="!failedIds.has(item.id) && layout !== 'masonry'"
+              class="image-card__blur"
+              :style="{ backgroundImage: `url(${item.thumbnail || item.url})` }"
+              aria-hidden="true"
+            />
+            <img
               v-if="!failedIds.has(item.id)"
               class="image-card__img"
-              :src="item.url"
-              :preview-src-list="previewList"
-              :initial-index="items.findIndex((i) => i.id === item.id)"
-              fit="cover"
+              :src="item.thumbnail || item.url"
               loading="lazy"
               :alt="item.original_name || item.key"
               @error="onPreviewError(item.id)"
@@ -845,59 +891,65 @@ onBeforeUnmount(() => {
             >
               <el-icon :size="14"><Select /></el-icon>
             </button>
-          </div>
 
-          <div class="image-card__body">
-            <p class="image-card__key" :title="item.original_name || item.filename || item.key">
-              {{ item.original_name || item.filename || item.key }}
-            </p>
+            <div class="image-card__overlay">
+              <div class="image-card__overlay-head">
+                <p class="image-card__key" :title="item.original_name || item.filename || item.key">
+                  {{ item.original_name || item.filename || item.key }}
+                </p>
+                <div class="image-card__badges">
+                  <el-tag v-if="item.permission === 'public'" size="small" type="success" effect="dark">
+                    公开
+                  </el-tag>
+                  <el-tag v-else size="small" type="info" effect="plain">私有</el-tag>
+                  <el-tag v-if="item.album_id" size="small" effect="plain">
+                    {{ albumName(item.album_id) }}
+                  </el-tag>
+                </div>
+              </div>
 
-            <div class="image-card__badges">
-              <el-tag v-if="item.permission === 'public'" size="small" type="success" effect="dark">
-                公开
-              </el-tag>
-              <el-tag v-else size="small" type="info" effect="plain">私有</el-tag>
-              <el-tag v-if="item.album_id" size="small" effect="plain">
-                {{ albumName(item.album_id) }}
-              </el-tag>
-            </div>
+              <dl class="image-card__meta">
+                <div class="image-card__meta-row">
+                  <dt>尺寸</dt>
+                  <dd>{{ formatDimensions(item.width, item.height) }}</dd>
+                </div>
+                <div class="image-card__meta-row">
+                  <dt>大小</dt>
+                  <dd>{{ formatBytes(item.size) }}</dd>
+                </div>
+                <div class="image-card__meta-row">
+                  <dt>格式</dt>
+                  <dd>{{ formatMime(item.mime_type) }}</dd>
+                </div>
+                <div class="image-card__meta-row">
+                  <dt>上传</dt>
+                  <dd>{{ formatDateTime(item.created_at) }}</dd>
+                </div>
+              </dl>
 
-            <dl class="image-card__meta">
-              <div class="image-card__meta-row">
-                <dt>大小</dt>
-                <dd>{{ formatBytes(item.size) }}</dd>
+              <div class="image-card__actions">
+                <el-button
+                  v-if="auth.hasFeature('share')"
+                  size="small"
+                  :icon="Share"
+                  @click.stop="openShare(item)"
+                >
+                  分享
+                </el-button>
+                <el-button size="small" :icon="CopyDocument" @click.stop="copyLink(item)">
+                  复制
+                </el-button>
+                <el-button size="small" :icon="EditPen" @click.stop="openRename(item)">重命名</el-button>
+                <el-button
+                  size="small"
+                  type="danger"
+                  plain
+                  :icon="Delete"
+                  @click.stop="deleteOne(item)"
+                >
+                  删除
+                </el-button>
               </div>
-              <div class="image-card__meta-row">
-                <dt>尺寸</dt>
-                <dd>{{ formatDimensions(item.width, item.height) }}</dd>
-              </div>
-              <div class="image-card__meta-row">
-                <dt>格式</dt>
-                <dd>{{ formatMime(item.mime_type) }}</dd>
-              </div>
-              <div class="image-card__meta-row">
-                <dt>上传时间</dt>
-                <dd>{{ formatDateTime(item.created_at) }}</dd>
-              </div>
-            </dl>
-
-            <div class="image-card__actions">
-              <el-button v-if="auth.hasFeature('share')" size="small" :icon="Share" @click="openShare(item)">
-                分享
-              </el-button>
-              <el-button size="small" :icon="CopyDocument" @click="copyLink(item)">
-                复制链接
-              </el-button>
-              <el-button size="small" :icon="EditPen" @click="openRename(item)">重命名</el-button>
-              <el-button
-                size="small"
-                type="danger"
-                plain
-                :icon="Delete"
-                @click="deleteOne(item)"
-              >
-                删除
-              </el-button>
             </div>
           </div>
         </article>
@@ -1035,6 +1087,14 @@ onBeforeUnmount(() => {
       :target-label="shareTarget?.original_name || shareTarget?.filename || ''"
     />
 
+    <!-- 全屏查看器 -->
+    <ImageViewer
+      v-model="viewerOpen"
+      v-model:index="viewerIndex"
+      :items="items"
+      :album-name="albumName"
+    />
+
     <!-- 详情 -->
     <el-drawer v-model="detailOpen" title="图片详情" size="360px" append-to-body>
       <dl v-if="detailTarget" class="image-detail">
@@ -1090,6 +1150,26 @@ onBeforeUnmount(() => {
   grid-template-columns: repeat(auto-fill, minmax(min(250px, 100%), 1fr));
 }
 
+/* 瀑布流：CSS columns，卡片按原图比例自然高度 */
+.image-masonry {
+  column-width: 240px;
+  column-gap: var(--ax-space-3);
+}
+
+.image-masonry .image-card {
+  width: 100%;
+  margin-bottom: var(--ax-space-3);
+  break-inside: avoid;
+}
+
+.image-card__preview.is-masonry {
+  height: auto;
+}
+
+.image-card__preview.is-masonry .image-card__img {
+  object-fit: cover;
+}
+
 /* 让上传按钮与旁边按钮在头部对齐（el-upload 默认是 inline-block）。 */
 :deep(.el-upload) {
   display: inline-flex;
@@ -1109,19 +1189,15 @@ onBeforeUnmount(() => {
 
 .image-card {
   position: relative;
-  display: flex;
-  flex-direction: column;
+  display: block;
   overflow: hidden;
   background: var(--ax-tint-weak);
   border: 1px solid var(--ax-border-subtle);
   border-radius: var(--ax-radius-lg);
-  transition:
-    background-color var(--ax-duration) var(--ax-ease),
-    border-color var(--ax-duration) var(--ax-ease);
+  transition: border-color var(--ax-duration) var(--ax-ease);
 }
 
 .image-card:hover {
-  background: var(--ax-tint);
   border-color: var(--ax-border);
 }
 
@@ -1133,24 +1209,34 @@ onBeforeUnmount(() => {
 .image-card__preview {
   position: relative;
   display: block;
-  aspect-ratio: 16 / 10;
+  height: 220px;
   overflow: hidden;
-  background:
-    linear-gradient(45deg, var(--ax-checker-a) 25%, transparent 25%) 0 0 / 16px 16px,
-    linear-gradient(-45deg, var(--ax-checker-a) 25%, transparent 25%) 0 8px / 16px 16px,
-    var(--ax-checker-b);
-  border-bottom: 1px solid var(--ax-border-subtle);
+  cursor: zoom-in;
+  background: var(--ax-tint);
+}
+
+.image-card__blur {
+  position: absolute;
+  /* 外扩距离必须大于模糊半径，否则模糊渐隐的透明边会落进可视区，
+     露出容器底色而形成一圈“阴影边”。 */
+  inset: -40px;
+  background-position: center;
+  background-size: cover;
+  /* 不再过度压暗，留白处与图片过渡更自然。 */
+  filter: blur(28px) brightness(0.85) saturate(1.05);
 }
 
 .image-card__img {
+  position: relative;
+  display: block;
   width: 100%;
   height: 100%;
-  transform: scale(1);
+  object-fit: contain;
   transition: transform var(--ax-duration-slow) var(--ax-ease);
 }
 
 .image-card:hover .image-card__img {
-  transform: scale(1.03);
+  transform: scale(1.02);
 }
 
 .image-card__select {
@@ -1198,33 +1284,59 @@ onBeforeUnmount(() => {
   font-size: var(--ax-text-xs);
 }
 
-.image-card__body {
+.image-card__overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
   display: flex;
   flex-direction: column;
-  gap: var(--ax-space-3);
-  padding: var(--ax-space-3) var(--ax-space-4) var(--ax-space-4);
+  justify-content: space-between;
+  gap: var(--ax-space-2);
+  padding: var(--ax-space-3);
+  color: #fff;
+  background: linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0.55) 0%,
+    rgba(0, 0, 0, 0.12) 38%,
+    rgba(0, 0, 0, 0.8) 100%
+  );
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--ax-duration) var(--ax-ease);
+}
+
+.image-card:hover .image-card__overlay,
+.image-card:focus-within .image-card__overlay {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.image-card__overlay-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ax-space-2);
+  min-width: 0;
 }
 
 .image-card__key {
-  display: -webkit-box;
+  margin: 0;
   overflow: hidden;
-  color: var(--ax-text);
+  color: #fff;
   font-size: var(--ax-text-sm);
   font-weight: var(--ax-weight-medium);
-  overflow-wrap: anywhere;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .image-card__badges {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--ax-space-2);
+  gap: var(--ax-space-1);
 }
 
 .image-card__meta {
   display: grid;
-  gap: 5px;
+  gap: 3px;
   margin: 0;
 }
 
@@ -1238,14 +1350,14 @@ onBeforeUnmount(() => {
 
 .image-card__meta-row dt {
   flex: none;
-  color: var(--ax-text-4);
+  color: rgba(255, 255, 255, 0.6);
   font-size: var(--ax-text-xs);
 }
 
 .image-card__meta-row dd {
   margin: 0;
   overflow: hidden;
-  color: var(--ax-text-2);
+  color: rgba(255, 255, 255, 0.92);
   font-size: var(--ax-text-xs);
   font-variant-numeric: tabular-nums;
   text-overflow: ellipsis;
@@ -1255,12 +1367,12 @@ onBeforeUnmount(() => {
 .image-card__actions {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--ax-space-2);
-  margin-top: var(--ax-space-1);
+  gap: var(--ax-space-1);
 }
 
 .image-card__actions :deep(.el-button) {
   flex: 1;
+  min-width: 0;
   margin-left: 0;
 }
 

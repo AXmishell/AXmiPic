@@ -179,6 +179,47 @@ func (l *Local) URL(key string) string {
 	return l.baseURL + "/i/" + key
 }
 
+// List 枚举本地存储中的全部对象（跳过临时文件），供孤儿对象对账使用。
+func (l *Local) List(ctx context.Context, prefix string) ([]ObjectInfo, error) {
+	var objects []ObjectInfo
+	err := filepath.WalkDir(l.root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if strings.HasPrefix(d.Name(), ".axmipic-tmp-") {
+			return nil
+		}
+		rel, relErr := filepath.Rel(l.root, p)
+		if relErr != nil {
+			return nil
+		}
+		key := filepath.ToSlash(rel)
+		if prefix != "" && !strings.HasPrefix(key, prefix) {
+			return nil
+		}
+		info, statErr := d.Info()
+		if statErr != nil {
+			return nil
+		}
+		objects = append(objects, ObjectInfo{
+			Key:          key,
+			Size:         info.Size(),
+			LastModified: info.ModTime(),
+		})
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("storage: list local objects: %w", err)
+	}
+	return objects, nil
+}
+
 // resolve 校验 key 并返回其映射到的绝对文件系统路径。
 func (l *Local) resolve(key string) (string, error) {
 	if key == "" {

@@ -78,10 +78,23 @@ type ImageListOptions struct {
 	Permission string
 	// AlbumID 非空时仅返回属于该相册的图片。
 	AlbumID *string
+	// Cursor 非空时使用 keyset 游标翻页（Offset 被忽略），并跳过总数统计。
+	Cursor *ImageCursor
+}
+
+// ImageCursor 是一个 keyset 翻页锚点。Order 记录生成该游标的排序方式，仅在
+// 与本次查询的排序一致时生效。
+type ImageCursor struct {
+	Order     string
+	CreatedAt time.Time
+	Size      int64
+	ID        string
 }
 
 // ListImages 返回一页图片以及记录总数。排序与关键字由 opts 控制。
+// 使用游标翻页时跳过总数统计（返回 0），以避免昂贵的全表 COUNT。
 func (r *Repository) ListImages(ctx context.Context, opts ImageListOptions) ([]Image, int64, error) {
+	order := canonicalOrder(opts.Order)
 	countQuery := r.db.WithContext(ctx).Model(&Image{})
 	listQuery := r.db.WithContext(ctx).Model(&Image{})
 	if opts.UserID != "" {
@@ -105,14 +118,23 @@ func (r *Repository) ListImages(ctx context.Context, opts ImageListOptions) ([]I
 		)
 	}
 
+	useCursor := opts.Cursor != nil && opts.Cursor.Order == order
+	offset := opts.Offset
+	if useCursor {
+		listQuery = listQuery.Where(keysetClause(order), keysetArgs(order, opts.Cursor)...)
+		offset = 0
+	}
+
 	var total int64
-	if err := countQuery.Count(&total).Error; err != nil {
-		return nil, 0, fmt.Errorf("store: count images: %w", err)
+	if !useCursor {
+		if err := countQuery.Count(&total).Error; err != nil {
+			return nil, 0, fmt.Errorf("store: count images: %w", err)
+		}
 	}
 	var images []Image
 	if err := listQuery.
-		Order(orderClause(opts.Order)).
-		Offset(opts.Offset).
+		Order(orderClause(order)).
+		Offset(offset).
 		Limit(opts.Limit).
 		Find(&images).Error; err != nil {
 		return nil, 0, fmt.Errorf("store: list images: %w", err)
@@ -120,17 +142,53 @@ func (r *Repository) ListImages(ctx context.Context, opts ImageListOptions) ([]I
 	return images, total, nil
 }
 
+// canonicalOrder 把排序标识收敛到白名单中的一个已知取值。
+func canonicalOrder(order string) string {
+	switch order {
+	case "earliest", "largest", "smallest":
+		return order
+	default:
+		return "newest"
+	}
+}
+
+// keysetClause 返回给定排序方式下基于 (排序列, id) 行值的游标比较子句。
+// 加入 id 作为决胜字段，保证排序稳定、翻页不漏不重。
+func keysetClause(order string) string {
+	switch order {
+	case "earliest":
+		return "(images.created_at, images.id) > (?, ?)"
+	case "largest":
+		return "(images.size, images.id) < (?, ?)"
+	case "smallest":
+		return "(images.size, images.id) > (?, ?)"
+	default:
+		return "(images.created_at, images.id) < (?, ?)"
+	}
+}
+
+// keysetArgs 返回 keysetClause 对应的绑定参数。
+func keysetArgs(order string, cursor *ImageCursor) []any {
+	switch order {
+	case "largest", "smallest":
+		return []any{cursor.Size, cursor.ID}
+	default:
+		return []any{cursor.CreatedAt, cursor.ID}
+	}
+}
+
 // orderClause 将排序标识映射为安全的 SQL 排序子句（白名单，避免注入）。
+// 每种排序都以 id 作为决胜字段，保证游标翻页稳定。
 func orderClause(order string) string {
 	switch order {
 	case "earliest":
-		return "images.created_at ASC"
+		return "images.created_at ASC, images.id ASC"
 	case "largest":
-		return "images.size DESC"
+		return "images.size DESC, images.id DESC"
 	case "smallest":
-		return "images.size ASC"
+		return "images.size ASC, images.id ASC"
 	default:
-		return "images.created_at DESC"
+		return "images.created_at DESC, images.id DESC"
 	}
 }
 

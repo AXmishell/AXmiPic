@@ -14,6 +14,12 @@ body {
   height: 100%;
 }
 
+/* html 也要有主题背景：body 被 height:100% 限制，长页面超出视口的部分会露出
+   html 画布，若 html 无背景就会显示为默认深色。 */
+html {
+  background: var(--ax-atmosphere), var(--ax-canvas);
+}
+
 body {
   margin: 0;
   background: var(--ax-atmosphere), var(--ax-canvas);
