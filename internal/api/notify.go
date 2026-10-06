@@ -106,11 +106,16 @@ type RuntimeInfo struct {
 	DefaultQuotaMB    int      `json:"default_quota_mb"`
 	UploadMaxMB       int      `json:"upload_max_mb"`
 	TrustProxy        bool     `json:"trust_proxy"`
-	SessionTTLHours   int      `json:"session_ttl_hours"`
-	InstallLockFile   string   `json:"install_lock_file"`
-	Installed         bool     `json:"installed"`
-	GoVersion         string   `json:"go_version"`
-	Platform          string   `json:"platform"`
+	// 客户端真实 IP 解析的当前生效值（可在后台热更新）。
+	ClientIPSource         string   `json:"client_ip_source"`
+	ClientIPHeader         string   `json:"client_ip_header,omitempty"`
+	ClientIPTrustedProxies []string `json:"client_ip_trusted_proxies,omitempty"`
+	ClientIPXFFDepth       int      `json:"client_ip_xff_depth"`
+	SessionTTLHours        int      `json:"session_ttl_hours"`
+	InstallLockFile        string   `json:"install_lock_file"`
+	Installed              bool     `json:"installed"`
+	GoVersion              string   `json:"go_version"`
+	Platform               string   `json:"platform"`
 }
 
 // adminRuntimeInfo 返回实例运行环境信息。
@@ -141,6 +146,14 @@ func (h *Handler) adminRuntimeInfo(w http.ResponseWriter, r *http.Request) {
 		if info.InstallLockFile == "" {
 			info.InstallLockFile = status.LockFile
 		}
+	}
+	// 客户端真实 IP 解析以运行值（可在后台热更新）为准。
+	if h.clientIP != nil {
+		clientIP := h.clientIP.Config()
+		info.ClientIPSource = clientIP.Source
+		info.ClientIPHeader = clientIP.Header
+		info.ClientIPTrustedProxies = clientIP.TrustedProxies
+		info.ClientIPXFFDepth = clientIP.XFFDepth
 	}
 	writeOK(w, info)
 }

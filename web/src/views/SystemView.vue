@@ -106,9 +106,23 @@ const policyRows = computed(() => {
     { label: '访客配额', value: formatMiB(info.guest_quota_mb) },
     { label: '访客单文件上限', value: formatMiB(info.guest_upload_max_mb) },
     { label: '会话有效期', value: `${info.session_ttl_hours} 小时` },
-    { label: '信任代理头', value: info.trust_proxy ? '是' : '否' },
+    { label: '客户端真实 IP', value: clientIPSummary(info) },
+    { label: '可信代理', value: trustedProxySummary(info) },
   ]
 })
+
+/** 概览里展示当前生效的客户端 IP 解析方式。 */
+function clientIPSummary(info: RuntimeInfo): string {
+  const source = info.client_ip_source
+  if (!source || source === 'remote') return '不信任转发头（remote）'
+  const header = source === 'custom' && info.client_ip_header ? info.client_ip_header : source
+  return `信任转发头（${header}）`
+}
+
+function trustedProxySummary(info: RuntimeInfo): string {
+  const list = info.client_ip_trusted_proxies ?? []
+  return list.length > 0 ? list.join('、') : '未配置'
+}
 
 /** 将秒数格式化为「Xd Xh Xm Xs」形式的运行时长。 */
 function formatDuration(seconds: number): string {
@@ -676,6 +690,7 @@ onBeforeUnmount(() => {
                   <p class="card-head__sub">注册、上传、配额与限流</p>
                 </div>
               </div>
+              <el-button size="small" @click="activeTab = 'runtime'">配置客户端真实 IP</el-button>
             </header>
             <div class="ax-card__body">
               <div class="policy-switch">

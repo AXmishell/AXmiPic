@@ -277,6 +277,10 @@ export interface RuntimeInfo {
   default_quota_mb: number
   upload_max_mb: number
   trust_proxy: boolean
+  client_ip_source: string
+  client_ip_header?: string
+  client_ip_trusted_proxies?: string[]
+  client_ip_xff_depth: number
   session_ttl_hours: number
   install_lock_file: string
   installed: boolean

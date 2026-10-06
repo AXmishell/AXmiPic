@@ -175,6 +175,21 @@ func (r *ClientIPResolver) describe(remoteAddr string, get func(string) string) 
 	}
 }
 
+// Config 返回当前生效的解析配置（source 为回退后的实际取值）。
+func (r *ClientIPResolver) Config() config.ClientIPConfig {
+	source, header, trusted, depth := r.snapshot()
+	proxies := make([]string, 0, len(trusted))
+	for _, n := range trusted {
+		proxies = append(proxies, n.String())
+	}
+	return config.ClientIPConfig{
+		Source:         source,
+		Header:         header,
+		TrustedProxies: proxies,
+		XFFDepth:       depth,
+	}
+}
+
 // pickForwardedFor 从 X-Forwarded-For 中选出客户端地址。depth>0 时从右往左跳过
 // depth 个（可信代理）后取值；depth==0 时取右起第一个不在可信网段中的地址。
 func pickForwardedFor(value string, trusted []*net.IPNet, depth int) string {
