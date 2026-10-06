@@ -10,6 +10,34 @@ import (
 	"github.com/AXmishell/axmipic/internal/service"
 )
 
+// adminClientIPInfo 返回当前请求的客户端 IP 解析详情，供后台校验配置。
+func (h *Handler) adminClientIPInfo(w http.ResponseWriter, r *http.Request) {
+	if h.clientIP == nil {
+		writeError(w, http.StatusNotFound, http.StatusNotFound, "client ip resolver unavailable")
+		return
+	}
+	writeOK(w, h.clientIP.Describe(r))
+}
+
+type clientIPPreviewRequest struct {
+	RemoteAddr string            `json:"remote_addr"`
+	Headers    map[string]string `json:"headers"`
+}
+
+// adminClientIPPreview 用给定的对端地址与请求头模拟解析，验证规则是否正确。
+func (h *Handler) adminClientIPPreview(w http.ResponseWriter, r *http.Request) {
+	if h.clientIP == nil {
+		writeError(w, http.StatusNotFound, http.StatusNotFound, "client ip resolver unavailable")
+		return
+	}
+	var body clientIPPreviewRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxJSONBody)).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	writeOK(w, h.clientIP.Preview(body.RemoteAddr, body.Headers))
+}
+
 // adminGetSettingDomain 返回指定设置域的当前值。
 func (h *Handler) adminGetSettingDomain(w http.ResponseWriter, r *http.Request) {
 	if h.settings == nil {

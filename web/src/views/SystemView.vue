@@ -6,6 +6,7 @@ import { DataLine, Monitor, Odometer, Refresh, SetUp } from '@element-plus/icons
 import { fetchStats } from '@/api/admin'
 import {
   getAuthSettings,
+  getClientIPInfo,
   getImagingDrivers,
   getModerationSettings,
   getNotifyChannels,
@@ -16,6 +17,7 @@ import {
   getSettingDomain,
   getSMTPConfig,
   listPaymentGateways,
+  previewClientIP,
   sendTestNotify,
   updateAuthSettings,
   updateModerationSettings,
@@ -23,6 +25,8 @@ import {
   updateSettingDomain,
   updateSMTPConfig,
   type AuthConfig,
+  type ClientIPInfo,
+  type ClientIPSettings,
   type ImagingSettings,
   type LimitsSettings,
   type MaintenanceSettings,
@@ -432,6 +436,54 @@ const maintenanceForm = reactive<MaintenanceSettings>({
 })
 const siteForm = reactive<SiteSettings>({ name: 'AXmiPic', description: '' })
 
+// 客户端真实 IP（来源/可信代理）与校验。
+const clientIPForm = reactive<ClientIPSettings>({
+  source: 'remote',
+  header: '',
+  trusted_proxies: [],
+  xff_depth: 0,
+})
+const clientIPChecking = ref(false)
+const clientIPInfo = ref<ClientIPInfo | null>(null)
+const simulateRemote = ref('')
+const simulateHeaders = ref('')
+const simulating = ref(false)
+const simulateResult = ref<ClientIPInfo | null>(null)
+
+function fillClientIP(v: ClientIPSettings): void {
+  Object.assign(clientIPForm, v)
+}
+
+async function checkClientIP(): Promise<void> {
+  clientIPChecking.value = true
+  try {
+    clientIPInfo.value = await getClientIPInfo()
+  } catch (error) {
+    ElMessage.error(toApiError(error).message)
+  } finally {
+    clientIPChecking.value = false
+  }
+}
+
+async function simulateClientIP(): Promise<void> {
+  const headers: Record<string, string> = {}
+  for (const line of simulateHeaders.value.split('\n')) {
+    const idx = line.indexOf(':')
+    if (idx > 0) headers[line.slice(0, idx).trim()] = line.slice(idx + 1).trim()
+  }
+  simulating.value = true
+  try {
+    simulateResult.value = await previewClientIP({
+      remote_addr: simulateRemote.value.trim(),
+      headers,
+    })
+  } catch (error) {
+    ElMessage.error(toApiError(error).message)
+  } finally {
+    simulating.value = false
+  }
+}
+
 function fillUpload(v: UploadSettings): void {
   Object.assign(uploadForm, v)
 }
@@ -495,6 +547,7 @@ async function load(): Promise<void> {
       limitsData,
       maintenanceData,
       siteData,
+      clientIPData,
     ] = await Promise.all([
       fetchStats(),
       getRuntimeInfo(),
@@ -514,6 +567,7 @@ async function load(): Promise<void> {
       getSettingDomain<LimitsSettings>('limits').catch(() => null),
       getSettingDomain<MaintenanceSettings>('maintenance').catch(() => null),
       getSettingDomain<SiteSettings>('site').catch(() => null),
+      getSettingDomain<ClientIPSettings>('client_ip').catch(() => null),
     ])
     stats.value = statsData
     runtime.value = runtimeData
@@ -548,6 +602,7 @@ async function load(): Promise<void> {
     if (limitsData) fillLimits(limitsData)
     if (maintenanceData) fillMaintenance(maintenanceData)
     if (siteData) fillSite(siteData)
+    if (clientIPData) fillClientIP(clientIPData)
   } catch (error) {
     errorMessage.value = toApiError(error).message
   } finally {
@@ -817,6 +872,43 @@ onBeforeUnmount(() => {
             <p class="integration__hint">
               保存 SMTP 设置后即时生效；未配置真实服务商时，通知会回退到日志渠道并记录到服务端日志。
             </p>
+          </div>
+        </article>
+
+        <article class="ax-card">
+          <header class="ax-card__head">
+            <h2 class="ax-card__title">短信渠道</h2>
+            <el-tag size="small" type="success" effect="plain">即时生效</el-tag>
+          </header>
+          <div class="ax-card__body">
+            <el-form label-position="top" class="smtp-form" @submit.prevent>
+              <div class="smtp-grid">
+                <el-form-item label="启用短信">
+                  <el-switch v-model="smsForm.enabled" />
+                </el-form-item>
+                <el-form-item label="服务商名称">
+                  <el-input v-model="smsForm.provider" placeholder="例如 aliyun" />
+                </el-form-item>
+                <el-form-item label="HTTP 网关地址" class="smtp-grid__wide">
+                  <el-input v-model="smsForm.endpoint" placeholder="https://sms.example.com/send" />
+                </el-form-item>
+                <el-form-item label="请求方法">
+                  <el-select v-model="smsForm.method" style="width: 100%">
+                    <el-option label="POST" value="POST" />
+                    <el-option label="GET" value="GET" />
+                  </el-select>
+                </el-form-item>
+              </div>
+              <div class="smtp-actions">
+                <el-button
+                  type="primary"
+                  :loading="savingDomain === 'sms'"
+                  @click="saveDomain('sms', { ...smsForm }, fillSMS)"
+                >
+                  保存并应用
+                </el-button>
+              </div>
+            </el-form>
           </div>
         </article>
       </el-tab-pane>
@@ -1204,38 +1296,120 @@ onBeforeUnmount(() => {
 
         <article class="ax-card">
           <header class="ax-card__head">
-            <h2 class="ax-card__title">短信渠道</h2>
+            <h2 class="ax-card__title">客户端真实 IP</h2>
             <el-tag size="small" type="success" effect="plain">即时生效</el-tag>
           </header>
           <div class="ax-card__body">
             <el-form label-position="top" class="smtp-form" @submit.prevent>
               <div class="smtp-grid">
-                <el-form-item label="启用短信">
-                  <el-switch v-model="smsForm.enabled" />
+                <el-form-item label="来源">
+                  <el-select v-model="clientIPForm.source" style="width: 100%">
+                    <el-option label="remote（忽略转发头）" value="remote" />
+                    <el-option label="X-Forwarded-For" value="x-forwarded-for" />
+                    <el-option label="X-Real-IP" value="x-real-ip" />
+                    <el-option label="CF-Connecting-IP" value="cf-connecting-ip" />
+                    <el-option label="True-Client-IP" value="true-client-ip" />
+                    <el-option label="X-Client-IP" value="x-client-ip" />
+                    <el-option label="Forwarded（RFC 7239）" value="forwarded" />
+                    <el-option label="自定义头" value="custom" />
+                  </el-select>
                 </el-form-item>
-                <el-form-item label="服务商名称">
-                  <el-input v-model="smsForm.provider" placeholder="例如 aliyun" />
+                <el-form-item v-if="clientIPForm.source === 'custom'" label="自定义头名">
+                  <el-input v-model="clientIPForm.header" placeholder="例如 X-Real-Client" />
                 </el-form-item>
-                <el-form-item label="HTTP 网关地址" class="smtp-grid__wide">
-                  <el-input v-model="smsForm.endpoint" placeholder="https://sms.example.com/send" />
+                <el-form-item label="XFF 右侧跳过数（0=右起第一个不可信）">
+                  <el-input-number v-model="clientIPForm.xff_depth" :min="0" controls-position="right" />
                 </el-form-item>
-                <el-form-item label="请求方法">
-                  <el-select v-model="smsForm.method" style="width: 100%">
-                    <el-option label="POST" value="POST" />
-                    <el-option label="GET" value="GET" />
+                <el-form-item label="可信代理 CIDR" class="smtp-grid__wide">
+                  <el-select
+                    v-model="clientIPForm.trusted_proxies"
+                    multiple
+                    filterable
+                    allow-create
+                    default-first-option
+                    placeholder="输入 CIDR 后回车，如 10.0.0.0/8"
+                    style="width: 100%"
+                  >
+                    <el-option
+                      v-for="c in clientIPForm.trusted_proxies"
+                      :key="c"
+                      :label="c"
+                      :value="c"
+                    />
                   </el-select>
                 </el-form-item>
               </div>
+              <p class="smtp-form__hint">
+                选择代理来源时必须配置可信代理 CIDR：仅当直接对端在可信网段内才解析转发头，否则回退对端地址（防伪造）。
+              </p>
               <div class="smtp-actions">
                 <el-button
                   type="primary"
-                  :loading="savingDomain === 'sms'"
-                  @click="saveDomain('sms', { ...smsForm }, fillSMS)"
+                  :loading="savingDomain === 'client_ip'"
+                  @click="saveDomain('client_ip', { ...clientIPForm }, fillClientIP)"
                 >
                   保存并应用
                 </el-button>
+                <el-button :loading="clientIPChecking" @click="checkClientIP">校验当前请求</el-button>
               </div>
             </el-form>
+
+            <dl v-if="clientIPInfo" class="info-list">
+              <div class="info-list__row">
+                <dt>解析到的 IP</dt>
+                <dd>{{ clientIPInfo.resolved || '—' }}</dd>
+              </div>
+              <div class="info-list__row">
+                <dt>直接对端</dt>
+                <dd>{{ clientIPInfo.peer || '—' }}</dd>
+              </div>
+              <div class="info-list__row">
+                <dt>来源 / 命中可信代理</dt>
+                <dd>{{ clientIPInfo.source }} · {{ clientIPInfo.trusted_peer ? '是' : '否' }}</dd>
+              </div>
+              <div class="info-list__row">
+                <dt>X-Forwarded-For</dt>
+                <dd>{{ clientIPInfo.x_forwarded_for || '—' }}</dd>
+              </div>
+              <div class="info-list__row">
+                <dt>X-Real-IP</dt>
+                <dd>{{ clientIPInfo.x_real_ip || '—' }}</dd>
+              </div>
+            </dl>
+
+            <el-divider content-position="left">模拟解析（验证规则）</el-divider>
+            <el-form label-position="top" class="smtp-form" @submit.prevent>
+              <div class="smtp-grid">
+                <el-form-item label="对端地址（RemoteAddr）">
+                  <el-input v-model="simulateRemote" placeholder="10.0.0.5:1234" />
+                </el-form-item>
+                <el-form-item label="请求头（每行 Key: Value）" class="smtp-grid__wide">
+                  <el-input
+                    v-model="simulateHeaders"
+                    type="textarea"
+                    :rows="2"
+                    placeholder="X-Forwarded-For: 1.2.3.4, 10.0.0.7"
+                  />
+                </el-form-item>
+              </div>
+              <div class="smtp-actions">
+                <el-button :loading="simulating" @click="simulateClientIP">模拟解析</el-button>
+              </div>
+            </el-form>
+            <dl v-if="simulateResult" class="info-list">
+              <div class="info-list__row">
+                <dt>解析到的 IP</dt>
+                <dd>{{ simulateResult.resolved || '—' }}</dd>
+              </div>
+              <div class="info-list__row">
+                <dt>直接对端</dt>
+                <dd>{{ simulateResult.peer || '—' }}</dd>
+              </div>
+              <div class="info-list__row">
+                <dt>来源 / 命中可信代理</dt>
+                <dd>{{ simulateResult.source }} · {{ simulateResult.trusted_peer ? '是' : '否' }}</dd>
+              </div>
+            </dl>
           </div>
         </article>
 

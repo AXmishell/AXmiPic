@@ -9,7 +9,7 @@ import (
 
 func resolveIP(t *testing.T, cfg config.ClientIPConfig, remoteAddr string, headers map[string]string) string {
 	t.Helper()
-	r := newClientIPResolver(cfg, false, nil)
+	r := NewClientIPResolver(cfg, false, nil)
 	req := httptest.NewRequest("GET", "/", nil)
 	req.RemoteAddr = remoteAddr
 	for k, v := range headers {
@@ -59,7 +59,7 @@ func TestClientIPUntrustedPeerFallsBack(t *testing.T) {
 }
 
 func TestClientIPNoTrustedProxiesFallsBackToRemote(t *testing.T) {
-	r := newClientIPResolver(config.ClientIPConfig{Source: "cf-connecting-ip"}, false, nil)
+	r := NewClientIPResolver(config.ClientIPConfig{Source: "cf-connecting-ip"}, false, nil)
 	if r.source != "remote" {
 		t.Fatalf("source = %q, want remote fallback", r.source)
 	}

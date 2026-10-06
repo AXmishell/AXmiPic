@@ -5,115 +5,173 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/AXmishell/axmipic/internal/config"
 )
 
-// clientIPResolver 依据配置解析客户端真实 IP。核心安全约束：只有当直接对端位于
-// 可信代理网段内时，才采信转发头；否则一律回退到对端地址，防止伪造。
-type clientIPResolver struct {
+// ClientIPResolver 依据配置解析客户端真实 IP，并支持运行时热更新。核心安全约束：
+// 只有当直接对端位于可信代理网段内时，才采信转发头；否则一律回退到对端地址，
+// 防止伪造。
+type ClientIPResolver struct {
+	mu      sync.RWMutex
 	source  string
 	header  string
 	trusted []*net.IPNet
 	depth   int
 	logger  *slog.Logger
+	legacy  bool
 }
 
-// NewClientIPMiddleware 构建解析客户端 IP 的中间件。legacyTrustProxy 为旧的
-// server.trust_proxy 开关：当未显式配置 source 且其为真时，等价于
-// source=x-forwarded-for（但仍要求 trusted_proxies，否则回退 remote）。
-func NewClientIPMiddleware(cfg config.ClientIPConfig, legacyTrustProxy bool, logger *slog.Logger) func(http.Handler) http.Handler {
-	return newClientIPResolver(cfg, legacyTrustProxy, logger).middleware
+// ClientIPInfo 描述一次请求/模拟的 IP 解析结果，供后台校验配置。
+type ClientIPInfo struct {
+	Resolved       string   `json:"resolved"`
+	Peer           string   `json:"peer"`
+	Source         string   `json:"source"`
+	Header         string   `json:"header"`
+	TrustedPeer    bool     `json:"trusted_peer"`
+	TrustedProxies []string `json:"trusted_proxies"`
+	XFFDepth       int      `json:"xff_depth"`
+	XForwardedFor  string   `json:"x_forwarded_for,omitempty"`
+	XRealIP        string   `json:"x_real_ip,omitempty"`
+	CFConnectingIP string   `json:"cf_connecting_ip,omitempty"`
+	TrueClientIP   string   `json:"true_client_ip,omitempty"`
+	Forwarded      string   `json:"forwarded,omitempty"`
 }
 
-func newClientIPResolver(cfg config.ClientIPConfig, legacyTrustProxy bool, logger *slog.Logger) *clientIPResolver {
+// NewClientIPResolver 构造解析器。legacyTrustProxy 为旧的 server.trust_proxy
+// 开关：当未显式配置 source 且其为真时，等价于 source=x-forwarded-for。
+func NewClientIPResolver(cfg config.ClientIPConfig, legacyTrustProxy bool, logger *slog.Logger) *ClientIPResolver {
+	r := &ClientIPResolver{logger: logger, legacy: legacyTrustProxy}
+	r.Update(cfg)
+	return r
+}
+
+// Update 用新配置替换解析规则（运行时热更新）。
+func (r *ClientIPResolver) Update(cfg config.ClientIPConfig) {
 	source := strings.ToLower(strings.TrimSpace(cfg.Source))
 	if source == "" {
-		if legacyTrustProxy {
+		if r.legacy {
 			source = "x-forwarded-for"
 		} else {
 			source = "remote"
 		}
 	}
-	resolver := &clientIPResolver{
-		source: source,
-		header: strings.TrimSpace(cfg.Header),
-		depth:  cfg.XFFDepth,
-		logger: logger,
-	}
+	var trusted []*net.IPNet
 	for _, raw := range cfg.TrustedProxies {
 		if _, ipnet, err := net.ParseCIDR(strings.TrimSpace(raw)); err == nil {
-			resolver.trusted = append(resolver.trusted, ipnet)
+			trusted = append(trusted, ipnet)
 		}
 	}
-	if source != "remote" && len(resolver.trusted) == 0 {
-		if logger != nil {
-			logger.Warn("client_ip.source requires trusted_proxies; falling back to the peer address",
+	if source != "remote" && len(trusted) == 0 {
+		if r.logger != nil {
+			r.logger.Warn("client_ip.source requires trusted_proxies; falling back to the peer address",
 				slog.String("source", source))
 		}
-		resolver.source = "remote"
+		source = "remote"
 	}
-	return resolver
+	r.mu.Lock()
+	r.source = source
+	r.header = strings.TrimSpace(cfg.Header)
+	r.trusted = trusted
+	r.depth = cfg.XFFDepth
+	r.mu.Unlock()
 }
 
-// middleware 用解析结果重写 RemoteAddr，供下游限流/配额/日志统一使用。
-func (r *clientIPResolver) middleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		if ip := r.resolve(req); ip != "" {
-			req.RemoteAddr = ip
-		}
-		next.ServeHTTP(w, req)
-	})
+// Middleware 用解析结果重写 RemoteAddr，供下游限流/配额/日志统一使用。
+func (r *ClientIPResolver) Middleware() func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			if ip := r.resolve(req); ip != "" {
+				req.RemoteAddr = ip
+			}
+			next.ServeHTTP(w, req)
+		})
+	}
+}
+
+func (r *ClientIPResolver) snapshot() (string, string, []*net.IPNet, int) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.source, r.header, r.trusted, r.depth
 }
 
 // resolve 返回用于限流/配额/日志的客户端 IP（不含端口）。
-func (r *clientIPResolver) resolve(req *http.Request) string {
-	peer := hostOnly(req.RemoteAddr)
-	if r == nil || r.source == "remote" {
-		return peer
-	}
-	if !r.isTrustedPeer(net.ParseIP(peer)) {
-		return peer
-	}
-	if candidate := r.candidate(req); candidate != "" {
-		return candidate
-	}
-	return peer
+func (r *ClientIPResolver) resolve(req *http.Request) string {
+	resolved, _, _ := r.resolveFrom(req.RemoteAddr, req.Header.Get)
+	return resolved
 }
 
-func (r *clientIPResolver) isTrustedPeer(ip net.IP) bool {
-	if ip == nil {
-		return false
+func (r *ClientIPResolver) resolveFrom(remoteAddr string, get func(string) string) (resolved, peer string, trustedPeer bool) {
+	peer = hostOnly(remoteAddr)
+	source, header, trusted, depth := r.snapshot()
+	if source == "remote" {
+		return peer, peer, false
 	}
-	for _, n := range r.trusted {
-		if n.Contains(ip) {
-			return true
-		}
+	trustedPeer = ipInNets(net.ParseIP(peer), trusted)
+	if !trustedPeer {
+		return peer, peer, false
 	}
-	return false
+	if candidate := r.candidateFrom(source, header, get, trusted, depth); candidate != "" {
+		return candidate, peer, true
+	}
+	return peer, peer, true
 }
 
-func (r *clientIPResolver) candidate(req *http.Request) string {
-	switch r.source {
+func (r *ClientIPResolver) candidateFrom(source, header string, get func(string) string, trusted []*net.IPNet, depth int) string {
+	switch source {
 	case "x-forwarded-for":
-		return pickForwardedFor(req.Header.Get("X-Forwarded-For"), r.trusted, r.depth)
+		return pickForwardedFor(get("X-Forwarded-For"), trusted, depth)
 	case "x-real-ip":
-		return normalizeIP(req.Header.Get("X-Real-IP"))
+		return normalizeIP(get("X-Real-IP"))
 	case "cf-connecting-ip":
-		return normalizeIP(req.Header.Get("CF-Connecting-IP"))
+		return normalizeIP(get("CF-Connecting-IP"))
 	case "true-client-ip":
-		return normalizeIP(req.Header.Get("True-Client-IP"))
+		return normalizeIP(get("True-Client-IP"))
 	case "x-client-ip":
-		return normalizeIP(req.Header.Get("X-Client-IP"))
+		return normalizeIP(get("X-Client-IP"))
 	case "forwarded":
-		return pickForwardedRFC7239(req.Header.Get("Forwarded"), r.trusted, r.depth)
+		return pickForwardedRFC7239(get("Forwarded"), trusted, depth)
 	case "custom":
-		if r.header == "" {
+		if header == "" {
 			return ""
 		}
-		return normalizeIP(req.Header.Get(r.header))
+		return normalizeIP(get(header))
 	default:
 		return ""
+	}
+}
+
+// Describe 返回当前请求的解析详情，供后台校验。
+func (r *ClientIPResolver) Describe(req *http.Request) ClientIPInfo {
+	return r.describe(req.RemoteAddr, req.Header.Get)
+}
+
+// Preview 用给定的对端地址与请求头模拟解析，供后台校验规则。
+func (r *ClientIPResolver) Preview(remoteAddr string, headers map[string]string) ClientIPInfo {
+	return r.describe(remoteAddr, func(name string) string { return headers[name] })
+}
+
+func (r *ClientIPResolver) describe(remoteAddr string, get func(string) string) ClientIPInfo {
+	source, header, trusted, depth := r.snapshot()
+	resolved, peer, trustedPeer := r.resolveFrom(remoteAddr, get)
+	proxies := make([]string, 0, len(trusted))
+	for _, n := range trusted {
+		proxies = append(proxies, n.String())
+	}
+	return ClientIPInfo{
+		Resolved:       resolved,
+		Peer:           peer,
+		Source:         source,
+		Header:         header,
+		TrustedPeer:    trustedPeer,
+		TrustedProxies: proxies,
+		XFFDepth:       depth,
+		XForwardedFor:  get("X-Forwarded-For"),
+		XRealIP:        get("X-Real-IP"),
+		CFConnectingIP: get("CF-Connecting-IP"),
+		TrueClientIP:   get("True-Client-IP"),
+		Forwarded:      get("Forwarded"),
 	}
 }
 

@@ -370,6 +370,7 @@ export type SettingDomain =
   | 'limits'
   | 'maintenance'
   | 'site'
+  | 'client_ip'
 
 export interface UploadSettings {
   max_size_mb: number
@@ -420,6 +421,42 @@ export interface MaintenanceSettings {
 export interface SiteSettings {
   name: string
   description: string
+}
+
+export interface ClientIPSettings {
+  source: string
+  header: string
+  trusted_proxies: string[]
+  xff_depth: number
+}
+
+/** 客户端 IP 解析详情（诊断/模拟）。 */
+export interface ClientIPInfo {
+  resolved: string
+  peer: string
+  source: string
+  header: string
+  trusted_peer: boolean
+  trusted_proxies: string[]
+  xff_depth: number
+  x_forwarded_for?: string
+  x_real_ip?: string
+  cf_connecting_ip?: string
+  true_client_ip?: string
+  forwarded?: string
+}
+
+/** 当前请求的客户端 IP 解析详情。 */
+export function getClientIPInfo(): Promise<ClientIPInfo> {
+  return request<ClientIPInfo>({ method: 'GET', url: '/admin/client-ip' })
+}
+
+/** 用给定对端地址与请求头模拟解析，验证规则。 */
+export function previewClientIP(payload: {
+  remote_addr: string
+  headers: Record<string, string>
+}): Promise<ClientIPInfo> {
+  return request<ClientIPInfo>({ method: 'POST', url: '/admin/client-ip/preview', data: payload })
 }
 
 /** 读取某个设置域的当前值。 */

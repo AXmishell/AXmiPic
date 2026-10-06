@@ -50,10 +50,10 @@ type Deps struct {
 	InstallSeed func(ctx context.Context, repo *store.Repository, in service.InstallInput) error
 	// Static 非 nil 时，为未匹配的路由提供单页应用服务。
 	Static http.Handler
-	// ClientIP 为解析客户端真实 IP 的中间件（可信代理由配置决定）。
-	ClientIP    func(http.Handler) http.Handler
-	MaxUploadMB int
-	Logger      *slog.Logger
+	// ClientIPResolver 解析客户端真实 IP（可信代理由配置决定）。
+	ClientIPResolver *ClientIPResolver
+	MaxUploadMB      int
+	Logger           *slog.Logger
 }
 
 // Handler 保存所有 HTTP 处理函数共享的依赖项。
@@ -77,6 +77,8 @@ type Handler struct {
 	installSeed    func(ctx context.Context, repo *store.Repository, in service.InstallInput) error
 	maxUploadBytes int64
 	logger         *slog.Logger
+	// clientIP 解析客户端真实 IP，供诊断接口使用。
+	clientIP *ClientIPResolver
 	// policyRateLimiter 与 policyLimits 用于按角色组策略限流；仅当 Deps.Policies
 	// 与 Deps.PolicyLimiter 均非 nil 时启用。
 	policyRateLimiter *auth.RateLimiter
@@ -105,6 +107,7 @@ func NewRouter(d Deps) http.Handler {
 		installSeed:    d.InstallSeed,
 		maxUploadBytes: int64(d.MaxUploadMB) << 20,
 		logger:         d.Logger,
+		clientIP:       d.ClientIPResolver,
 	}
 	if d.PolicyLimiter != nil && d.Policies != nil {
 		h.policyRateLimiter = d.PolicyLimiter
@@ -127,8 +130,8 @@ func NewRouter(d Deps) http.Handler {
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
-	if d.ClientIP != nil {
-		r.Use(d.ClientIP)
+	if d.ClientIPResolver != nil {
+		r.Use(d.ClientIPResolver.Middleware())
 	}
 	r.Use(securityHeaders)
 	r.Use(middleware.Recoverer)
@@ -293,6 +296,8 @@ func NewRouter(d Deps) http.Handler {
 				r.Put("/admin/notify/smtp", h.adminUpdateSMTP)
 				r.Get("/admin/settings/{domain}", h.adminGetSettingDomain)
 				r.Put("/admin/settings/{domain}", h.adminUpdateSettingDomain)
+				r.Get("/admin/client-ip", h.adminClientIPInfo)
+				r.Post("/admin/client-ip/preview", h.adminClientIPPreview)
 				r.Get("/admin/auth", h.adminGetAuth)
 				r.Put("/admin/auth", h.adminUpdateAuth)
 				r.Get("/admin/moderation", h.adminGetModeration)

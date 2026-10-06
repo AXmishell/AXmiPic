@@ -277,7 +277,8 @@ func run() error {
 	})
 
 	// 通用设置域：config 为首次播种与兜底，DB 为运行值；可热应用的域即时生效。
-	registerSettingDomains(settingsSvc, repo, cfg, uploadSvc, imagingSvc, notifySvc, logger)
+	clientIPResolver := api.NewClientIPResolver(cfg.Server.ClientIP, cfg.Server.TrustProxy, logger)
+	registerSettingDomains(settingsSvc, repo, cfg, uploadSvc, imagingSvc, notifySvc, clientIPResolver, logger)
 
 	// 权限开关（开放注册、上传鉴权、访客上传）：以配置文件为兜底，首次启动写入
 	// 数据库并支持后台热更新。实际应用在 Authenticator 就绪后进行（见下）。
@@ -426,12 +427,12 @@ func run() error {
 		Authenticator: authenticator,
 		GuestSigner:   guestSigner,
 		// 上传与图片读取限流按角色组策略动态解析（PolicyLimiter + Policies）。
-		PolicyLimiter: auth.NewDynamicRateLimiter(),
-		ShareLimiter:  auth.NewRateLimiter(cfg.Limits.SharePerMinute, cfg.Limits.ShareBurst),
-		ClientIP:      api.NewClientIPMiddleware(cfg.Server.ClientIP, cfg.Server.TrustProxy, logger),
-		MaxUploadMB:   cfg.Upload.MaxSizeMB,
-		Static:        webui.Handler(),
-		Logger:        logger,
+		PolicyLimiter:    auth.NewDynamicRateLimiter(),
+		ShareLimiter:     auth.NewRateLimiter(cfg.Limits.SharePerMinute, cfg.Limits.ShareBurst),
+		ClientIPResolver: clientIPResolver,
+		MaxUploadMB:      cfg.Upload.MaxSizeMB,
+		Static:           webui.Handler(),
+		Logger:           logger,
 	})
 	srv := server.New(cfg, logger, router)
 
@@ -801,6 +802,7 @@ func registerSettingDomains(
 	uploadSvc *service.UploadService,
 	imagingSvc *service.ImagingService,
 	notifySvc *service.NotifyService,
+	clientIPResolver *api.ClientIPResolver,
 	logger *slog.Logger,
 ) {
 	settingsSvc.RegisterDomain(service.NewSettingDomain(repo, "upload",
@@ -903,6 +905,24 @@ func registerSettingDomains(
 		service.SiteSettings{Name: "AXmiPic"},
 		nil,
 		nil,
+	))
+
+	settingsSvc.RegisterDomain(service.NewSettingDomain(repo, "client_ip",
+		service.ClientIPSettings{
+			Source:         cfg.Server.ClientIP.Source,
+			Header:         cfg.Server.ClientIP.Header,
+			TrustedProxies: cfg.Server.ClientIP.TrustedProxies,
+			XFFDepth:       cfg.Server.ClientIP.XFFDepth,
+		},
+		service.ValidateClientIPSettings,
+		func(v service.ClientIPSettings) {
+			clientIPResolver.Update(config.ClientIPConfig{
+				Source:         v.Source,
+				Header:         v.Header,
+				TrustedProxies: v.TrustedProxies,
+				XFFDepth:       v.XFFDepth,
+			})
+		},
 	))
 }
 

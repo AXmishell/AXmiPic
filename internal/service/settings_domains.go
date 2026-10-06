@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"strings"
 	"sync"
 
@@ -263,4 +264,33 @@ func ValidateMaintenanceSettings(v MaintenanceSettings) error {
 type SiteSettings struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
+}
+
+// ClientIPSettings 控制客户端真实 IP 的来源与可信代理。
+type ClientIPSettings struct {
+	Source         string   `json:"source"`
+	Header         string   `json:"header"`
+	TrustedProxies []string `json:"trusted_proxies"`
+	XFFDepth       int      `json:"xff_depth"`
+}
+
+// ValidateClientIPSettings 校验客户端 IP 设置。
+func ValidateClientIPSettings(v ClientIPSettings) error {
+	switch strings.ToLower(strings.TrimSpace(v.Source)) {
+	case "", "remote", "x-forwarded-for", "x-real-ip", "cf-connecting-ip", "true-client-ip", "x-client-ip", "forwarded", "custom":
+	default:
+		return fmt.Errorf("%w: unknown client ip source %q", ErrSettingsConfig, v.Source)
+	}
+	if strings.EqualFold(strings.TrimSpace(v.Source), "custom") && strings.TrimSpace(v.Header) == "" {
+		return fmt.Errorf("%w: header is required when source is custom", ErrSettingsConfig)
+	}
+	if v.XFFDepth < 0 {
+		return fmt.Errorf("%w: xff_depth must not be negative", ErrSettingsConfig)
+	}
+	for _, cidr := range v.TrustedProxies {
+		if _, _, err := net.ParseCIDR(strings.TrimSpace(cidr)); err != nil {
+			return fmt.Errorf("%w: invalid CIDR %q", ErrSettingsConfig, cidr)
+		}
+	}
+	return nil
 }
