@@ -6,6 +6,19 @@ server:
   # client IP is taken from X-Forwarded-For / X-Real-IP. Leaving it false
   # prevents clients from spoofing those headers to bypass IP rate limits.
   trust_proxy: false
+  # 客户端真实 IP 来源（用于限流、访客配额与日志）。
+  #   source: remote（默认，忽略转发头）| x-forwarded-for | x-real-ip |
+  #           cf-connecting-ip | true-client-ip | x-client-ip | forwarded | custom
+  # 选择代理来源时**必须**配置 trusted_proxies；仅当直接对端在可信网段内才解析
+  # 转发头，否则回退对端地址（防止伪造）。
+  client_ip:
+    source: "remote"
+    # source=custom 时的头名，例如 "X-Real-Client"。
+    header: ""
+    # 可信代理 CIDR 列表，例如 ["10.0.0.0/8", "172.16.0.0/12", "127.0.0.1/32"]。
+    trusted_proxies: []
+    # X-Forwarded-For / Forwarded 右侧跳过的可信代理数量；0=右起第一个不可信地址。
+    xff_depth: 0
   read_timeout_sec: 30
   write_timeout_sec: 30
   shutdown_timeout_sec: 10

@@ -428,7 +428,7 @@ func run() error {
 		// 上传与图片读取限流按角色组策略动态解析（PolicyLimiter + Policies）。
 		PolicyLimiter: auth.NewDynamicRateLimiter(),
 		ShareLimiter:  auth.NewRateLimiter(cfg.Limits.SharePerMinute, cfg.Limits.ShareBurst),
-		TrustProxy:    cfg.Server.TrustProxy,
+		ClientIP:      api.NewClientIPMiddleware(cfg.Server.ClientIP, cfg.Server.TrustProxy, logger),
 		MaxUploadMB:   cfg.Upload.MaxSizeMB,
 		Static:        webui.Handler(),
 		Logger:        logger,

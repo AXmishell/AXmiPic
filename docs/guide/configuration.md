@@ -12,12 +12,23 @@ server:
   port: 8080
   base_url: "http://localhost:8080"   # 生成本地存储图片公开 URL 时使用
   trust_proxy: false                    # 位于可信反向代理之后时才设为 true
+  client_ip:
+    source: "remote"                    # remote | x-forwarded-for | x-real-ip | cf-connecting-ip | true-client-ip | x-client-ip | forwarded | custom
+    header: ""                          # source=custom 时的头名
+    trusted_proxies: []                 # 可信代理 CIDR；代理来源下为空则回退 remote
+    xff_depth: 0                        # 0=右起第一个不可信地址
   read_timeout_sec: 30
   write_timeout_sec: 30
   shutdown_timeout_sec: 10
 ```
 
 > `trust_proxy` 为 `true` 时才会解析 `X-Forwarded-For` / `X-Real-IP`。直连部署请保持 `false`，否则客户端可伪造来源 IP 绕过限流。
+
+**客户端真实 IP**：`server.client_ip` 控制限流、访客配额与日志所用的 IP。
+- `source: remote`（默认）忽略所有转发头，直接使用对端地址，最安全。
+- 位于反向代理/Cloudflare 之后时，选择对应来源（如 `x-forwarded-for`、`cf-connecting-ip`），并**必须**配置 `trusted_proxies`（可信代理 CIDR）。只有当直接对端位于可信网段内才解析转发头，否则回退对端地址，防止伪造。
+- `x-forwarded-for` / `forwarded` 默认取「右起第一个不可信地址」；也可用 `xff_depth` 指定右侧跳过的可信代理数量。
+- 非法头值会自动回退对端地址。
 
 ## 数据库
 

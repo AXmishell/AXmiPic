@@ -5,7 +5,6 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -51,8 +50,8 @@ type Deps struct {
 	InstallSeed func(ctx context.Context, repo *store.Repository, in service.InstallInput) error
 	// Static 非 nil 时，为未匹配的路由提供单页应用服务。
 	Static http.Handler
-	// TrustProxy 启用从 X-Forwarded-For / X-Real-IP 解析客户端 IP。
-	TrustProxy  bool
+	// ClientIP 为解析客户端真实 IP 的中间件（可信代理由配置决定）。
+	ClientIP    func(http.Handler) http.Handler
 	MaxUploadMB int
 	Logger      *slog.Logger
 }
@@ -128,10 +127,8 @@ func NewRouter(d Deps) http.Handler {
 
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
-	if d.TrustProxy {
-		// 仅在明确配置为位于可信代理之后时才信任转发头；否则客户端可能
-		// 伪造其 IP 以规避限流。
-		r.Use(trustProxyIP)
+	if d.ClientIP != nil {
+		r.Use(d.ClientIP)
 	}
 	r.Use(securityHeaders)
 	r.Use(middleware.Recoverer)
@@ -351,31 +348,6 @@ func securityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		next.ServeHTTP(w, r)
 	})
-}
-
-// trustProxyIP 根据转发头重写 RemoteAddr。它仅在 server.trust_proxy
-// 启用时安装，因为否则客户端可以伪造这些头以冒充其 IP。它替代了已废弃的
-// chi middleware.RealIP，后者无条件信任这些头。
-func trustProxyIP(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if ip := forwardedClientIP(r); ip != "" {
-			r.RemoteAddr = ip
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
-// forwardedClientIP 返回可信代理所声明的客户端 IP，优先使用 X-Real-IP
-// （通常是代理的对端地址），并回退到 X-Forwarded-For 的第一项。
-func forwardedClientIP(r *http.Request) string {
-	if ip := strings.TrimSpace(r.Header.Get("X-Real-IP")); ip != "" {
-		return ip
-	}
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		first, _, _ := strings.Cut(xff, ",")
-		return strings.TrimSpace(first)
-	}
-	return ""
 }
 
 // requestLogger 记录每个请求的方法、路径、状态和耗时。

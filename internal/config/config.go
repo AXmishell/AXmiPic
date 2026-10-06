@@ -3,6 +3,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"strings"
 
 	"github.com/go-viper/mapstructure/v2"
@@ -24,6 +25,10 @@ var envPaths = map[string]string{
 	"server_port":                        "server.port",
 	"server_base_url":                    "server.base_url",
 	"server_trust_proxy":                 "server.trust_proxy",
+	"server_client_ip_source":            "server.client_ip.source",
+	"server_client_ip_header":            "server.client_ip.header",
+	"server_client_ip_trusted_proxies":   "server.client_ip.trusted_proxies",
+	"server_client_ip_xff_depth":         "server.client_ip.xff_depth",
 	"server_read_timeout_sec":            "server.read_timeout_sec",
 	"server_write_timeout_sec":           "server.write_timeout_sec",
 	"server_shutdown_timeout_sec":        "server.shutdown_timeout_sec",
@@ -160,6 +165,23 @@ type ServerConfig struct {
 	ReadTimeoutSec     int    `koanf:"read_timeout_sec"`
 	WriteTimeoutSec    int    `koanf:"write_timeout_sec"`
 	ShutdownTimeoutSec int    `koanf:"shutdown_timeout_sec"`
+	// ClientIP 控制如何解析客户端真实 IP（用于限流、访客配额与日志）。
+	ClientIP ClientIPConfig `koanf:"client_ip"`
+}
+
+// ClientIPConfig 控制客户端真实 IP 的来源与可信代理。
+type ClientIPConfig struct {
+	// Source 选择来源：remote（默认，忽略转发头）、x-forwarded-for、x-real-ip、
+	// cf-connecting-ip、true-client-ip、x-client-ip、forwarded（RFC 7239）、custom。
+	Source string `koanf:"source"`
+	// Header 在 Source=custom 时指定头名。
+	Header string `koanf:"header"`
+	// TrustedProxies 为可信代理的 CIDR 列表；仅当直接对端在其中时才解析转发头，
+	// 否则回退到对端地址（防止伪造）。
+	TrustedProxies []string `koanf:"trusted_proxies"`
+	// XFFDepth 为 X-Forwarded-For / Forwarded 右侧跳过的可信代理数量；
+	// 0 表示取右起第一个不可信地址。
+	XFFDepth int `koanf:"xff_depth"`
 }
 
 // DatabaseConfig 配置元数据数据库。
@@ -424,6 +446,7 @@ func defaultConfig() Config {
 			ReadTimeoutSec:     30,
 			WriteTimeoutSec:    30,
 			ShutdownTimeoutSec: 10,
+			ClientIP:           ClientIPConfig{Source: "remote"},
 		},
 		Database: DatabaseConfig{Driver: "sqlite", DSN: "./data/axmipic.db"},
 		Storage: StorageConfig{
@@ -521,6 +544,23 @@ func (c Config) validate() error {
 	}
 	if strings.TrimSpace(c.Server.BaseURL) == "" {
 		return fmt.Errorf("config: server.base_url must not be empty")
+	}
+	switch strings.ToLower(strings.TrimSpace(c.Server.ClientIP.Source)) {
+	case "", "remote", "x-forwarded-for", "x-real-ip", "cf-connecting-ip", "true-client-ip", "x-client-ip", "forwarded", "custom":
+	default:
+		return fmt.Errorf("config: server.client_ip.source %q is not supported", c.Server.ClientIP.Source)
+	}
+	if strings.EqualFold(strings.TrimSpace(c.Server.ClientIP.Source), "custom") &&
+		strings.TrimSpace(c.Server.ClientIP.Header) == "" {
+		return fmt.Errorf("config: server.client_ip.header is required when source is custom")
+	}
+	if c.Server.ClientIP.XFFDepth < 0 {
+		return fmt.Errorf("config: server.client_ip.xff_depth must not be negative")
+	}
+	for _, cidr := range c.Server.ClientIP.TrustedProxies {
+		if _, _, err := net.ParseCIDR(strings.TrimSpace(cidr)); err != nil {
+			return fmt.Errorf("config: server.client_ip.trusted_proxies contains invalid CIDR %q", cidr)
+		}
 	}
 	switch strings.ToLower(strings.TrimSpace(c.Database.Driver)) {
 	case "", "sqlite", "postgres", "postgresql", "pgx", "mysql", "mariadb":
