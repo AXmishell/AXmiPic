@@ -51,7 +51,22 @@ database:
 
 SQLite 会自动启用 `busy_timeout` 与 WAL 模式。
 
-MySQL 支持 5.7 及以上（MariaDB 兼容）。连接串中的 `parseTime=true`、`charset=utf8mb4`、`loc=Local` 会自动补齐（已显式指定则不覆盖）。5.7 建议保持默认的 InnoDB 大前缀（`innodb_large_prefix=ON`、`innodb_default_row_format=DYNAMIC`），以支持 `utf8mb4` 下的长索引。
+MySQL 支持 5.7 及以上（MariaDB 兼容）。连接串中的 `parseTime=true`、`charset=utf8mb4`、`loc=Local` 会自动补齐（已显式指定则不覆盖）。
+
+MySQL 5.7 的服务端默认字符集是 `latin1`（8.0 起为 `utf8mb4`）。程序建表时会显式带上 `DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`，因此数据库默认字符集为 `latin1` 也能正常保存中文。推荐仍以 utf8mb4 建库：
+
+```sql
+CREATE DATABASE axmipic CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+```
+
+若数据库中存在**旧版本创建**的 latin1 表，启动日志会输出告警并列出表名，需要手动转换（会重写整表，请在低峰期执行）：
+
+```sql
+ALTER TABLE `images` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+-- 其它告警中列出的表同理
+```
+
+5.7 建议保持默认的 InnoDB 大前缀（`innodb_large_prefix=ON`、`innodb_default_row_format=DYNAMIC`），以支持 `utf8mb4` 下的长索引（如 `images.key` 的 `varchar(255)` 唯一索引）。
 
 ## 存储
 

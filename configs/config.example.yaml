@@ -35,6 +35,7 @@ database:
   # For mysql: a go-sql-driver DSN, e.g.
   #   axmipic:secret@tcp(127.0.0.1:3306)/axmipic
   #   (parseTime=true / charset=utf8mb4 / loc=Local 会自动补齐)
+  #   支持 MySQL 5.7+；建表会显式使用 utf8mb4（5.7 的库默认字符集是 latin1）。
   dsn: "./data/axmipic.db"
   # 连接池上限，避免高并发下无界地打开连接与缓冲。
   # max_open_conns: 0 表示不限制；max_idle_conns: 0 表示不保留空闲连接；

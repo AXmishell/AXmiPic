@@ -4,6 +4,7 @@ package store
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -19,6 +20,32 @@ import (
 
 // ErrNotFound 在请求的记录不存在时返回。
 var ErrNotFound = errors.New("store: record not found")
+
+// migrationModels 是需要由 AutoMigrate 维护的模型集合。
+var migrationModels = []any{
+	&Image{}, &PendingUpload{}, &Admin{}, &Customer{}, &APIToken{},
+	&StorageBackend{}, &Album{}, &RoleGroup{}, &Policy{}, &RoleGroupPolicy{},
+	&Share{}, &Announcement{}, &Report{}, &Page{}, &Setting{},
+	&Plan{}, &Order{}, &Coupon{}, &CouponRedemption{}, &Ticket{}, &TicketMessage{},
+	&EmailCode{}, &EmailCodeStat{}, &NotifyLog{}, &GuestIPUsage{},
+	&UserPreference{},
+}
+
+// mysqlTableOptions 强制新表使用 utf8mb4。MySQL 5.7 的服务端默认字符集是
+// latin1，AutoMigrate 建表时会继承数据库默认字符集，导致中文等多字节字符
+// 写入失败（ERROR 1366）。前置空格是必需的：GORM 直接把它拼在
+// "CREATE TABLE ... )" 之后。
+const mysqlTableOptions = " DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+
+// isMySQLDriver 判断 driver 是否使用 MySQL 方言（MariaDB 共用同一驱动）。
+func isMySQLDriver(driver string) bool {
+	switch strings.ToLower(strings.TrimSpace(driver)) {
+	case "mysql", "mariadb":
+		return true
+	default:
+		return false
+	}
+}
 
 // Repository 提供元数据的持久化操作。
 type Repository struct {
@@ -40,15 +67,15 @@ func Open(driver, dsn string) (*Repository, error) {
 	if err != nil {
 		return nil, fmt.Errorf("store: open (%s): %w", driver, err)
 	}
-	if err := db.AutoMigrate(
-		&Image{}, &PendingUpload{}, &Admin{}, &Customer{}, &APIToken{},
-		&StorageBackend{}, &Album{}, &RoleGroup{}, &Policy{}, &RoleGroupPolicy{},
-		&Share{}, &Announcement{}, &Report{}, &Page{}, &Setting{},
-		&Plan{}, &Order{}, &Coupon{}, &CouponRedemption{}, &Ticket{}, &TicketMessage{},
-		&EmailCode{}, &EmailCodeStat{}, &NotifyLog{}, &GuestIPUsage{},
-		&UserPreference{},
-	); err != nil {
+	// MySQL：显式指定建表字符集，避免 5.7 默认 latin1 带来的写入失败。
+	if isMySQLDriver(driver) {
+		db = db.Set("gorm:table_options", mysqlTableOptions)
+	}
+	if err := db.AutoMigrate(migrationModels...); err != nil {
 		return nil, fmt.Errorf("store: migrate: %w", err)
+	}
+	if isMySQLDriver(driver) {
+		warnNonUTF8MB4Tables(db)
 	}
 	return &Repository{db: db}, nil
 }
@@ -106,6 +133,45 @@ func normalizeMySQLDSN(dsn string) string {
 		parts = append(parts, key+"="+params[key])
 	}
 	return base + "?" + strings.Join(parts, "&")
+}
+
+// warnNonUTF8MB4Tables 检查既有表是否使用 utf8mb4，并在发现非 utf8mb4 表时
+// 记录告警。MySQL 5.7 服务端默认字符集是 latin1：升级前由旧版本建出的表会
+// 继承 latin1，写入中文等多字节字符时返回 ERROR 1366。这里不自动执行
+// CONVERT（会重写整表），由运维选择合适的时机处理。
+func warnNonUTF8MB4Tables(db *gorm.DB) {
+	tables := make([]string, 0, len(migrationModels))
+	for _, model := range migrationModels {
+		stmt := &gorm.Statement{DB: db}
+		if err := stmt.Parse(model); err != nil || stmt.Schema == nil {
+			continue
+		}
+		tables = append(tables, stmt.Schema.Table)
+	}
+	if len(tables) == 0 {
+		return
+	}
+	var rows []struct {
+		TableName      string
+		TableCollation string
+	}
+	if err := db.Raw(
+		"SELECT TABLE_NAME AS table_name, TABLE_COLLATION AS table_collation "+
+			"FROM information_schema.TABLES "+
+			"WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ? AND TABLE_COLLATION NOT LIKE 'utf8mb4%' "+
+			"ORDER BY TABLE_NAME",
+		tables,
+	).Scan(&rows).Error; err != nil || len(rows) == 0 {
+		return
+	}
+	names := make([]string, 0, len(rows))
+	for _, row := range rows {
+		names = append(names, row.TableName+" ("+row.TableCollation+")")
+	}
+	slog.Warn("mysql: tables are not utf8mb4; non-ASCII text may fail with ERROR 1366",
+		slog.Any("tables", names),
+		slog.String("fix", "ALTER TABLE <table> CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"),
+	)
 }
 
 // Close 释放底层数据库连接。
