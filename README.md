@@ -26,7 +26,7 @@
 - **相册与图片广场**：用相册归类图片；图片与相册均可设为公开，出现在跨用户的图片广场与公开相册列表，并提供用户公开资料页
 - **角色组与多策略**：按角色组控制用户的存储配额、上传限制、速率限制、图片处理能力与功能开关；策略可复用、按类型覆盖，注册用户自动加入默认角色组
 - **账户体系**：管理员与普通用户分表管理；JWT 会话 + 长期 API 令牌
-- **界面分离与安装向导**：公开首页 + 用户中心（`/user`）与管理员控制台（`/admin`）分离；内置 Guest 低权访客与 install 初始化向导
+- **界面分离与初始化模式**：公开首页 + 用户中心（`/user`）与管理员控制台（`/admin`）分离；内置 Guest 低权访客与手动访问 `/install` 的初始化模式
 - **配额与限流**：按用户的存储配额，按用户/访客/IP 的速率限制
 - **安全**：密钥 AES-256-GCM 加密存储、bcrypt 密码、纵深防御响应头
 
@@ -99,7 +99,7 @@ make run            # 先构建前端，再 go run ./cmd/axmipic -config configs
 | [快速开始](https://axmipic.gpcn.cc/guide/getting-started) | 环境要求、构建运行、创建管理员 |
 | [配置说明](https://axmipic.gpcn.cc/guide/configuration) | 服务器、数据库、存储、上传、认证与限流 |
 | [图片处理](https://axmipic.gpcn.cc/guide/image-processing) | URL 处理参数、libvips 与处理驱动 |
-| [界面与路由](https://axmipic.gpcn.cc/guide/ui-and-routes) | 用户中心 / 管理台路由、Guest 访客、安装向导 |
+| [界面与路由](https://axmipic.gpcn.cc/guide/ui-and-routes) | 用户中心 / 管理台路由、Guest 访客、初始化模式 |
 | [Docker 部署](https://axmipic.gpcn.cc/guide/deployment) | 镜像构建、GHCR、Docker Compose |
 | [API 参考](https://axmipic.gpcn.cc/api/) | 全部 `/api/v1` 接口 |
 | [开发指南](https://axmipic.gpcn.cc/dev/) | 本地开发、SDK、持续集成、目录结构 |
@@ -123,7 +123,7 @@ docker run -d --name axmipic \
   ghcr.io/axmishell/axmipic:latest
 ```
 
-完整说明（镜像构建、GHCR、Docker Compose、安装向导）见 [Docker 部署](https://axmipic.gpcn.cc/guide/deployment)。
+完整说明（镜像构建、GHCR、Docker Compose、初始化模式）见 [Docker 部署](https://axmipic.gpcn.cc/guide/deployment)。
 
 ## 许可证
 

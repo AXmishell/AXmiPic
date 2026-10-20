@@ -90,7 +90,6 @@ var envPaths = map[string]string{
 	"auth_guest_ip_quota_mb":             "auth.guest_ip_quota_mb",
 	"install_lock_file":                  "install.lock_file",
 	"install_config_path":                "install.config_path",
-	"install_token":                      "install.token",
 	"install_disabled":                   "install.disabled",
 	"limits_upload_per_minute":           "limits.upload_per_minute",
 	"limits_upload_burst":                "limits.upload_burst",
@@ -324,16 +323,15 @@ type AuthConfig struct {
 	GuestIPQuotaMB int `koanf:"guest_ip_quota_mb"`
 }
 
-// InstallConfig 配置安装向导与锁文件。
+// InstallConfig 配置初始化模式与锁文件。
 type InstallConfig struct {
-	// LockFile 为安装锁文件路径；存在即视为已安装。
+	// LockFile 为初始化锁文件路径；存在即视为已初始化。
 	LockFile string `koanf:"lock_file"`
-	// ConfigPath 为安装向导写入的配置文件路径。
+	// ConfigPath 为初始化模式写入的配置文件路径。
 	ConfigPath string `koanf:"config_path"`
-	// Token 为安装向导的访问令牌。为空且未禁用安装时，服务会生成一个随机令牌
-	// 并在启动日志中输出，需在安装界面填写后才能执行初始化。
-	Token string `koanf:"token"`
-	// Disabled 为 true 时跳过安装检查（用于测试或容器编排）。
+	// Disabled 为 true 时跳过初始化检查（用于测试或容器编排）。
+	// 前端路由不会自动检测锁文件，未初始化时也正常展示站点；用户需主动访问
+	// /install 完成程序与数据库的初始化。
 	Disabled bool `koanf:"disabled"`
 }
 

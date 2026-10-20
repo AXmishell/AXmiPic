@@ -1,7 +1,6 @@
 import { ElMessage } from 'element-plus'
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 
-import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 
 declare module 'vue-router' {
@@ -17,7 +16,7 @@ declare module 'vue-router' {
 }
 
 const routes: RouteRecordRaw[] = [
-  // ---- 公开：首页 / 分享 / 独立页面 / 登录 / 安装 ----
+  // ---- 公开：首页 / 分享 / 独立页面 / 登录 / 初始化 ----
   {
     path: '/',
     name: 'home',
@@ -53,7 +52,7 @@ const routes: RouteRecordRaw[] = [
     path: '/install',
     name: 'install',
     component: () => import('@/views/InstallView.vue'),
-    meta: { title: '安装向导', public: true },
+    meta: { title: '初始化模式', public: true },
   },
   {
     path: '/plaza',
@@ -225,20 +224,13 @@ export function homeForRole(isAdmin: boolean): string {
   return isAdmin ? '/admin' : '/user'
 }
 
-router.beforeEach(async (to) => {
-  const app = useAppStore()
+router.beforeEach((to) => {
   const auth = useAuthStore()
   auth.hydrate()
   document.title = to.meta.title ? `${to.meta.title} · AXmiPic` : 'AXmiPic 图床'
 
-  // 安装门禁：除安装向导外，未安装时一律跳转到 /install。
-  const installed = await app.checkInstall()
-  if (!installed && to.name !== 'install') {
-    return { path: '/install' }
-  }
-  if (installed && to.name === 'install') {
-    return { path: '/' }
-  }
+  // 不再在路由层检测初始化锁文件：未初始化时也正常访问各页面，
+  // 由用户自行访问 /install 完成程序与数据库的初始化。
 
   if (to.meta.public) {
     if ((to.name === 'login' || to.name === 'admin-login') && auth.isAuthenticated) {

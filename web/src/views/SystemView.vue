@@ -98,7 +98,7 @@ const runtimeRows = computed(() => {
     { label: '默认存储驱动', value: info.storage_driver },
     { label: '图片处理器', value: info.processor },
     { label: '运行环境', value: `${info.go_version} · ${info.platform}` },
-    { label: '安装状态', value: info.installed ? '已安装' : '未安装' },
+    { label: '初始化状态', value: info.installed ? '已安装' : '未安装' },
   ]
 })
 
@@ -463,7 +463,7 @@ const router = useRouter()
 // 已安装插件的完整状态（启用/配置/三态），用于在短信渠道页展示就绪情况。
 const installedPlugins = ref<PluginStatus[]>([])
 
-/** 当前选中的插件渠道对应的安装状态。 */
+/** 当前选中的插件渠道对应的初始化状态。 */
 const selectedPlugin = computed<PluginStatus | undefined>(() =>
   installedPlugins.value.find((p) => p.name === smsForm.channel),
 )

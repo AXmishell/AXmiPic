@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,15 +13,15 @@ import (
 	"github.com/AXmishell/axmipic/internal/store"
 )
 
-// 安装服务返回的错误。
+// 初始化服务返回的错误。
 var (
-	// ErrAlreadyInstalled 表示锁文件已存在，无需再次安装。
-	ErrAlreadyInstalled = errors.New("service: already installed")
+	// ErrAlreadyInstalled 表示锁文件已存在，无需再次初始化。
+	ErrAlreadyInstalled = errors.New("service: already initialized")
 	// ErrInstallDatabase 表示数据库连接或迁移失败。
 	ErrInstallDatabase = errors.New("service: database initialization failed")
 )
 
-// InstallStatus 描述当前的安装状态。
+// InstallStatus 描述当前的初始化状态。
 type InstallStatus struct {
 	Installed bool   `json:"installed"`
 	LockFile  string `json:"lock_file"`
@@ -30,7 +29,7 @@ type InstallStatus struct {
 	Reasons []string `json:"reasons,omitempty"`
 }
 
-// InstallInput 是安装向导提交的配置。
+// InstallInput 是初始化模式提交的配置。
 type InstallInput struct {
 	SiteName string
 	BaseURL  string
@@ -48,34 +47,22 @@ type InstallInput struct {
 	AllowGuestUpload  bool
 }
 
-// InstallService 负责安装状态判定与初始化。
+// InstallService 负责初始化状态判定与初始化。
 type InstallService struct {
 	lockFile   string
 	configPath string
 	disabled   bool
-	// token 为安装授权令牌；非空时 POST /install 必须携带匹配的令牌。
-	token string
 }
 
-// NewInstallService 构造一个 InstallService。token 为空且未禁用安装时，调用方
-// 应生成一个随机令牌传入。禁用安装时不再校验令牌。
-func NewInstallService(lockFile, configPath string, disabled bool, token string) *InstallService {
-	return &InstallService{lockFile: lockFile, configPath: configPath, disabled: disabled, token: strings.TrimSpace(token)}
-}
-
-// Authorize 报告给定的安装令牌是否可用于执行初始化。禁用安装时不校验；未配置
-// 令牌时放行（兼容旧部署与测试）。
-func (s *InstallService) Authorize(token string) bool {
-	if s.disabled || s.token == "" {
-		return true
-	}
-	return subtle.ConstantTimeCompare([]byte(strings.TrimSpace(token)), []byte(s.token)) == 1
+// NewInstallService 构造一个 InstallService。
+func NewInstallService(lockFile, configPath string, disabled bool) *InstallService {
+	return &InstallService{lockFile: lockFile, configPath: configPath, disabled: disabled}
 }
 
 // LockFile 返回锁文件路径。
 func (s *InstallService) LockFile() string { return s.lockFile }
 
-// Status 返回当前安装状态。disabled 为 true 时始终视为已安装。
+// Status 返回当前初始化状态。disabled 为 true 时始终视为已安装。
 func (s *InstallService) Status() InstallStatus {
 	if s.disabled {
 		return InstallStatus{Installed: true, LockFile: s.lockFile}
@@ -163,7 +150,7 @@ func (s *InstallService) Install(ctx context.Context, in InstallInput, repoOpene
 	return nil
 }
 
-// writeRuntimeSettings 把安装向导采集的运行设置写入目标数据库，避免这些项以
+// writeRuntimeSettings 把初始化模式采集的运行设置写入目标数据库，避免这些项以
 // 明文形式留在 config.yaml 中（config 只保留引导项）。
 func (s *InstallService) writeRuntimeSettings(ctx context.Context, repo *store.Repository, in InstallInput) error {
 	authSetting, err := json.Marshal(map[string]any{
@@ -261,7 +248,7 @@ func (s *InstallService) writeConfig(in InstallInput) error {
 	if root == "" {
 		root = "./data/uploads"
 	}
-	content := fmt.Sprintf(`# 由 AXmiPic 安装向导生成于 %s
+	content := fmt.Sprintf(`# 由 AXmiPic 初始化模式生成于 %s
 # 仅包含引导项；其余运行设置保存在数据库中，可在后台「系统设置」修改。
 server:
   host: "0.0.0.0"

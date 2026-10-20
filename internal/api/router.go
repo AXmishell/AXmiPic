@@ -150,7 +150,7 @@ func NewRouter(d Deps) http.Handler {
 	r.With(imageLimit).Head("/i/*", h.serveImage)
 
 	r.Route("/api/v1", func(r chi.Router) {
-		// 安装状态与安装接口无需认证，且在未安装时也应可用。
+		// 初始化状态与安装接口无需认证，且在未安装时也应可用。
 		r.Get("/install/status", h.installStatus)
 		r.Post("/install", h.runInstall)
 

@@ -3,7 +3,7 @@ import { defineStore } from 'pinia'
 
 import { fetchInstallStatus } from '@/api/auth'
 
-/** 应用级状态：安装状态与站点信息。 */
+/** 应用级状态：初始化状态与站点信息。 */
 export const useAppStore = defineStore('app', () => {
   const installed = ref<boolean | null>(null)
   const lockFile = ref('')
@@ -12,7 +12,7 @@ export const useAppStore = defineStore('app', () => {
   const isInstalled = computed(() => installed.value === true)
   const needsInstall = computed(() => installed.value === false)
 
-  /** 拉取安装状态；失败时保守地视为已安装，避免误跳转到安装向导。 */
+  /** 拉取初始化状态；失败时保守地视为已初始化。 */
   async function checkInstall(): Promise<boolean> {
     if (checking.value) return installed.value === true
     checking.value = true
@@ -29,7 +29,7 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
-  /** 安装完成后标记状态。 */
+  /** 初始化完成后标记状态。 */
   function markInstalled(): void {
     installed.value = true
   }

@@ -37,14 +37,14 @@ export function updatePreferences(patch: UserPreferences): Promise<UserPreferenc
   return request<UserPreferences>({ method: 'PUT', url: '/auth/preferences', data: patch })
 }
 
-/** 安装状态。 */
+/** 初始化状态。 */
 export interface InstallStatus {
   installed: boolean
   lock_file?: string
   reasons?: string[]
 }
 
-/** 安装向导提交的配置。 */
+/** 初始化模式提交的配置。 */
 export interface InstallInput {
   site_name: string
   base_url: string
@@ -58,18 +58,17 @@ export interface InstallInput {
   allow_guest_upload: boolean
 }
 
-/** 读取安装状态（无需登录）。 */
+/** 读取初始化状态（无需登录）。 */
 export function fetchInstallStatus(): Promise<InstallStatus> {
   return request<InstallStatus>({ method: 'GET', url: '/install/status' })
 }
 
-/** 执行安装初始化。token 为启动日志中输出的安装令牌。 */
-export function runInstall(input: InstallInput, token: string): Promise<{ installed: boolean }> {
+/** 执行初始化。 */
+export function runInstall(input: InstallInput): Promise<{ installed: boolean }> {
   return request<{ installed: boolean }>({
     method: 'POST',
     url: '/install',
     data: input,
-    headers: token ? { 'X-Install-Token': token } : undefined,
   })
 }
 

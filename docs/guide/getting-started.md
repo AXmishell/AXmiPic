@@ -30,7 +30,7 @@ cp configs/config.example.yaml configs/config.yaml
 make run            # 先构建前端，再运行
 ```
 
-默认监听 `0.0.0.0:8080`，访问 `http://localhost:8080` 打开控制台。
+默认监听 `0.0.0.0:8080`，访问 `http://localhost:8080` 打开站点。首次部署请手动访问 `http://localhost:8080/install` 进入初始化模式，完成程序与数据库的初始化；首页不会自动跳转。
 
 ## 创建管理员
 

@@ -69,22 +69,10 @@ func run() error {
 		slog.String("platform", runtime.GOOS+"/"+runtime.GOARCH),
 	)
 
-	installToken := strings.TrimSpace(cfg.Install.Token)
-	if installToken == "" && !cfg.Install.Disabled {
-		buf := make([]byte, 18)
-		if _, err := rand.Read(buf); err != nil {
-			return fmt.Errorf("main: generate install token: %w", err)
-		}
-		installToken = base64.RawURLEncoding.EncodeToString(buf)
-	}
-	installSvc := service.NewInstallService(cfg.Install.LockFile, cfg.Install.ConfigPath, cfg.Install.Disabled, installToken)
+	installSvc := service.NewInstallService(cfg.Install.LockFile, cfg.Install.ConfigPath, cfg.Install.Disabled)
 	installed := installSvc.IsInstalled()
 	if !installed {
-		logger.Warn("AXmiPic is not installed yet; visit /install to run the setup wizard")
-		if installToken != "" {
-			logger.Warn("installation requires a setup token; enter it on the install page",
-				slog.String("install_token", installToken))
-		}
+		logger.Warn("AXmiPic is not initialized yet; visit /install to run the initialization")
 	}
 
 	repo, err := store.Open(cfg.Database.Driver, cfg.Database.DSN)
@@ -107,7 +95,7 @@ func run() error {
 			if adopted, adoptErr := installSvc.AdoptExisting(count); adoptErr != nil {
 				logger.Warn("failed to adopt existing installation", slog.Any("error", adoptErr))
 			} else if adopted {
-				logger.Info("detected an existing deployment; wrote install lock automatically")
+				logger.Info("detected an existing deployment; wrote the initialization lock automatically")
 				installed = true
 			}
 		}
@@ -416,7 +404,7 @@ func run() error {
 
 	authenticator := auth.NewAuthenticator(repo, issuer)
 	guestSigner := auth.NewGuestSigner(jwtKey)
-	// 内置 Guest 主体：安装完成后解析一次；是否附加由「允许访客上传」开关在
+	// 内置 Guest 主体：初始化完成后解析一次；是否附加由「允许访客上传」开关在
 	// 运行时决定，可在后台热切换。
 	var guestPrincipal *auth.Principal
 	if installed {
@@ -621,7 +609,7 @@ func seedGuest(ctx context.Context, policies *service.PolicyService, accounts *s
 	return nil
 }
 
-// runInstallSeed 在安装向导中针对新建仓库完成初始化：创建管理员、播种默认与
+// runInstallSeed 在初始化模式中针对新建仓库完成初始化：创建管理员、播种默认与
 // Guest 角色组，并创建 Guest 账户。
 func runInstallSeed(ctx context.Context, target *store.Repository, policies *service.PolicyService, in service.InstallInput, cfg config.Config, logger *slog.Logger) error {
 	issuer, err := newInstallIssuer(cfg)

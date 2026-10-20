@@ -156,16 +156,13 @@ auth:
   guest_ip_quota_mb: 512
 
 install:
-  # When this lock file exists the instance is considered installed. Remove it
-  # (and the database) to re-run the setup wizard at /install.
+  # When this lock file exists the instance is considered initialized. Remove it
+  # (and the database) to re-run the initialization at /install.
   lock_file: "./data/install.lock"
-  # Config file rewritten by the setup wizard.
+  # Config file rewritten by the initialization mode.
   config_path: "./configs/config.yaml"
-  # Setup-wizard authorization token. Leave empty to have the server generate a
-  # random token at startup (printed to the logs) that must be entered on the
-  # install page.
-  token: ""
-  # Skip the install check entirely (useful for tests / orchestration).
+  # Skip the initialization check entirely (useful for tests / orchestration).
+  # Frontend routes never auto-detect this lock file; visit /install manually.
   disabled: false
 
 limits:

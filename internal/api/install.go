@@ -2,19 +2,20 @@ package api
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 
 	"github.com/AXmishell/axmipic/internal/service"
 )
 
-// installStatusResponse 描述当前安装状态。
+// installStatusResponse 描述当前初始化状态。
 type installStatusResponse struct {
 	Installed bool     `json:"installed"`
 	LockFile  string   `json:"lock_file,omitempty"`
 	Reasons   []string `json:"reasons,omitempty"`
 }
 
-// installRequest 是安装向导提交的配置。
+// installRequest 是初始化模式提交的配置。
 type installRequest struct {
 	SiteName          string `json:"site_name"`
 	BaseURL           string `json:"base_url"`
@@ -28,7 +29,7 @@ type installRequest struct {
 	AllowGuestUpload  bool   `json:"allow_guest_upload"`
 }
 
-// installStatus 返回安装状态，供前端判断是否跳转到安装向导。
+// installStatus 返回初始化状态，供前端初始化页面判断是否已完成。
 func (h *Handler) installStatus(w http.ResponseWriter, r *http.Request) {
 	if h.install == nil {
 		writeOK(w, installStatusResponse{Installed: true})
@@ -38,15 +39,10 @@ func (h *Handler) installStatus(w http.ResponseWriter, r *http.Request) {
 	writeOK(w, installStatusResponse{Installed: status.Installed, LockFile: status.LockFile, Reasons: status.Reasons})
 }
 
-// runInstall 执行初始化。未安装时要求携带有效的安装令牌（X-Install-Token），
-// 避免实例在初始化前被他人抢先完成安装。令牌在启动日志中输出。
+// runInstall 执行初始化。初始化接口仅依赖锁文件判断是否已完成初始化。
 func (h *Handler) runInstall(w http.ResponseWriter, r *http.Request) {
 	if h.install == nil {
 		writeError(w, http.StatusNotFound, http.StatusNotFound, "installer is not available")
-		return
-	}
-	if !h.install.IsInstalled() && !h.install.Authorize(r.Header.Get("X-Install-Token")) {
-		writeError(w, http.StatusForbidden, http.StatusForbidden, "invalid or missing install token")
 		return
 	}
 	var body installRequest
@@ -69,6 +65,14 @@ func (h *Handler) runInstall(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.fail(w, r, err)
 		return
+	}
+	// 初始化会把权限开关写入目标数据库；立即重新加载一次，使同一进程无需重启
+	// 即可应用「允许注册 / 允许访客上传」等运行设置。若初始化切换到了另一个
+	// 数据库，仍需重启服务后才会使用新连接。
+	if h.settings != nil {
+		if err := h.settings.BootstrapAuth(r.Context()); err != nil {
+			h.logger.WarnContext(r.Context(), "reload auth settings after initialization", slog.Any("error", err))
+		}
 	}
 	writeOK(w, map[string]bool{"installed": true})
 }

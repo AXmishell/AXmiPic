@@ -33,18 +33,15 @@ const form = reactive<InstallForm>({
   storage_root: './data/uploads',
   allow_registration: true,
   allow_guest_upload: true,
-  install_token: '',
 })
 
-/** 仅用于前端校验「确认密码」与安装令牌，不直接提交给后端。 */
+/** 仅用于前端校验「确认密码」，不直接提交给后端。 */
 interface InstallForm extends InstallInput {
   admin_password_confirm: string
-  install_token: string
 }
 
 const rules: FormRules = {
   base_url: [{ required: true, message: '请输入站点地址', trigger: 'blur' }],
-  install_token: [{ required: true, message: '请输入安装令牌', trigger: 'blur' }],
   database_dsn: [{ required: true, message: '请输入数据库连接串', trigger: 'blur' }],
   admin_username: usernameRules('请输入管理员用户名'),
   admin_password: [
@@ -166,7 +163,7 @@ async function next(): Promise<void> {
   const instance = formRef.value
   if (step.value === 0) {
     if (instance) {
-      const ok = await instance.validateField(['base_url', 'install_token']).catch(() => false)
+      const ok = await instance.validateField(['base_url']).catch(() => false)
       if (!ok) return
     }
     if (isPostgres.value && !useAdvancedDsn.value) {
@@ -194,13 +191,13 @@ async function submit(): Promise<void> {
   if (submitting.value) return
   submitting.value = true
   try {
-    await runInstall(installPayload(), form.install_token.trim())
+    await runInstall(installPayload())
     app.markInstalled()
     done.value = true
     step.value = steps.length - 1
-    ElMessage.success('安装完成')
+    ElMessage.success('初始化完成')
   } catch (error) {
-    ElMessage.error(error instanceof ApiError ? error.message : '安装失败，请检查配置')
+    ElMessage.error(error instanceof ApiError ? error.message : '初始化失败，请检查配置')
   } finally {
     submitting.value = false
   }
@@ -211,7 +208,7 @@ async function goLogin(): Promise<void> {
 }
 
 onMounted(async () => {
-  // 已安装则直接离开安装向导。
+  // 已初始化则离开初始化页面，避免重复执行。
   try {
     const status = await fetchInstallStatus()
     if (status.installed) {
@@ -219,7 +216,7 @@ onMounted(async () => {
       await router.replace(auth.isAuthenticated ? '/admin' : '/login')
     }
   } catch {
-    // 无法读取状态时允许继续尝试安装。
+    // 无法读取状态时允许继续尝试初始化。
   }
 })
 </script>
@@ -232,8 +229,8 @@ onMounted(async () => {
           <BrandMark :size="20" />
         </span>
         <div>
-          <h1 class="install__title">AXmiPic 安装向导</h1>
-          <p class="install__subtitle">只需几步即可完成初始化</p>
+          <h1 class="install__title">AXmiPic 初始化模式</h1>
+          <p class="install__subtitle">手动完成程序与数据库的首次初始化</p>
         </div>
       </header>
 
@@ -259,11 +256,6 @@ onMounted(async () => {
                 <p class="install__section-desc">选择数据库类型并填写连接信息</p>
               </div>
             </div>
-
-            <el-form-item label="安装令牌" prop="install_token">
-              <el-input v-model="form.install_token" placeholder="启动日志中的 install_token" autocomplete="off" />
-              <div class="install__hint">首次部署时服务启动日志会输出 install_token，请在此填写以完成初始化。</div>
-            </el-form-item>
 
             <el-form-item label="站点地址" prop="base_url">
               <el-input v-model="form.base_url" placeholder="https://pic.example.com" />
@@ -384,7 +376,7 @@ onMounted(async () => {
                 <el-radio-button value="s3">S3</el-radio-button>
                 <el-radio-button value="qiniu">七牛</el-radio-button>
               </el-radio-group>
-              <div class="install__hint">S3 / 七牛可在安装后于「存储配置」中补充密钥。</div>
+              <div class="install__hint">S3 / 七牛可在初始化后于「存储配置」中补充密钥。</div>
             </el-form-item>
             <el-form-item v-if="form.storage_driver === 'local'" label="本地存储目录">
               <el-input v-model="form.storage_root" placeholder="./data/uploads" />
@@ -407,7 +399,7 @@ onMounted(async () => {
 
       <div v-else class="install__done">
         <el-icon class="install__done-icon" :size="48"><Check /></el-icon>
-        <h2>安装完成</h2>
+        <h2>初始化完成</h2>
         <p>已创建管理员账户与 Guest 访客角色，现在可以登录管理控制台。</p>
         <el-button type="primary" @click="goLogin">前往登录</el-button>
       </div>
@@ -415,7 +407,7 @@ onMounted(async () => {
       <footer v-if="!done" class="install__footer">
         <el-button :disabled="step === 0" @click="prev">上一步</el-button>
         <el-button v-if="step < steps.length - 1" type="primary" @click="next">下一步</el-button>
-        <el-button v-else type="primary" :loading="submitting" @click="submit">开始安装</el-button>
+        <el-button v-else type="primary" :loading="submitting" @click="submit">开始初始化</el-button>
       </footer>
     </section>
   </div>
