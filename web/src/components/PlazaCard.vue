@@ -41,7 +41,25 @@ const thumbStyle = computed(() =>
       <div class="pc__overlay">
         <div class="pc__head">
           <p class="pc__name" :title="name">{{ name }}</p>
-          <p class="pc__author">上传者：{{ item.owner_username || '匿名' }}</p>
+          <p class="pc__author" @click.stop>
+            <template v-if="item.author_name || item.author_handle">
+              作者：
+              <a
+                v-if="item.author_url"
+                :href="item.author_url"
+                target="_blank"
+                rel="noopener noreferrer nofollow"
+              >
+                {{ item.author_name || `@${item.author_handle}` }}
+                <span v-if="item.author_name && item.author_handle">@{{ item.author_handle }}</span>
+              </a>
+              <template v-else>
+                {{ item.author_name || `@${item.author_handle}` }}
+                <span v-if="item.author_name && item.author_handle">@{{ item.author_handle }}</span>
+              </template>
+            </template>
+            <template v-else>上传者：{{ item.owner_username || '匿名' }}</template>
+          </p>
         </div>
         <dl class="pc__meta">
           <div class="pc__meta-row">
@@ -186,6 +204,15 @@ const thumbStyle = computed(() =>
   font-size: var(--ax-text-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.pc__author a {
+  color: var(--ax-accent-bright);
+  text-decoration: none;
+}
+
+.pc__author a:hover {
+  text-decoration: underline;
 }
 
 .pc__meta {

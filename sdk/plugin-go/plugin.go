@@ -22,6 +22,12 @@ const (
 )
 
 // Field 描述一个插件配置字段。
+// FieldVisibility 描述字段的显示条件：当 Key 对应字段的值属于 Values 时显示。
+type FieldVisibility struct {
+	Key    string   `json:"key"`
+	Values []string `json:"values,omitempty"`
+}
+
 type Field struct {
 	Key      string    `json:"key"`
 	Label    string    `json:"label"`
@@ -32,6 +38,8 @@ type Field struct {
 	Default string   `json:"default,omitempty"`
 	Options []string `json:"options,omitempty"`
 	Help    string   `json:"help,omitempty"`
+	// VisibleWhen 可选，用于按另一个字段的值控制该字段是否显示。
+	VisibleWhen *FieldVisibility `json:"visible_when,omitempty"`
 }
 
 // Descriptor 是插件对自身的描述。category 与 name 由宿主清单指定，插件可留空。

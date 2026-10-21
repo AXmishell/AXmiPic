@@ -203,7 +203,9 @@ wazero runtime。激活失败时插件保持 `standby` 并记录 `last_error`，
 | DELETE | `/api/v1/admin/plugins/{name}` | 卸载并删除外置插件（内置插件不可删除） |
 
 后台「插件市场」是插件配置的**唯一入口**：按插件的 `fields` 渲染动态表单，普通字段直接展示，
-`secret` 字段以密码框呈现且不回显；保存后可用「测试发送」在切换正式渠道前验证。
+`secret` 字段以密码框呈现且不回显；保存后立即应用。
+字段可通过 `visible_when: {key: provider, values: [official]}` 声明显示条件，后台据此
+动态显示/隐藏相关字段。
 内置插件同样在此配置，但只能编辑配置，不能卸载、暂停或重新加载。
 
 ## 通知渠道（内置 + 外置）
@@ -230,6 +232,56 @@ wazero runtime。激活失败时插件保持 `standby` 并记录 `last_error`，
 > **从旧版本迁移**：首次启动时会把 `settings.smtp` 与旧的 `settings.sms` 自动迁移为
 > `builtin-email-smtp` / `builtin-sms-http` 的插件配置，并设置当前渠道；迁移只执行
 > 一次（`plugin.migrated.notify_v1`）。旧的通知设置页已移除，请统一到「插件市场」。
+
+## X 链接导入（内置解析插件）
+
+`builtin-x-resolver` 属于 `import.x` 类别，是随宿主发布的内置插件。它只负责把
+X/Twitter 状态链接解析为作者与图片 URL，**不直接访问数据库或存储**；图片下载、
+上传、去重、配额与广场审核由宿主的 X 导入服务完成。
+
+```yaml
+# 内置插件不需要 plugin.yaml；等价描述如下
+name: builtin-x-resolver
+category: import.x
+runtime: builtin
+abi: 1
+```
+
+配置字段（插件市场 → 配置）：
+
+| 字段 | 说明 |
+|------|------|
+| `provider` | `fxtwitter`（免费，默认）或 `official`（X 官方 API v2） |
+| `bearer_token` | 官方 API 的 Bearer Token，密文存储 |
+| `timeout_sec` | 解析请求超时，默认 15 秒 |
+| `image_variant` | `orig` / `large` / `medium` |
+| `proxy_url` | 可选代理地址，支持 `http://`、`https://`、`socks5://`、`socks5h://`；留空时使用系统环境变量代理 |
+| `proxy_username` | 代理认证用户名，可选 |
+| `proxy_password` | 代理认证密码，密文存储，可选 |
+
+插件操作 `resolve` 的输入输出：
+
+```json
+// 输入
+{ "url": "https://x.com/user/status/123" }
+
+// 输出
+{
+  "platform": "x",
+  "post_id": "123",
+  "source_url": "https://x.com/user/status/123",
+  "author": { "name": "显示名", "handle": "user" },
+  "media": [
+    { "id": "456", "type": "photo", "url": "https://pbs.twimg.com/...", "width": 928, "height": 1232 }
+  ]
+}
+```
+
+宿主只接受 `https://pbs.twimg.com` / `*.twimg.com` 的图片地址，并且只导入 `photo`
+类型；视频与 GIF 暂不支持。
+
+`fxtwitter` 是第三方公开接口，可用性由其维护者决定；对稳定性要求较高的部署建议
+配置 X 官方 API v2 的 Bearer Token。
 
 ## 在线安装与签名
 

@@ -12,6 +12,7 @@ import {
   Grid,
   Histogram,
   InfoFilled,
+  Link,
   Lock,
   Picture,
   Refresh,
@@ -30,6 +31,7 @@ import {
   deleteImages,
   listImages,
   renameImage,
+  updateImage,
   uploadImage,
   type ImageOrder,
 } from '@/api/images'
@@ -39,6 +41,7 @@ import ErrorState from '@/components/ErrorState.vue'
 import ImageViewer from '@/components/ImageViewer.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import ShareDialog from '@/components/ShareDialog.vue'
+import XImportDialog from '@/components/XImportDialog.vue'
 import { useAuthStore } from '@/stores/auth'
 import { copyText } from '@/utils/clipboard'
 import {
@@ -114,6 +117,19 @@ const renaming = ref(false)
 // 详情抽屉
 const detailOpen = ref(false)
 const detailTarget = ref<ImageItem | null>(null)
+
+// X 导入
+const xImportOpen = ref(false)
+
+// 作者/来源（仅管理员可编辑）
+const metaOpen = ref(false)
+const metaTarget = ref<ImageItem | null>(null)
+const metaSaving = ref(false)
+const metaForm = reactive({
+  author_name: '',
+  author_handle: '',
+  source_url: '',
+})
 
 // 分享
 const shareOpen = ref(false)
@@ -539,6 +555,44 @@ async function submitRename(): Promise<void> {
   }
 }
 
+// ---- 作者/来源（仅管理员） ----
+function openMeta(item: ImageItem): void {
+  if (!auth.isAdmin) return
+  metaTarget.value = item
+  metaForm.author_name = item.author_name || ''
+  metaForm.author_handle = item.author_handle || ''
+  metaForm.source_url = item.source_url || ''
+  metaOpen.value = true
+}
+
+function onXImported(): void {
+  if (page.value !== 1) {
+    page.value = 1
+  }
+  void load()
+}
+
+async function submitMeta(): Promise<void> {
+  const target = metaTarget.value
+  if (!target || metaSaving.value) return
+  metaSaving.value = true
+  try {
+    const updated = await updateImage(target.id, {
+      author_name: metaForm.author_name.trim(),
+      author_handle: metaForm.author_handle.trim(),
+      source_url: metaForm.source_url.trim(),
+    })
+    items.value = items.value.map((item) => (item.id === updated.id ? updated : item))
+    if (detailTarget.value?.id === updated.id) detailTarget.value = updated
+    ElMessage.success('作者与来源信息已更新')
+    metaOpen.value = false
+  } catch (error) {
+    ElMessage.error(toApiError(error).message)
+  } finally {
+    metaSaving.value = false
+  }
+}
+
 // ---- 详情 ----
 function openDetail(item: ImageItem): void {
   detailTarget.value = item
@@ -620,7 +674,7 @@ function openMenu(event: MouseEvent, item: ImageItem | null): void {
     selectedIds.value = new Set([item.id])
   }
   menuX.value = Math.min(event.clientX, window.innerWidth - 190)
-  menuY.value = Math.min(event.clientY, window.innerHeight - 320)
+  menuY.value = Math.min(event.clientY, window.innerHeight - 380)
   menuOpen.value = true
 }
 
@@ -655,6 +709,11 @@ function menuRename(): void {
 function menuDetail(): void {
   const item = menuTarget.value
   if (item) runMenu(() => openDetail(item))
+}
+
+function menuEditMeta(): void {
+  const item = menuTarget.value
+  if (item) runMenu(() => openMeta(item))
 }
 
 function menuDelete(): void {
@@ -728,6 +787,7 @@ onBeforeUnmount(() => {
         >
           <el-button type="primary" :icon="Upload" :loading="uploadRunning">上传图片</el-button>
         </el-upload>
+        <el-button :icon="Link" @click="xImportOpen = true">从 X 导入</el-button>
         <el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button>
       </template>
       <template #toolbar>
@@ -1039,6 +1099,9 @@ onBeforeUnmount(() => {
         </li>
         <li class="images-context-menu__divider" />
         <li @click="menuRename"><el-icon><EditPen /></el-icon>重命名</li>
+        <li v-if="auth.isAdmin" @click="menuEditMeta">
+          <el-icon><EditPen /></el-icon>编辑作者/来源
+        </li>
         <li @click="menuDetail"><el-icon><InfoFilled /></el-icon>详细信息</li>
         <li class="is-danger" @click="menuDelete"><el-icon><Delete /></el-icon>删除</li>
       </template>
@@ -1081,6 +1144,52 @@ onBeforeUnmount(() => {
       </template>
     </el-dialog>
 
+    <!-- 作者/来源（仅管理员） -->
+    <el-dialog
+      v-model="metaOpen"
+      title="编辑作者与来源"
+      width="min(480px, 94vw)"
+      append-to-body
+      :close-on-click-modal="false"
+    >
+      <div class="image-meta-form">
+        <label>
+          <span>作者显示名</span>
+          <el-input
+            v-model="metaForm.author_name"
+            maxlength="100"
+            placeholder="例如：げっか ☾ᶻ 𝗓 𐰁"
+          />
+        </label>
+        <label>
+          <span>作者用户名</span>
+          <el-input
+            v-model="metaForm.author_handle"
+            maxlength="15"
+            placeholder="X 用户名，不含 @，例如 mooNli9ht_4tune"
+          />
+        </label>
+        <label>
+          <span>来源链接</span>
+          <el-input
+            v-model="metaForm.source_url"
+            maxlength="512"
+            placeholder="https://x.com/.../status/..."
+          />
+        </label>
+        <p class="image-meta-form__hint">
+          留空即可清除对应字段。作者主页链接由用户名自动生成。
+        </p>
+      </div>
+      <template #footer>
+        <el-button @click="metaOpen = false">取消</el-button>
+        <el-button type="primary" :loading="metaSaving" @click="submitMeta">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- X 导入 -->
+    <XImportDialog v-model="xImportOpen" @imported="onXImported" />
+
     <!-- 分享 -->
     <ShareDialog
       v-model="shareOpen"
@@ -1103,6 +1212,42 @@ onBeforeUnmount(() => {
         <div class="image-detail__row">
           <dt>名称</dt>
           <dd>{{ detailTarget.original_name || '—' }}</dd>
+        </div>
+        <div v-if="detailTarget.author_name || detailTarget.author_handle" class="image-detail__row">
+          <dt>作者</dt>
+          <dd>
+            <a
+              v-if="detailTarget.author_url"
+              class="image-detail__link"
+              :href="detailTarget.author_url"
+              target="_blank"
+              rel="noopener noreferrer nofollow"
+            >
+              {{ detailTarget.author_name || `@${detailTarget.author_handle}` }}
+              <span v-if="detailTarget.author_name && detailTarget.author_handle">
+                @{{ detailTarget.author_handle }}
+              </span>
+            </a>
+            <template v-else>
+              {{ detailTarget.author_name || `@${detailTarget.author_handle}` }}
+              <span v-if="detailTarget.author_name && detailTarget.author_handle">
+                @{{ detailTarget.author_handle }}
+              </span>
+            </template>
+          </dd>
+        </div>
+        <div v-if="detailTarget.source_url" class="image-detail__row">
+          <dt>来源</dt>
+          <dd>
+            <a
+              class="image-detail__link"
+              :href="detailTarget.source_url"
+              target="_blank"
+              rel="noopener noreferrer nofollow"
+            >
+              查看原帖 ↗
+            </a>
+          </dd>
         </div>
         <div class="image-detail__row">
           <dt>存储名</dt>
@@ -1143,6 +1288,11 @@ onBeforeUnmount(() => {
           <dd>{{ formatDateTime(detailTarget.created_at) }}</dd>
         </div>
       </dl>
+      <div v-if="detailTarget && auth.isAdmin" class="image-detail__actions">
+        <el-button size="small" :icon="EditPen" @click="openMeta(detailTarget)">
+          编辑作者/来源
+        </el-button>
+      </div>
     </el-drawer>
   </div>
 </template>
@@ -1579,6 +1729,35 @@ onBeforeUnmount(() => {
 .image-detail__link {
   color: var(--ax-accent-hover);
   cursor: pointer;
+  text-decoration: none;
+}
+
+.image-detail__link:hover {
+  text-decoration: underline;
+}
+
+.image-detail__actions {
+  margin-top: var(--ax-space-4);
+}
+
+.image-meta-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.image-meta-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--ax-text-3);
+  font-size: var(--ax-text-sm);
+}
+
+.image-meta-form__hint {
+  margin: 0;
+  color: var(--ax-text-4);
+  font-size: var(--ax-text-xs);
 }
 
 .image-skeleton__preview {

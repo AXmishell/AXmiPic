@@ -112,6 +112,8 @@ type UploadInput struct {
 	MimeType string
 	// OriginalName 是上传时的原始文件名，可为空。
 	OriginalName string
+	// Meta 为可选的作者与来源信息（来源导入使用）。
+	Meta ImageMeta
 }
 
 // PresignInput 请求为某份内容提供预签名直传。
@@ -147,6 +149,14 @@ type ImageDTO struct {
 	OriginalName string `json:"original_name"`
 	Filename     string `json:"filename"`
 	Hash         string `json:"hash"`
+	// AuthorName / AuthorHandle / AuthorPlatform / AuthorURL 描述原作者；可全部为空。
+	AuthorName     string `json:"author_name,omitempty"`
+	AuthorHandle   string `json:"author_handle,omitempty"`
+	AuthorPlatform string `json:"author_platform,omitempty"`
+	AuthorURL      string `json:"author_url,omitempty"`
+	// SourceURL 为原始发布页；SourcePostID 为来源平台帖子 id。
+	SourceURL    string `json:"source_url,omitempty"`
+	SourcePostID string `json:"source_post_id,omitempty"`
 	URL          string `json:"url"`
 	// Thumbnail 是为列表展示准备的缩略图 URL，始终经过本实例的即时处理端点，
 	// 因此对本地/S3/七牛等所有后端都生效。
@@ -379,6 +389,10 @@ func (s *UploadService) BackendForKey(ctx context.Context, key string) (storage.
 // 的路径；相同所有者上传相同内容时按内容哈希去重，不同所有者各自持有独立对象，
 // 避免跨用户泄露与删除耦合。
 func (s *UploadService) Upload(ctx context.Context, principal *auth.Principal, in UploadInput) (*ImageDTO, error) {
+	meta, err := NormalizeImageMeta(in.Meta)
+	if err != nil {
+		return nil, err
+	}
 	policy, allowed, err := s.policyFor(ctx, principal)
 	if err != nil {
 		return nil, err
@@ -441,18 +455,23 @@ func (s *UploadService) Upload(ctx context.Context, principal *auth.Principal, i
 
 	width, height := decodeDimensions(in.Data)
 	image := &store.Image{
-		ID:           uuid.NewString(),
-		Key:          key,
-		UserID:       ownerID,
-		StorageID:    storageIDPtr(backendID),
-		OriginalName: sanitizeOriginalName(in.OriginalName),
-		Filename:     path.Base(key),
-		Hash:         hash,
-		URL:          s.urlFor(backend, key),
-		Size:         size,
-		MimeType:     in.MimeType,
-		Width:        width,
-		Height:       height,
+		ID:             uuid.NewString(),
+		Key:            key,
+		UserID:         ownerID,
+		StorageID:      storageIDPtr(backendID),
+		OriginalName:   sanitizeOriginalName(in.OriginalName),
+		Filename:       path.Base(key),
+		Hash:           hash,
+		AuthorName:     meta.AuthorName,
+		AuthorHandle:   meta.AuthorHandle,
+		AuthorPlatform: meta.AuthorPlatform,
+		SourceURL:      meta.SourceURL,
+		SourcePostID:   meta.SourcePostID,
+		URL:            s.urlFor(backend, key),
+		Size:           size,
+		MimeType:       in.MimeType,
+		Width:          width,
+		Height:         height,
 	}
 	if err := s.repo.Create(ctx, image); err != nil {
 		// 并发上传相同内容可能已先插入记录；此时删除我们刚写入的独立对象并复用
@@ -472,6 +491,19 @@ func (s *UploadService) Upload(ctx context.Context, principal *auth.Principal, i
 // HTTP 上传路径使用：数据边写入存储边计算内容哈希，仅保留一段有界前缀用于
 // 安全扫描与尺寸探测。
 func (s *UploadService) UploadStream(ctx context.Context, principal *auth.Principal, r io.Reader, size int64, mimeType, originalName string) (*ImageDTO, error) {
+	return s.uploadStream(ctx, principal, r, size, mimeType, originalName, ImageMeta{})
+}
+
+// UploadStreamWithMeta 与 UploadStream 相同，但允许同时写入作者与来源元数据。
+func (s *UploadService) UploadStreamWithMeta(ctx context.Context, principal *auth.Principal, r io.Reader, size int64, mimeType, originalName string, meta ImageMeta) (*ImageDTO, error) {
+	return s.uploadStream(ctx, principal, r, size, mimeType, originalName, meta)
+}
+
+func (s *UploadService) uploadStream(ctx context.Context, principal *auth.Principal, r io.Reader, size int64, mimeType, originalName string, meta ImageMeta) (*ImageDTO, error) {
+	meta, err := NormalizeImageMeta(meta)
+	if err != nil {
+		return nil, err
+	}
 	if size <= 0 {
 		return nil, fmt.Errorf("%w: size must be positive", ErrInvalidInput)
 	}
@@ -561,18 +593,23 @@ func (s *UploadService) UploadStream(ctx context.Context, principal *auth.Princi
 		}
 	}
 	image := &store.Image{
-		ID:           uuid.NewString(),
-		Key:          key,
-		UserID:       ownerID,
-		StorageID:    storageIDPtr(backendID),
-		OriginalName: sanitizeOriginalName(originalName),
-		Filename:     path.Base(key),
-		Hash:         hash,
-		URL:          s.urlFor(backend, key),
-		Size:         counting.n,
-		MimeType:     mimeType,
-		Width:        width,
-		Height:       height,
+		ID:             uuid.NewString(),
+		Key:            key,
+		UserID:         ownerID,
+		StorageID:      storageIDPtr(backendID),
+		OriginalName:   sanitizeOriginalName(originalName),
+		Filename:       path.Base(key),
+		Hash:           hash,
+		AuthorName:     meta.AuthorName,
+		AuthorHandle:   meta.AuthorHandle,
+		AuthorPlatform: meta.AuthorPlatform,
+		SourceURL:      meta.SourceURL,
+		SourcePostID:   meta.SourcePostID,
+		URL:            s.urlFor(backend, key),
+		Size:           counting.n,
+		MimeType:       mimeType,
+		Width:          width,
+		Height:         height,
 	}
 	if err := s.repo.Create(ctx, image); err != nil {
 		// 并发上传相同内容可能已先插入记录；删除我们写入的对象并复用记录。
@@ -1391,21 +1428,27 @@ func toDTO(image *store.Image, mediaBaseURL string) *ImageDTO {
 		thumbnail = image.URL
 	}
 	return &ImageDTO{
-		ID:           image.ID,
-		Key:          image.Key,
-		StorageID:    storageIDValue(image.StorageID),
-		AlbumID:      storageIDValue(image.AlbumID),
-		Permission:   permission,
-		OriginalName: image.OriginalName,
-		Filename:     image.Filename,
-		Hash:         image.Hash,
-		URL:          image.URL,
-		Thumbnail:    thumbnail,
-		Size:         image.Size,
-		MimeType:     image.MimeType,
-		Width:        image.Width,
-		Height:       image.Height,
-		CreatedAt:    image.CreatedAt,
+		ID:             image.ID,
+		Key:            image.Key,
+		StorageID:      storageIDValue(image.StorageID),
+		AlbumID:        storageIDValue(image.AlbumID),
+		Permission:     permission,
+		OriginalName:   image.OriginalName,
+		Filename:       image.Filename,
+		Hash:           image.Hash,
+		AuthorName:     image.AuthorName,
+		AuthorHandle:   image.AuthorHandle,
+		AuthorPlatform: image.AuthorPlatform,
+		AuthorURL:      AuthorURL(image.AuthorPlatform, image.AuthorHandle),
+		SourceURL:      image.SourceURL,
+		SourcePostID:   image.SourcePostID,
+		URL:            image.URL,
+		Thumbnail:      thumbnail,
+		Size:           image.Size,
+		MimeType:       image.MimeType,
+		Width:          image.Width,
+		Height:         image.Height,
+		CreatedAt:      image.CreatedAt,
 	}
 }
 

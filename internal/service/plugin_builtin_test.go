@@ -17,6 +17,26 @@ import (
 	"github.com/AXmishell/axmipic/internal/store"
 )
 
+func TestBuiltinXResolverRegistration(t *testing.T) {
+	svc, _, _, _ := newBuiltinFixture(t)
+	svc.RegisterBuiltinXResolver()
+
+	descriptors := svc.Descriptors(plugin.CategoryImportX)
+	if len(descriptors) != 1 || descriptors[0].Name != service.BuiltinXResolver {
+		t.Fatalf("unexpected descriptors: %+v", descriptors)
+	}
+	cfg, err := svc.Config(context.Background(), service.BuiltinXResolver)
+	if err != nil {
+		t.Fatalf("Config: %v", err)
+	}
+	if cfg.Values["provider"] != "fxtwitter" {
+		t.Fatalf("default provider = %q", cfg.Values["provider"])
+	}
+	if cfg.Values["image_variant"] != "orig" {
+		t.Fatalf("default image variant = %q", cfg.Values["image_variant"])
+	}
+}
+
 func newBuiltinFixture(t *testing.T) (*service.PluginService, *store.Repository, *service.NotifyService, *service.SettingsService) {
 	t.Helper()
 	repo, err := store.Open("sqlite", filepath.Join(t.TempDir(), "test.db"))

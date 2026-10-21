@@ -31,6 +31,8 @@ const (
 	CategoryStorage Category = "storage"
 	// CategoryModeration 为内容审核。
 	CategoryModeration Category = "moderation"
+	// CategoryImportX 为 X（Twitter）链接导入的解析插件类别。
+	CategoryImportX Category = "import.x"
 )
 
 // RuntimeKind 是插件的运行时类型。
@@ -65,6 +67,13 @@ const (
 	FieldSelect   FieldType = "select"
 )
 
+// FieldVisibility 描述字段的显示条件：当 Key 对应字段的值属于 Values 时显示。
+// 为空表示始终显示。前端仅用它控制表单可见性，不影响配置存储。
+type FieldVisibility struct {
+	Key    string   `json:"key" yaml:"key"`
+	Values []string `json:"values,omitempty" yaml:"values,omitempty"`
+}
+
 // Field 描述一个插件配置字段，用于驱动后台动态表单。
 type Field struct {
 	Key      string    `json:"key" yaml:"key"`
@@ -76,6 +85,8 @@ type Field struct {
 	Default string   `json:"default,omitempty" yaml:"default,omitempty"`
 	Options []string `json:"options,omitempty" yaml:"options,omitempty"`
 	Help    string   `json:"help,omitempty" yaml:"help,omitempty"`
+	// VisibleWhen 可选，用于按另一个字段的值控制该字段是否显示。
+	VisibleWhen *FieldVisibility `json:"visible_when,omitempty" yaml:"visible_when,omitempty"`
 }
 
 // Descriptor 是插件对自身的描述，由插件在加载时返回。

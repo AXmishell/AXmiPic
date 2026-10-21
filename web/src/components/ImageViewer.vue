@@ -459,6 +459,42 @@ onBeforeUnmount(() => {
               <dt>上传者</dt>
               <dd>{{ current.owner_username }}</dd>
             </div>
+            <div v-if="current.author_name || current.author_handle" class="ax-viewer__field">
+              <dt>作者</dt>
+              <dd>
+                <a
+                  v-if="current.author_url"
+                  class="ax-viewer__author-link"
+                  :href="current.author_url"
+                  target="_blank"
+                  rel="noopener noreferrer nofollow"
+                  :title="current.author_url"
+                >
+                  <span v-if="current.author_name">{{ current.author_name }}</span>
+                  <span v-if="current.author_handle" class="ax-viewer__handle">
+                    @{{ current.author_handle }}
+                  </span>
+                </a>
+                <template v-else>
+                  <span v-if="current.author_name">{{ current.author_name }}</span>
+                  <span v-if="current.author_handle">@{{ current.author_handle }}</span>
+                </template>
+              </dd>
+            </div>
+            <div v-if="current.source_url" class="ax-viewer__field">
+              <dt>来源</dt>
+              <dd>
+                <a
+                  class="ax-viewer__source-link"
+                  :href="current.source_url"
+                  target="_blank"
+                  rel="noopener noreferrer nofollow"
+                  :title="current.source_url"
+                >
+                  查看原帖 ↗
+                </a>
+              </dd>
+            </div>
             <div class="ax-viewer__field">
               <dt>存储名</dt>
               <dd>{{ current.filename || current.key }}</dd>
@@ -674,6 +710,23 @@ onBeforeUnmount(() => {
 .ax-viewer__link {
   color: var(--ax-accent-bright);
   cursor: pointer;
+}
+
+.ax-viewer__author-link,
+.ax-viewer__source-link {
+  color: var(--ax-accent-bright);
+  text-decoration: none;
+}
+
+.ax-viewer__author-link:hover,
+.ax-viewer__source-link:hover {
+  text-decoration: underline;
+}
+
+.ax-viewer__handle {
+  margin-left: 6px;
+  color: var(--ax-accent-bright);
+  opacity: 0.9;
 }
 
 .ax-viewer-enter-active,

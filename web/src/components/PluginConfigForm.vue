@@ -2,12 +2,7 @@
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 
-import {
-  getPluginConfig,
-  testPlugin,
-  updatePluginConfig,
-  type PluginConfig,
-} from '@/api/billing'
+import { getPluginConfig, updatePluginConfig, type PluginConfig } from '@/api/billing'
 import { toApiError } from '@/api/client'
 
 const props = defineProps<{ name: string }>()
@@ -18,12 +13,25 @@ const values = reactive<Record<string, string>>({})
 const secretInputs = reactive<Record<string, string>>({})
 const loading = ref(false)
 const saving = ref(false)
-const testing = ref(false)
-const testTo = ref('')
-const testBody = ref('')
 
 /** 当前插件的配置字段定义。 */
 const fields = computed(() => config.value?.fields ?? [])
+
+/** 读取某字段当前值；未填写时回退到字段默认值。 */
+function fieldValue(key: string): string {
+  const current = values[key]
+  if (current !== undefined && current !== '') return current
+  return fields.value.find((field) => field.key === key)?.default ?? ''
+}
+
+/** 根据 visible_when 过滤当前应显示的字段。 */
+const visibleFields = computed(() =>
+  fields.value.filter((field) => {
+    const condition = field.visible_when
+    if (!condition) return true
+    return (condition.values ?? []).includes(fieldValue(condition.key))
+  }),
+)
 
 /** 载入插件配置（秘钥仅返回是否已设置）。 */
 async function load(): Promise<void> {
@@ -51,9 +59,13 @@ watch(() => props.name, load, { immediate: true })
 /** 保存配置并通知父组件。 */
 async function save(): Promise<void> {
   if (!props.name) return
-  const payload: Record<string, string> = { ...values }
+  const visibleKeys = new Set(visibleFields.value.map((field) => field.key))
+  const payload: Record<string, string> = {}
+  for (const [key, value] of Object.entries(values)) {
+    if (visibleKeys.has(key)) payload[key] = value
+  }
   for (const [key, value] of Object.entries(secretInputs)) {
-    if (value) payload[key] = value
+    if (value && visibleKeys.has(key)) payload[key] = value
   }
   saving.value = true
   try {
@@ -68,24 +80,6 @@ async function save(): Promise<void> {
   }
 }
 
-/** 用当前配置发送一条测试短信。 */
-async function test(): Promise<void> {
-  if (!props.name) return
-  if (!testTo.value.trim()) {
-    ElMessage.warning('请填写测试接收号码')
-    return
-  }
-  testing.value = true
-  try {
-    await testPlugin(props.name, { to: testTo.value.trim(), body: testBody.value })
-    ElMessage.success('测试已发送，请查收')
-  } catch (error) {
-    ElMessage.error(toApiError(error).message)
-  } finally {
-    testing.value = false
-  }
-}
-
 defineExpose({ reload: load })
 </script>
 
@@ -93,7 +87,7 @@ defineExpose({ reload: load })
   <div v-loading="loading" class="plugin-config">
     <el-form label-position="top" @submit.prevent>
       <div class="plugin-config__grid">
-        <el-form-item v-for="field in fields" :key="field.key" :label="field.label">
+        <el-form-item v-for="field in visibleFields" :key="field.key" :label="field.label">
           <el-switch v-if="field.type === 'bool'" v-model="values[field.key]" />
           <el-select
             v-else-if="field.type === 'select'"
@@ -119,9 +113,6 @@ defineExpose({ reload: load })
     </el-form>
 
     <div class="plugin-config__actions">
-      <el-input v-model="testTo" placeholder="测试接收号码" style="max-width: 200px" />
-      <el-input v-model="testBody" placeholder="测试内容（可选）" style="max-width: 260px" />
-      <el-button :loading="testing" @click="test">测试发送</el-button>
       <el-button type="primary" :loading="saving" @click="save">保存配置</el-button>
     </div>
   </div>

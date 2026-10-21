@@ -57,6 +57,18 @@ export interface ImageItem {
   permission: ImagePermission
   /** 图片所有者的用户名，仅在图片广场/公开相册等公开列表中返回。 */
   owner_username?: string
+  /** 原作者显示名，如 `げっか ☾ᶻ 𝗓 𐰁`；可为空。 */
+  author_name?: string
+  /** 原作者用户名（不含 @）；可为空。 */
+  author_handle?: string
+  /** 作者平台，目前为 `x`；可为空。 */
+  author_platform?: string
+  /** 后端派生的作者主页链接；无有效平台/用户名时为空。 */
+  author_url?: string
+  /** 原始发布页链接；可为空。 */
+  source_url?: string
+  /** 来源平台帖子 id；可为空。 */
+  source_post_id?: string
 }
 
 /** 相册。 */

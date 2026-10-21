@@ -282,6 +282,8 @@ func run() error {
 	// 内置通知插件（短信日志/HTTP、邮件日志/SMTP）随宿主注册：默认受信、
 	// 进程内运行、无需沙箱，也不占用 WASM 运行时内存。
 	pluginSvc.RegisterBuiltinNotify(logger)
+	// 内置 X 链接解析插件：只解析作者与图片 URL，下载/入库由宿主导入服务完成。
+	pluginSvc.RegisterBuiltinXResolver()
 	// 当前通知渠道变化时重建 NotifyService 的短信/邮件 Sender。
 	pluginSvc.SetNotifyApplier(func(ctx context.Context, category string) {
 		switch category {
@@ -296,6 +298,8 @@ func run() error {
 		logger.Warn("failed to bootstrap plugins", slog.Any("error", err))
 	}
 	cancelBoot()
+
+	xImportSvc := service.NewXImportService(uploadSvc, pluginSvc, logger)
 
 	// 通用设置域：config 为首次播种与兜底，DB 为运行值；可热应用的域即时生效。
 	clientIPResolver := api.NewClientIPResolver(cfg.Server.ClientIP, cfg.Server.TrustProxy, logger)
@@ -462,6 +466,7 @@ func run() error {
 		Install:       installSvc,
 		Settings:      settingsSvc,
 		Plugins:       pluginSvc,
+		XImport:       xImportSvc,
 		Runtime:       runtimeInfo,
 		InstallRepo:   store.Open,
 		InstallSeed:   installSeed,

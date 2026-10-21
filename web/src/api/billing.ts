@@ -396,6 +396,11 @@ export interface PluginField {
   default?: string
   options?: string[]
   help?: string
+  /** 显示条件：当 key 对应字段的值属于 values 时显示。 */
+  visible_when?: {
+    key: string
+    values?: string[]
+  }
 }
 
 /** 插件自描述（与后端 plugin.Descriptor 对齐）。 */
@@ -440,18 +445,6 @@ export function updatePluginConfig(
     method: 'PUT',
     url: `/admin/plugins/${name}/config`,
     data: { values },
-  })
-}
-
-/** 用当前配置向插件发送一条测试通知。 */
-export function testPlugin(
-  name: string,
-  payload: { to: string; subject?: string; body?: string },
-): Promise<{ status: string; result: unknown }> {
-  return request<{ status: string; result: unknown }>({
-    method: 'POST',
-    url: `/admin/plugins/${name}/test`,
-    data: payload,
   })
 }
 

@@ -110,18 +110,27 @@ func (h *Handler) getImage(w http.ResponseWriter, r *http.Request) {
 	writeOK(w, dto)
 }
 
-// renameImageRequest 是 PATCH /api/v1/images/{id} 的 JSON 请求体。
-type renameImageRequest struct {
-	Name string `json:"name"`
+// updateImageRequest 是 PATCH /api/v1/images/{id} 的 JSON 请求体。作者与来源
+// 字段仅管理员可修改；使用指针区分「未提供」与「清空」。
+type updateImageRequest struct {
+	Name         *string `json:"name"`
+	AuthorName   *string `json:"author_name"`
+	AuthorHandle *string `json:"author_handle"`
+	SourceURL    *string `json:"source_url"`
 }
 
-func (h *Handler) renameImage(w http.ResponseWriter, r *http.Request) {
-	var body renameImageRequest
+func (h *Handler) updateImage(w http.ResponseWriter, r *http.Request) {
+	var body updateImageRequest
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxJSONBody)).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	dto, err := h.svc.Rename(r.Context(), principalOf(r), chi.URLParam(r, "id"), body.Name)
+	dto, err := h.svc.UpdateImage(r.Context(), principalOf(r), chi.URLParam(r, "id"), service.ImageUpdate{
+		OriginalName: body.Name,
+		AuthorName:   body.AuthorName,
+		AuthorHandle: body.AuthorHandle,
+		SourceURL:    body.SourceURL,
+	})
 	if err != nil {
 		h.fail(w, r, err)
 		return

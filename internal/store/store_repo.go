@@ -223,6 +223,48 @@ func (r *Repository) RenameImage(ctx context.Context, id, name string) (*Image, 
 	return r.GetByID(ctx, id)
 }
 
+// ImagePatch 是图片元数据的部分更新；nil 字段保持原值。
+type ImagePatch struct {
+	OriginalName   *string
+	AuthorName     *string
+	AuthorHandle   *string
+	AuthorPlatform *string
+	SourceURL      *string
+	SourcePostID   *string
+}
+
+// UpdateImage 按 patch 更新图片元数据并返回更新后的记录。调用方负责校验与
+// 权限判断；空 patch 直接返回当前记录。
+func (r *Repository) UpdateImage(ctx context.Context, id string, patch ImagePatch) (*Image, error) {
+	updates := make(map[string]any, 6)
+	if patch.OriginalName != nil {
+		updates["original_name"] = *patch.OriginalName
+	}
+	if patch.AuthorName != nil {
+		updates["author_name"] = *patch.AuthorName
+	}
+	if patch.AuthorHandle != nil {
+		updates["author_handle"] = *patch.AuthorHandle
+	}
+	if patch.AuthorPlatform != nil {
+		updates["author_platform"] = *patch.AuthorPlatform
+	}
+	if patch.SourceURL != nil {
+		updates["source_url"] = *patch.SourceURL
+	}
+	if patch.SourcePostID != nil {
+		updates["source_post_id"] = *patch.SourcePostID
+	}
+	if len(updates) == 0 {
+		return r.GetByID(ctx, id)
+	}
+	result := r.db.WithContext(ctx).Model(&Image{}).Where("id = ?", id).Updates(updates)
+	if result.Error != nil {
+		return nil, fmt.Errorf("store: update image %q: %w", id, result.Error)
+	}
+	return r.GetByID(ctx, id)
+}
+
 // Delete 移除具有给定 id 的图像，或返回 ErrNotFound。
 func (r *Repository) Delete(ctx context.Context, id string) error {
 	result := r.db.WithContext(ctx).Delete(&Image{}, "id = ?", id)

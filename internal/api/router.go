@@ -34,6 +34,8 @@ type Deps struct {
 	Settings *service.SettingsService
 	// Plugins 为运行时插件服务（WASM 插件配置与调用）。
 	Plugins *service.PluginService
+	// XImport 为 X 链接导入服务（解析插件 + 宿主导入管线）。
+	XImport *service.XImportService
 	// GuestSigner 为匿名访客的签名 cookie 提供签名与校验。
 	GuestSigner *auth.GuestSigner
 	// Runtime 是实例运行环境信息，供管理端展示（不含密钥）。
@@ -79,6 +81,7 @@ type Handler struct {
 	install        *service.InstallService
 	settings       *service.SettingsService
 	plugins        *service.PluginService
+	xImport        *service.XImportService
 	guestSigner    *auth.GuestSigner
 	runtime        RuntimeInfo
 	installRepo    func(driver, dsn string) (*store.Repository, error)
@@ -112,6 +115,7 @@ func NewRouter(d Deps) http.Handler {
 		install:        d.Install,
 		settings:       d.Settings,
 		plugins:        d.Plugins,
+		xImport:        d.XImport,
 		guestSigner:    d.GuestSigner,
 		runtime:        d.Runtime,
 		installRepo:    d.InstallRepo,
@@ -218,10 +222,12 @@ func NewRouter(d Deps) http.Handler {
 				r.Delete("/tokens/{id}", h.deleteToken)
 				r.Get("/images", h.listImages)
 				r.Get("/images/{id}", h.getImage)
-				r.Patch("/images/{id}", h.renameImage)
+				r.Patch("/images/{id}", h.updateImage)
 				r.Delete("/images/{id}", h.deleteImage)
 				r.Post("/images/batch", h.batchImages)
 				r.Post("/images/batch-delete", h.batchDeleteImages)
+				r.With(uploadLimit).Post("/import/x/preview", h.previewXImport)
+				r.With(uploadLimit).Post("/import/x", h.importX)
 				r.Get("/albums", h.listAlbums)
 				r.Post("/albums", h.createAlbum)
 				r.Patch("/albums/{id}", h.updateAlbum)

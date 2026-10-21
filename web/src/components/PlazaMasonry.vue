@@ -175,7 +175,25 @@ onBeforeUnmount(() => {
               <p class="pm__name" :title="item.original_name || item.filename || item.key">
                 {{ item.original_name || item.filename || item.key }}
               </p>
-              <p class="pm__author">上传者：{{ item.owner_username || '匿名' }}</p>
+              <p class="pm__author" @click.stop>
+                <template v-if="item.author_name || item.author_handle">
+                  作者：
+                  <a
+                    v-if="item.author_url"
+                    :href="item.author_url"
+                    target="_blank"
+                    rel="noopener noreferrer nofollow"
+                  >
+                    {{ item.author_name || `@${item.author_handle}` }}
+                    <span v-if="item.author_name && item.author_handle">@{{ item.author_handle }}</span>
+                  </a>
+                  <template v-else>
+                    {{ item.author_name || `@${item.author_handle}` }}
+                    <span v-if="item.author_name && item.author_handle">@{{ item.author_handle }}</span>
+                  </template>
+                </template>
+                <template v-else>上传者：{{ item.owner_username || '匿名' }}</template>
+              </p>
             </div>
           </div>
         </article>
@@ -288,6 +306,15 @@ onBeforeUnmount(() => {
   font-size: var(--ax-text-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.pm__author a {
+  color: var(--ax-accent-bright);
+  text-decoration: none;
+}
+
+.pm__author a:hover {
+  text-decoration: underline;
 }
 
 .pm__error {

@@ -18,6 +18,14 @@ type Image struct {
 	OriginalName string `gorm:"size:255;not null;default:''"`
 	Filename     string `gorm:"size:255;not null;default:''"`
 	Hash         string `gorm:"size:64;index;index:idx_images_hash_user,priority:1;not null;default:''"`
+	// AuthorName、AuthorHandle 与 AuthorPlatform 描述图片原作者（而非本站上传者），
+	// 主要用于图片来源导入与署名。三者均可为空。
+	AuthorName     string `gorm:"size:100;not null;default:''"`
+	AuthorHandle   string `gorm:"size:32;not null;default:''"`
+	AuthorPlatform string `gorm:"size:20;not null;default:''"`
+	// SourceURL 是原始发布页链接；SourcePostID 是来源平台上的帖子 id，用于去重与追溯。
+	SourceURL    string `gorm:"size:512;not null;default:''"`
+	SourcePostID string `gorm:"size:32;not null;default:''"`
 	URL          string `gorm:"size:512;not null"`
 	Size         int64  `gorm:"not null;index"`
 	MimeType     string `gorm:"size:100;not null"`
@@ -197,8 +205,8 @@ func (StorageBackend) TableName() string {
 // StoragePool 是一组可参与写入放置的存储后端。池只影响新对象写入哪个后端，
 // 已写入对象仍通过 images.storage_id 读取。
 type StoragePool struct {
-	ID        string `gorm:"primaryKey;size:36"`
-	Name      string `gorm:"size:100;not null"`
+	ID   string `gorm:"primaryKey;size:36"`
+	Name string `gorm:"size:100;not null"`
 	// Policy 为放置策略：weighted_rr（默认）或 priority。
 	Policy    string `gorm:"size:32;not null;default:'weighted_rr'"`
 	CreatedAt time.Time

@@ -60,9 +60,22 @@ export function uploadImage(
   })
 }
 
+/** 图片元数据更新；省略字段表示不修改，空字符串表示清空。 */
+export interface ImageMetadataUpdate {
+  name?: string
+  author_name?: string
+  author_handle?: string
+  source_url?: string
+}
+
+/** 更新图片展示名或作者/来源信息（作者/来源仅管理员可改）。 */
+export function updateImage(id: string, patch: ImageMetadataUpdate): Promise<ImageItem> {
+  return request<ImageItem>({ method: 'PATCH', url: `/images/${id}`, data: patch })
+}
+
 /** 重命名图片（修改展示用的原文件名）。 */
 export function renameImage(id: string, name: string): Promise<ImageItem> {
-  return request<ImageItem>({ method: 'PATCH', url: `/images/${id}`, data: { name } })
+  return updateImage(id, { name })
 }
 
 /** 即时图片处理的参数。 */
