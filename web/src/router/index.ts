@@ -233,6 +233,19 @@ router.beforeEach(async (to) => {
   auth.hydrate()
   document.title = to.meta.title ? `${to.meta.title} · AXmiPic` : 'AXmiPic 图床'
 
+  // 管理员安全入口：开启且当前浏览器没有入口 Cookie 时，普通管理员登录页
+  // 与未登录的管理后台都按 404 处理；已登录管理员仍可正常使用后台。
+  if (to.name === 'admin-login' || to.meta.requiresAdmin) {
+    await app.checkAdminEntry()
+    if (app.adminEntryActive && (to.name === 'admin-login' || !auth.isAuthenticated)) {
+      return {
+        name: 'not-found',
+        params: { pathMatch: to.path.replace(/^\/+|\/+$/g, '').split('/').filter(Boolean) },
+        replace: true,
+      }
+    }
+  }
+
   // 初始化入口只对未初始化的实例开放。初始化完成后再次访问 /install 应视为
   // 不存在的页面（404），而不是跳转到管理员登录或控制台。
   if (to.name === 'install') {

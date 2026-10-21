@@ -786,6 +786,76 @@ func (s *AccountService) UnbindEmail(ctx context.Context, principal *auth.Princi
 	return toUserDTO(updated), nil
 }
 
+// ChangeUsername 在验证当前密码（以及启用时的 TOTP）后修改当前账户的登录名。
+// 用户名在所属账户表内唯一；修改后现有会话继续有效，下次登录使用新用户名。
+func (s *AccountService) ChangeUsername(ctx context.Context, principal *auth.Principal, newUsername, currentPassword, totpCode string) (*UserDTO, error) {
+	newUsername = strings.ToLower(strings.TrimSpace(newUsername))
+	if err := validateUsername(newUsername); err != nil {
+		return nil, err
+	}
+	account, err := s.verifySensitiveAction(ctx, principal, currentPassword, totpCode)
+	if err != nil {
+		return nil, err
+	}
+	if account.Username == newUsername {
+		return toUserDTO(account), nil
+	}
+	if err := s.ensureLoginIdentifiersFree(ctx, principal.StoreRole(), newUsername, "", account.ID); err != nil {
+		return nil, err
+	}
+	updated, err := s.repo.UpdateAccountSecurity(ctx, principal.StoreRole(), principal.UserID, map[string]any{
+		"username": newUsername,
+	})
+	if err != nil {
+		if isUniqueViolation(err) {
+			return nil, ErrUserExists
+		}
+		return nil, fmt.Errorf("change username: %w", err)
+	}
+	return toUserDTO(updated), nil
+}
+
+// VerifySensitiveAction 校验当前密码；账户启用 TOTP 时还必须提供有效的动态码。
+// 用于修改用户名、开启/关闭安全入口等敏感操作。
+func (s *AccountService) VerifySensitiveAction(ctx context.Context, principal *auth.Principal, password, totpCode string) error {
+	_, err := s.verifySensitiveAction(ctx, principal, password, totpCode)
+	return err
+}
+
+func (s *AccountService) verifySensitiveAction(ctx context.Context, principal *auth.Principal, password, totpCode string) (*store.Account, error) {
+	account, err := s.repo.GetAccountByID(ctx, principal.StoreRole(), principal.UserID)
+	if err != nil {
+		return nil, fmt.Errorf("verify sensitive action: %w", err)
+	}
+	if !auth.VerifyPassword(account.PasswordHash, password) {
+		return nil, ErrInvalidPassword
+	}
+	if account.TOTPEnabled {
+		code := strings.TrimSpace(totpCode)
+		if code == "" {
+			return nil, fmt.Errorf("%w: totp code is required", ErrInvalidInput)
+		}
+		secret, err := s.decryptTOTPSecret(account.TOTPSecret)
+		if err != nil {
+			return nil, ErrTOTPNotConfigured
+		}
+		if !auth.VerifyTOTP(secret, code, time.Now()) {
+			return nil, ErrInvalidTOTPCode
+		}
+	}
+	return account, nil
+}
+
+// isUniqueViolation 判断底层驱动的唯一索引冲突错误。SQLite/MySQL/PostgreSQL
+// 的错误文本都包含 unique 或 duplicate。
+func isUniqueViolation(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "unique") || strings.Contains(msg, "duplicate")
+}
+
 // ChangePassword 在验证当前密码后更新账户密码。它用于已登录用户主动改密。
 func (s *AccountService) ChangePassword(ctx context.Context, principal *auth.Principal, currentPassword, newPassword string) error {
 	account, err := s.repo.GetAccountByID(ctx, principal.StoreRole(), principal.UserID)
@@ -1151,7 +1221,7 @@ func (s *AccountService) EnsureBootstrapAdmin(ctx context.Context, spec string) 
 	return nil
 }
 
-func validateCredentials(username, password string) error {
+func validateUsername(username string) error {
 	if len(username) < minUsernameLength || len(username) > maxUsernameLength {
 		return fmt.Errorf("%w: username must be %d-%d characters", ErrInvalidInput, minUsernameLength, maxUsernameLength)
 	}
@@ -1159,6 +1229,13 @@ func validateCredentials(username, password string) error {
 		if !isUsernameRune(r) {
 			return fmt.Errorf("%w: username may only contain letters, digits, '.', '_', '-', '+' and '@'", ErrInvalidInput)
 		}
+	}
+	return nil
+}
+
+func validateCredentials(username, password string) error {
+	if err := validateUsername(username); err != nil {
+		return err
 	}
 	return validateNewPassword(password)
 }

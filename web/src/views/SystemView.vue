@@ -2,9 +2,16 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRouter, onBeforeRouteLeave } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { DataLine, Monitor, Odometer, Refresh, SetUp } from '@element-plus/icons-vue'
+import { CopyDocument, DataLine, Monitor, Odometer, Refresh, SetUp } from '@element-plus/icons-vue'
 
 import { fetchStats } from '@/api/admin'
+import {
+  getAdminEntry,
+  rotateAdminEntry,
+  updateAdminEntry,
+  type AdminEntryInfo,
+} from '@/api/admin_entry'
+import { fetchSecurity, type SecurityInfo } from '@/api/auth'
 import {
   getAuthSettings,
   getClientIPInfo,
@@ -43,7 +50,9 @@ import { toApiError } from '@/api/client'
 import type { AdminStats } from '@/api/types'
 import ErrorState from '@/components/ErrorState.vue'
 import PageHeader from '@/components/PageHeader.vue'
-import { formatBytes, formatNumber } from '@/utils/format'
+import { useAppStore } from '@/stores/app'
+import { copyText } from '@/utils/clipboard'
+import { formatBytes, formatDateTime, formatNumber } from '@/utils/format'
 import { useTabQuery } from '@/utils/useTabQuery'
 
 type SettingsTab = 'overview' | 'notify' | 'payment' | 'moderation' | 'integration' | 'runtime'
@@ -60,6 +69,7 @@ const loading = ref(false)
 const errorMessage = ref('')
 const activeTab = useTabQuery<SettingsTab>('tab', 'overview', SETTINGS_TABS)
 const router = useRouter()
+const appState = useAppStore()
 
 const stats = ref<AdminStats | null>(null)
 const runtime = ref<RuntimeInfo | null>(null)
@@ -67,6 +77,14 @@ const process = ref<ProcessInfo | null>(null)
 const channels = ref<{ sms: string; email: string }>({ sms: '', email: '' })
 const scannerName = ref('')
 const drivers = ref<{ available: string[]; active: string }>({ available: [], active: '' })
+
+// 管理员安全入口
+const adminEntry = ref<AdminEntryInfo | null>(null)
+const adminEntrySecurity = ref<SecurityInfo | null>(null)
+const adminEntryDialog = ref(false)
+const adminEntryAction = ref<'enable' | 'disable' | 'rotate'>('enable')
+const adminEntryBusy = ref(false)
+const adminEntryForm = reactive({ password: '', totpCode: '' })
 
 // 可在线切换的权限开关（开放注册、上传鉴权、访客上传）。
 const authSaving = ref(false)
@@ -652,6 +670,68 @@ function discardAllDomains(): void {
   ElMessage.info('已放弃未保存的修改')
 }
 
+function openAdminEntryDialog(action: 'enable' | 'disable' | 'rotate'): void {
+  adminEntryAction.value = action
+  adminEntryForm.password = ''
+  adminEntryForm.totpCode = ''
+  adminEntryDialog.value = true
+}
+
+const adminEntryActionLabel = computed(() => {
+  switch (adminEntryAction.value) {
+    case 'disable':
+      return '关闭安全入口'
+    case 'rotate':
+      return '重新生成入口'
+    default:
+      return '开启安全入口'
+  }
+})
+
+async function confirmAdminEntryAction(): Promise<void> {
+  if (!adminEntryForm.password) {
+    ElMessage.warning('请输入当前密码')
+    return
+  }
+  if (adminEntrySecurity.value?.totp_enabled && !/^\d{6}$/.test(adminEntryForm.totpCode.trim())) {
+    ElMessage.warning('请输入 6 位动态验证码')
+    return
+  }
+  const payload = {
+    current_password: adminEntryForm.password,
+    totp_code: adminEntrySecurity.value?.totp_enabled
+      ? adminEntryForm.totpCode.trim()
+      : undefined,
+  }
+  adminEntryBusy.value = true
+  try {
+    if (adminEntryAction.value === 'rotate') {
+      adminEntry.value = await rotateAdminEntry(payload)
+      ElMessage.success('安全入口已重新生成，旧入口已失效')
+    } else {
+      adminEntry.value = await updateAdminEntry(adminEntryAction.value === 'enable', payload)
+      ElMessage.success(adminEntryAction.value === 'enable' ? '安全入口已开启' : '安全入口已关闭')
+    }
+    adminEntryDialog.value = false
+    await appState.checkAdminEntry(true)
+  } catch (error) {
+    ElMessage.error(toApiError(error).message)
+  } finally {
+    adminEntryBusy.value = false
+  }
+}
+
+async function copyAdminEntryURL(): Promise<void> {
+  const url = adminEntry.value?.url
+  if (!url) return
+  const copied = await copyText(url)
+  if (copied) {
+    ElMessage.success('安全入口地址已复制')
+  } else {
+    ElMessage.error('复制失败，请手动复制')
+  }
+}
+
 async function load(): Promise<void> {
   loading.value = true
   errorMessage.value = ''
@@ -674,6 +754,8 @@ async function load(): Promise<void> {
       maintenanceData,
       siteData,
       clientIPData,
+      adminEntryData,
+      accountSecurityData,
     ] = await Promise.all([
       fetchStats(),
       getRuntimeInfo(),
@@ -692,6 +774,8 @@ async function load(): Promise<void> {
       getSettingDomain<MaintenanceSettings>('maintenance').catch(() => null),
       getSettingDomain<SiteSettings>('site').catch(() => null),
       getSettingDomain<ClientIPSettings>('client_ip').catch(() => null),
+      getAdminEntry().catch(() => null),
+      fetchSecurity().catch(() => null),
     ])
     stats.value = statsData
     runtime.value = runtimeData
@@ -724,6 +808,8 @@ async function load(): Promise<void> {
     if (maintenanceData) fillMaintenance(maintenanceData)
     if (siteData) fillSite(siteData)
     if (clientIPData) fillClientIP(clientIPData)
+    adminEntry.value = adminEntryData
+    adminEntrySecurity.value = accountSecurityData
   } catch (error) {
     errorMessage.value = toApiError(error).message
   } finally {
@@ -1410,6 +1496,64 @@ onBeforeRouteLeave(async () => {
 
         <article class="ax-card">
           <header class="ax-card__head">
+            <h2 class="ax-card__title">管理员安全入口</h2>
+            <el-tag
+              size="small"
+              :type="adminEntry?.enabled ? 'success' : 'info'"
+              effect="plain"
+            >
+              {{ adminEntry?.enabled ? '已开启' : '未开启' }}
+            </el-tag>
+          </header>
+          <div class="ax-card__body">
+            <p class="security-card__desc">
+              开启后普通 /admin/login 将返回 404，必须通过专属入口访问管理员登录页。
+              安全入口仍然需要管理员密码，已启用 TOTP 时还需要动态验证码。
+            </p>
+            <dl class="info-list">
+              <div class="info-list__row">
+                <dt>状态</dt>
+                <dd>{{ adminEntry?.enabled ? '已开启' : '未开启' }}</dd>
+              </div>
+              <div v-if="adminEntry?.enabled" class="info-list__row">
+                <dt>入口地址</dt>
+                <dd class="admin-entry-url">
+                  <span class="ax-mono">{{ adminEntry.url }}</span>
+                  <el-button
+                    size="small"
+                    :icon="CopyDocument"
+                    title="复制安全入口"
+                    @click="copyAdminEntryURL"
+                  >
+                    复制
+                  </el-button>
+                </dd>
+              </div>
+              <div v-if="adminEntry?.updated_at" class="info-list__row">
+                <dt>最近更新</dt>
+                <dd>{{ formatDateTime(adminEntry.updated_at) }}</dd>
+              </div>
+            </dl>
+            <div class="security-card__actions">
+              <el-button
+                v-if="!adminEntry?.enabled"
+                type="primary"
+                @click="openAdminEntryDialog('enable')"
+              >
+                开启安全入口
+              </el-button>
+              <template v-else>
+                <el-button @click="openAdminEntryDialog('rotate')">重新生成入口</el-button>
+                <el-button type="danger" plain @click="openAdminEntryDialog('disable')">
+                  关闭安全入口
+                </el-button>
+              </template>
+            </div>
+          </div>
+        </article>
+
+        <article class="ax-card">
+          <header class="ax-card__head">
             <h2 class="ax-card__title">客户端真实 IP</h2>
             <el-tag size="small" type="success" effect="plain">即时生效</el-tag>
           </header>
@@ -1640,6 +1784,50 @@ onBeforeRouteLeave(async () => {
         </article>
       </el-tab-pane>
     </el-tabs>
+
+    <!-- 管理员安全入口敏感操作确认 -->
+    <el-dialog
+      v-model="adminEntryDialog"
+      :title="adminEntryActionLabel"
+      width="min(420px, 92vw)"
+      append-to-body
+      :close-on-click-modal="false"
+    >
+      <p class="security-card__desc">
+        {{ adminEntryAction === 'rotate'
+          ? '重新生成后旧入口地址立即失效，请及时保存新地址。'
+          : adminEntryAction === 'disable'
+            ? '关闭后将恢复普通 /admin/login 登录入口。'
+            : '开启后必须通过专属入口访问管理员登录页。' }}
+      </p>
+      <div class="email-form">
+        <el-input
+          v-model="adminEntryForm.password"
+          type="password"
+          show-password
+          placeholder="当前密码"
+          autocomplete="current-password"
+        />
+        <el-input
+          v-if="adminEntrySecurity?.totp_enabled"
+          v-model="adminEntryForm.totpCode"
+          maxlength="6"
+          inputmode="numeric"
+          placeholder="6 位动态验证码"
+          autocomplete="one-time-code"
+        />
+      </div>
+      <template #footer>
+        <el-button @click="adminEntryDialog = false">取消</el-button>
+        <el-button
+          type="primary"
+          :loading="adminEntryBusy"
+          @click="confirmAdminEntryAction"
+        >
+          确认{{ adminEntryActionLabel }}
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -2003,5 +2191,13 @@ onBeforeRouteLeave(async () => {
   font-weight: var(--ax-weight-medium);
   text-align: right;
   overflow-wrap: anywhere;
+}
+
+.admin-entry-url {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--ax-space-2);
+  flex-wrap: wrap;
 }
 </style>

@@ -51,6 +51,7 @@ import '@/styles/element.css'
 import App from './App.vue'
 import router from './router'
 import { configureAuth } from '@/api/client'
+import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
 
@@ -111,6 +112,7 @@ for (const component of globalComponents) {
 
 // store 从不导入 API client 的 store hook；接线在此处完成。
 const auth = useAuthStore(pinia)
+const appState = useAppStore(pinia)
 configureAuth({
   getToken: () => auth.token,
   onUnauthorized: () => {
@@ -119,6 +121,15 @@ configureAuth({
     auth.clearSession()
     const current = router.currentRoute.value
     if (current.name !== 'login' && current.name !== 'admin-login') {
+      // 开启安全入口后，管理员会话过期不能再直接回到普通登录页。
+      if (wasAdminArea && appState.adminEntryActive) {
+        void router.replace({
+          name: 'not-found',
+          params: { pathMatch: current.path.replace(/^\/+|\/+$/g, '').split('/').filter(Boolean) },
+          replace: true,
+        })
+        return
+      }
       void router.replace({
         path: wasAdminArea ? '/admin/login' : '/login',
         query: { redirect: current.fullPath },

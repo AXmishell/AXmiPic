@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/pprof"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -53,6 +54,8 @@ type Deps struct {
 	InstallRepo func(driver, dsn string) (*store.Repository, error)
 	// InstallSeed 在安装过程中创建管理员、角色组与 Guest 账户。
 	InstallSeed func(ctx context.Context, repo *store.Repository, in service.InstallInput) error
+	// AdminEntry 管理管理员安全入口与登录入口 Cookie。
+	AdminEntry *service.AdminEntryService
 	// Static 非 nil 时，为未匹配的路由提供单页应用服务。
 	Static http.Handler
 	// Database 为元数据数据库，供健康检查探测连接状态。
@@ -86,6 +89,8 @@ type Handler struct {
 	runtime        RuntimeInfo
 	installRepo    func(driver, dsn string) (*store.Repository, error)
 	installSeed    func(ctx context.Context, repo *store.Repository, in service.InstallInput) error
+	adminEntry     *service.AdminEntryService
+	static         http.Handler
 	maxUploadBytes int64
 	logger         *slog.Logger
 	// clientIP 解析客户端真实 IP，供诊断接口使用。
@@ -120,6 +125,8 @@ func NewRouter(d Deps) http.Handler {
 		runtime:        d.Runtime,
 		installRepo:    d.InstallRepo,
 		installSeed:    d.InstallSeed,
+		adminEntry:     d.AdminEntry,
+		static:         d.Static,
 		maxUploadBytes: int64(d.MaxUploadMB) << 20,
 		logger:         d.Logger,
 		clientIP:       d.ClientIPResolver,
@@ -162,6 +169,8 @@ func NewRouter(d Deps) http.Handler {
 		// 初始化状态与安装接口无需认证，且在未安装时也应可用。
 		r.Get("/install/status", h.installStatus)
 		r.Post("/install", h.runInstall)
+		// 管理员安全入口状态：前端用于隐藏普通登录页；不返回入口 token。
+		r.Get("/admin/entry/status", h.adminEntryStatus)
 
 		r.Group(func(r chi.Router) {
 			r.Use(uploadLimit)
@@ -169,7 +178,7 @@ func NewRouter(d Deps) http.Handler {
 			r.Post("/auth/register/code", h.sendRegisterCode)
 			r.Post("/auth/login", h.login)
 			r.Post("/auth/totp/verify", h.verifyTOTPLogin)
-			r.Post("/admin/auth/login", h.adminLogin)
+			r.With(h.requireAdminEntry).Post("/admin/auth/login", h.adminLogin)
 			// 找回密码：无需登录，按 IP 限流（服务层再按邮箱限流）。
 			r.Post("/auth/password/reset/code", h.sendPasswordResetCode)
 			r.Post("/auth/password/reset", h.resetPassword)
@@ -216,6 +225,7 @@ func NewRouter(d Deps) http.Handler {
 				r.Post("/auth/email/verify", h.verifyEmail)
 				r.Post("/auth/email/unbind", h.unbindEmail)
 				r.Post("/auth/password", h.changePassword)
+				r.Put("/auth/username", h.changeUsername)
 				r.Get("/auth/policies", h.authPolicies)
 				r.Post("/tokens", h.createToken)
 				r.Get("/tokens", h.listTokens)
@@ -322,6 +332,9 @@ func NewRouter(d Deps) http.Handler {
 				r.Post("/admin/client-ip/preview", h.adminClientIPPreview)
 				r.Get("/admin/auth", h.adminGetAuth)
 				r.Put("/admin/auth", h.adminUpdateAuth)
+				r.Get("/admin/security/admin-entry", h.adminGetAdminEntry)
+				r.Put("/admin/security/admin-entry", h.adminUpdateAdminEntry)
+				r.Post("/admin/security/admin-entry/rotate", h.adminRotateAdminEntry)
 				r.Get("/admin/moderation", h.adminGetModeration)
 				r.Put("/admin/moderation", h.adminUpdateModeration)
 				r.Get("/admin/payment", h.adminGetPayment)
@@ -358,6 +371,10 @@ func NewRouter(d Deps) http.Handler {
 	})
 
 	if d.Static != nil {
+		// 安全入口验证页与登录页需要在 SPA 静态资源之前处理，以便在服务端
+		// 设置入口 Cookie 或对未授权访问返回 404。
+		r.Get("/admin/entry/{token}", h.adminEntryPage)
+		r.Get("/admin/login", h.adminLoginPage)
 		r.Handle("/*", d.Static)
 	}
 
@@ -409,11 +426,20 @@ func requestLogger(logger *slog.Logger) func(http.Handler) http.Handler {
 			next.ServeHTTP(ww, r)
 			logger.InfoContext(r.Context(), "http request",
 				slog.String("method", r.Method),
-				slog.String("path", r.URL.Path),
+				slog.String("path", redactAdminEntryPath(r.URL.Path)),
 				slog.Int("status", ww.Status()),
 				slog.Int("bytes", ww.BytesWritten()),
 				slog.Duration("duration", time.Since(start)),
 			)
 		})
 	}
+}
+
+// redactAdminEntryPath 避免管理员安全入口 token 出现在应用访问日志中。
+func redactAdminEntryPath(path string) string {
+	const prefix = "/admin/entry/"
+	if strings.HasPrefix(path, prefix) && len(path) > len(prefix) {
+		return prefix + "[redacted]"
+	}
+	return path
 }

@@ -197,6 +197,14 @@ install:
   # Frontend routes never auto-detect this lock file; visit /install manually.
   disabled: false
 
+# 管理员安全入口：默认由后台「系统设置 → 运行设置」管理并存入数据库。
+# override=true 时以本配置为准，可用于忘记入口地址或需要紧急关闭时的恢复。
+admin_entry:
+  override: false
+  enabled: false
+  # enabled=true 时必填，16-128 位 URL-safe 字符。
+  token: ""
+
 limits:
   upload_per_minute: 30
   upload_burst: 5

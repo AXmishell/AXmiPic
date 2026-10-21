@@ -96,6 +96,9 @@ var envPaths = map[string]string{
 	"install_lock_file":                  "install.lock_file",
 	"install_config_path":                "install.config_path",
 	"install_disabled":                   "install.disabled",
+	"admin_entry_override":               "admin_entry.override",
+	"admin_entry_enabled":                "admin_entry.enabled",
+	"admin_entry_token":                  "admin_entry.token",
 	"limits_upload_per_minute":           "limits.upload_per_minute",
 	"limits_upload_burst":                "limits.upload_burst",
 	"limits_guest_per_minute":            "limits.guest_per_minute",
@@ -169,6 +172,7 @@ type Config struct {
 	SMS         SMSConfig         `koanf:"sms"`
 	Email       EmailConfig       `koanf:"email"`
 	Install     InstallConfig     `koanf:"install"`
+	AdminEntry  AdminEntryConfig  `koanf:"admin_entry"`
 	Maintenance MaintenanceConfig `koanf:"maintenance"`
 	Plugins     PluginsConfig     `koanf:"plugins"`
 	Runtime     RuntimeConfig     `koanf:"runtime"`
@@ -382,6 +386,14 @@ type InstallConfig struct {
 	// 前端路由不会自动检测锁文件，未初始化时也正常展示站点；用户需主动访问
 	// /install 完成程序与数据库的初始化。
 	Disabled bool `koanf:"disabled"`
+}
+
+// AdminEntryConfig 是管理员安全入口的应急/强制覆盖配置。默认情况下安全
+// 入口由数据库中的后台设置控制；Override 为 true 时以本配置为准。
+type AdminEntryConfig struct {
+	Override bool   `koanf:"override"`
+	Enabled  bool   `koanf:"enabled"`
+	Token    string `koanf:"token"`
 }
 
 // LimitsConfig 配置按调用方的速率限制。
@@ -637,9 +649,10 @@ func defaultConfig() Config {
 			TimeoutSec: 30,
 			MaxImageMB: 10,
 		},
-		SMS:     SMSConfig{Method: "POST"},
-		Email:   EmailConfig{Port: 587},
-		Install: InstallConfig{LockFile: "./data/install.lock", ConfigPath: "./configs/config.yaml"},
+		SMS:        SMSConfig{Method: "POST"},
+		Email:      EmailConfig{Port: 587},
+		Install:    InstallConfig{LockFile: "./data/install.lock", ConfigPath: "./configs/config.yaml"},
+		AdminEntry: AdminEntryConfig{},
 		Plugins: PluginsConfig{
 			Enabled:           true,
 			Dir:               "./plugins",
@@ -753,6 +766,24 @@ func (c Config) validate() error {
 	}
 	if c.Database.ConnMaxLifetimeMinutes < 0 {
 		return fmt.Errorf("config: database.conn_max_lifetime_minutes must not be negative")
+	}
+	if c.AdminEntry.Override {
+		token := strings.TrimSpace(c.AdminEntry.Token)
+		if c.AdminEntry.Enabled && token == "" {
+			return fmt.Errorf("config: admin_entry.token is required when admin_entry.override is enabled")
+		}
+		if token != "" {
+			if len(token) < 16 || len(token) > 128 {
+				return fmt.Errorf("config: admin_entry.token must be 16-128 characters")
+			}
+			for _, r := range token {
+				if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+					(r >= '0' && r <= '9') || r == '-' || r == '_' {
+					continue
+				}
+				return fmt.Errorf("config: admin_entry.token may only contain letters, digits, '-' and '_'")
+			}
+		}
 	}
 	switch c.Storage.Driver {
 	case "local":

@@ -139,6 +139,29 @@ func TestLoadOrDefaultsMissingFile(t *testing.T) {
 	}
 }
 
+func TestAdminEntryOverrideValidation(t *testing.T) {
+	if _, err := config.Load(writeConfig(t, `
+admin_entry:
+  override: true
+  enabled: true
+  token: ""
+`)); err == nil {
+		t.Fatal("expected an error when override is enabled without a token")
+	}
+	cfg, err := config.Load(writeConfig(t, `
+admin_entry:
+  override: true
+  enabled: true
+  token: "abcdefghijklmnop"
+`))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.AdminEntry.Override || !cfg.AdminEntry.Enabled || cfg.AdminEntry.Token == "" {
+		t.Fatalf("admin entry override not loaded: %+v", cfg.AdminEntry)
+	}
+}
+
 func TestValidateRejectsInvalidValues(t *testing.T) {
 	cases := []struct {
 		name string

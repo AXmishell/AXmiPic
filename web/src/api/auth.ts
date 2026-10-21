@@ -44,6 +44,17 @@ export interface InstallStatus {
   reasons?: string[]
 }
 
+/** 管理员安全入口状态。 */
+export interface AdminEntryStatus {
+  enabled: boolean
+  unlocked: boolean
+}
+
+/** 读取管理员安全入口状态（不返回入口 token）。 */
+export function fetchAdminEntryStatus(): Promise<AdminEntryStatus> {
+  return request<AdminEntryStatus>({ method: 'GET', url: '/admin/entry/status' })
+}
+
 /** 初始化模式提交的配置。 */
 export interface InstallInput {
   site_name: string
@@ -142,6 +153,15 @@ export function changePassword(currentPassword: string, newPassword: string): Pr
     url: '/auth/password',
     data: { current_password: currentPassword, new_password: newPassword },
   })
+}
+
+/** 修改当前账户用户名（需当前密码；启用 TOTP 时还需动态码）。 */
+export function changeUsername(payload: {
+  username: string
+  current_password: string
+  totp_code?: string
+}): Promise<User> {
+  return request<User>({ method: 'PUT', url: '/auth/username', data: payload })
 }
 
 /** 向邮箱发送密码重置验证码（无需登录）。 */

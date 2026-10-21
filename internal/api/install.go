@@ -74,5 +74,10 @@ func (h *Handler) runInstall(w http.ResponseWriter, r *http.Request) {
 			h.logger.WarnContext(r.Context(), "reload auth settings after initialization", slog.Any("error", err))
 		}
 	}
+	if h.adminEntry != nil {
+		if err := h.adminEntry.Bootstrap(r.Context()); err != nil {
+			h.logger.WarnContext(r.Context(), "reload admin entry settings after initialization", slog.Any("error", err))
+		}
+	}
 	writeOK(w, map[string]bool{"installed": true})
 }

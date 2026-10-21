@@ -127,6 +127,49 @@ func TestAdminAndCustomerAreSeparateTables(t *testing.T) {
 	}
 }
 
+func TestChangeUsername(t *testing.T) {
+	svc, _ := newAccountService(t, true, 1<<20)
+	ctx := context.Background()
+
+	alice, err := svc.RegisterCustomer(ctx, "alice", "password123")
+	if err != nil {
+		t.Fatalf("RegisterCustomer: %v", err)
+	}
+	principal := &auth.Principal{UserID: alice.ID, Role: auth.RoleUser}
+
+	if _, err := svc.ChangeUsername(ctx, principal, "alice2", "wrong-password", ""); !errors.Is(err, service.ErrInvalidPassword) {
+		t.Fatalf("wrong password err = %v, want ErrInvalidPassword", err)
+	}
+	if _, err := svc.ChangeUsername(ctx, principal, "bad#name", "password123", ""); !errors.Is(err, service.ErrInvalidInput) {
+		t.Fatalf("invalid username err = %v, want ErrInvalidInput", err)
+	}
+
+	updated, err := svc.ChangeUsername(ctx, principal, "Alice2@Example.com", "password123", "")
+	if err != nil {
+		t.Fatalf("ChangeUsername: %v", err)
+	}
+	if updated.Username != "alice2@example.com" {
+		t.Fatalf("username = %q", updated.Username)
+	}
+	if _, err := svc.LoginCustomer(ctx, "alice", "password123"); !errors.Is(err, service.ErrInvalidCredentials) {
+		t.Fatalf("old username login err = %v, want ErrInvalidCredentials", err)
+	}
+	if _, err := svc.LoginCustomer(ctx, "alice2@example.com", "password123"); err != nil {
+		t.Fatalf("new username login: %v", err)
+	}
+
+	// 同角色唯一；相同用户名视为无操作。
+	if _, err := svc.RegisterCustomer(ctx, "bob", "password123"); err != nil {
+		t.Fatalf("RegisterCustomer bob: %v", err)
+	}
+	if _, err := svc.ChangeUsername(ctx, principal, "bob", "password123", ""); !errors.Is(err, service.ErrUserExists) {
+		t.Fatalf("duplicate username err = %v, want ErrUserExists", err)
+	}
+	if _, err := svc.ChangeUsername(ctx, principal, "alice2@example.com", "password123", ""); err != nil {
+		t.Fatalf("same username should succeed: %v", err)
+	}
+}
+
 func TestTokenLifecycle(t *testing.T) {
 	svc, _ := newAccountService(t, true, 0)
 	ctx := context.Background()

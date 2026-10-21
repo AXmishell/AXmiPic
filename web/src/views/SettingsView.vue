@@ -2,11 +2,12 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Key, Refresh, SwitchButton } from '@element-plus/icons-vue'
+import { EditPen, Key, Refresh, SwitchButton } from '@element-plus/icons-vue'
 import QRCode from 'qrcode'
 
 import {
   changePassword,
+  changeUsername,
   disableTOTP,
   enableTOTP,
   fetchSecurity,
@@ -24,6 +25,7 @@ import UserAvatar from '@/components/UserAvatar.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore, type ThemeMode } from '@/stores/theme'
 import { formatDateTime } from '@/utils/format'
+import { USERNAME_PATTERN, USERNAME_RULE_MESSAGE } from '@/utils/validate'
 
 const auth = useAuthStore()
 const theme = useThemeStore()
@@ -73,6 +75,11 @@ const unbindPassword = ref('')
 const passwordDialog = ref(false)
 const passwordBusy = ref(false)
 const passwordForm = reactive({ current: '', next: '', confirm: '' })
+
+// 修改用户名
+const usernameDialog = ref(false)
+const usernameBusy = ref(false)
+const usernameForm = reactive({ username: '', password: '', totpCode: '' })
 
 const emailBound = computed(() => Boolean(security.value?.email && security.value.email_verified))
 const showEmailForm = computed(() => !emailBound.value || emailEditing.value)
@@ -217,6 +224,44 @@ async function confirmUnbindEmail(): Promise<void> {
   }
 }
 
+function openChangeUsername(): void {
+  usernameForm.username = me.value?.username ?? ''
+  usernameForm.password = ''
+  usernameForm.totpCode = ''
+  usernameDialog.value = true
+}
+
+async function confirmChangeUsername(): Promise<void> {
+  const username = usernameForm.username.trim()
+  if (!USERNAME_PATTERN.test(username)) {
+    ElMessage.warning(USERNAME_RULE_MESSAGE)
+    return
+  }
+  if (!usernameForm.password) {
+    ElMessage.warning('请输入当前密码')
+    return
+  }
+  if (security.value?.totp_enabled && !/^\d{6}$/.test(usernameForm.totpCode.trim())) {
+    ElMessage.warning('请输入 6 位动态验证码')
+    return
+  }
+  usernameBusy.value = true
+  try {
+    await changeUsername({
+      username,
+      current_password: usernameForm.password,
+      totp_code: security.value?.totp_enabled ? usernameForm.totpCode.trim() : undefined,
+    })
+    usernameDialog.value = false
+    await refreshAccount()
+    ElMessage.success('用户名已更新，下次登录请使用新用户名')
+  } catch (error) {
+    ElMessage.error(toApiError(error).message)
+  } finally {
+    usernameBusy.value = false
+  }
+}
+
 function openChangePassword(): void {
   passwordForm.current = ''
   passwordForm.next = ''
@@ -304,7 +349,17 @@ onMounted(load)
             <div class="settings-identity">
               <UserAvatar :name="me.username" size="lg" />
               <div class="settings-identity__meta">
-                <p class="settings-identity__name">{{ me.username }}</p>
+                <p class="settings-identity__name">
+                  <span class="settings-identity__text">{{ me.username }}</span>
+                  <el-button
+                    link
+                    type="primary"
+                    :icon="EditPen"
+                    title="修改用户名"
+                    aria-label="修改用户名"
+                    @click="openChangeUsername"
+                  />
+                </p>
                 <el-tag size="small" :type="isAdmin ? 'primary' : 'info'" effect="plain">
                   {{ isAdmin ? '管理员' : '用户' }}
                 </el-tag>
@@ -557,6 +612,48 @@ onMounted(load)
       </template>
     </el-dialog>
 
+    <!-- 修改用户名 -->
+    <el-dialog
+      v-model="usernameDialog"
+      title="修改用户名"
+      width="min(420px, 92vw)"
+      append-to-body
+      :close-on-click-modal="false"
+    >
+      <div class="email-form">
+        <el-input
+          v-model="usernameForm.username"
+          maxlength="64"
+          placeholder="新用户名（3-64 位）"
+          autocomplete="username"
+        />
+        <el-input
+          v-model="usernameForm.password"
+          type="password"
+          show-password
+          placeholder="当前密码"
+          autocomplete="current-password"
+        />
+        <el-input
+          v-if="security?.totp_enabled"
+          v-model="usernameForm.totpCode"
+          maxlength="6"
+          inputmode="numeric"
+          placeholder="6 位动态验证码"
+          autocomplete="one-time-code"
+        />
+        <p class="security-card__hint">
+          修改后当前会话继续有效，旧用户名立即失效，下次登录请使用新用户名。
+        </p>
+      </div>
+      <template #footer>
+        <el-button @click="usernameDialog = false">取消</el-button>
+        <el-button type="primary" :loading="usernameBusy" @click="confirmChangeUsername">
+          确认修改
+        </el-button>
+      </template>
+    </el-dialog>
+
     <!-- 修改密码 -->
     <el-dialog
       v-model="passwordDialog"
@@ -629,11 +726,18 @@ onMounted(load)
 }
 
 .settings-identity__name {
-  overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 2px;
   max-width: 100%;
   color: var(--ax-text);
   font-size: var(--ax-text-md);
   font-weight: var(--ax-weight-semibold);
+}
+
+.settings-identity__text {
+  overflow: hidden;
+  min-width: 0;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

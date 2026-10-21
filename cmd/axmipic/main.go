@@ -143,6 +143,17 @@ func run() error {
 		logger.Warn("encryption master key is shorter than recommended; use at least 16 bytes",
 			slog.Int("length", len(cipherKey)))
 	}
+	adminEntrySvc := service.NewAdminEntryService(
+		repo, cipher,
+		auth.NewAdminEntryIssuer(jwtKey, 10*time.Minute),
+		logger, cfg.AdminEntry,
+	)
+	adminEntryCtx, cancelAdminEntry := context.WithTimeout(context.Background(), 10*time.Second)
+	if err := adminEntrySvc.Bootstrap(adminEntryCtx); err != nil {
+		cancelAdminEntry()
+		return err
+	}
+	cancelAdminEntry()
 	storageSvc := service.NewStorageService(repo, manager, cipher, cfg.Server.BaseURL, cfg.Storage)
 
 	bootstrapCtx, cancelBootstrap := context.WithTimeout(context.Background(), 30*time.Second)
@@ -500,6 +511,7 @@ func run() error {
 		Billing:       billingSvc,
 		Notify:        notifySvc,
 		Install:       installSvc,
+		AdminEntry:    adminEntrySvc,
 		Settings:      settingsSvc,
 		Plugins:       pluginSvc,
 		XImport:       xImportSvc,

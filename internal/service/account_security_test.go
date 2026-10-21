@@ -25,6 +25,45 @@ func newSecurityService(t *testing.T) *service.AccountService {
 	return svc
 }
 
+func TestChangeUsernameRequiresTOTP(t *testing.T) {
+	svc := newSecurityService(t)
+	ctx := context.Background()
+	user, err := svc.RegisterCustomer(ctx, "totprename", "password123")
+	if err != nil {
+		t.Fatalf("RegisterCustomer: %v", err)
+	}
+	principal := &auth.Principal{UserID: user.ID, Role: auth.RoleUser}
+	setup, err := svc.SetupTOTP(ctx, principal)
+	if err != nil {
+		t.Fatalf("SetupTOTP: %v", err)
+	}
+	code, err := auth.TOTPCode(setup.Secret, time.Now())
+	if err != nil {
+		t.Fatalf("TOTPCode: %v", err)
+	}
+	if _, err := svc.EnableTOTP(ctx, principal, code); err != nil {
+		t.Fatalf("EnableTOTP: %v", err)
+	}
+
+	if _, err := svc.ChangeUsername(ctx, principal, "renamed", "password123", ""); !errors.Is(err, service.ErrInvalidInput) {
+		t.Fatalf("missing totp err = %v, want ErrInvalidInput", err)
+	}
+	if _, err := svc.ChangeUsername(ctx, principal, "renamed", "password123", "000000"); !errors.Is(err, service.ErrInvalidTOTPCode) {
+		t.Fatalf("wrong totp err = %v, want ErrInvalidTOTPCode", err)
+	}
+	newCode, err := auth.TOTPCode(setup.Secret, time.Now())
+	if err != nil {
+		t.Fatalf("TOTPCode: %v", err)
+	}
+	updated, err := svc.ChangeUsername(ctx, principal, "renamed", "password123", newCode)
+	if err != nil {
+		t.Fatalf("ChangeUsername with totp: %v", err)
+	}
+	if updated.Username != "renamed" {
+		t.Fatalf("username = %q", updated.Username)
+	}
+}
+
 func TestTOTPLoginFlow(t *testing.T) {
 	svc := newSecurityService(t)
 	ctx := context.Background()

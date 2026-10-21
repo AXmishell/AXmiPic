@@ -22,6 +22,13 @@ type registerRequest struct {
 	Code     string `json:"code"`
 }
 
+// changeUsernameRequest 是修改当前账户用户名的请求体。
+type changeUsernameRequest struct {
+	Username        string `json:"username"`
+	CurrentPassword string `json:"current_password"`
+	TOTPCode        string `json:"totp_code"`
+}
+
 func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
 	var body registerRequest
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxJSONBody)).Decode(&body); err != nil {
@@ -74,6 +81,9 @@ func (h *Handler) adminLogin(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.fail(w, r, err)
 		return
+	}
+	if h.adminEntry != nil && !session.TOTPRequired {
+		h.adminEntry.ClearEntryCookie(w, h.secureRequest(r))
 	}
 	writeOK(w, session)
 }
@@ -178,6 +188,9 @@ func (h *Handler) verifyTOTPLogin(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.fail(w, r, err)
 		return
+	}
+	if h.adminEntry != nil && session.User.Role == "admin" {
+		h.adminEntry.ClearEntryCookie(w, h.secureRequest(r))
 	}
 	writeOK(w, session)
 }
@@ -316,6 +329,21 @@ func (h *Handler) changePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeOK(w, map[string]string{"status": "updated"})
+}
+
+// changeUsername 修改当前登录账户的用户名，需要当前密码与（启用时的）动态码。
+func (h *Handler) changeUsername(w http.ResponseWriter, r *http.Request) {
+	var body changeUsernameRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxJSONBody)).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	user, err := h.accounts.ChangeUsername(r.Context(), principalOf(r), body.Username, body.CurrentPassword, body.TOTPCode)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeOK(w, user)
 }
 
 // sendPasswordResetCode 向已验证邮箱发送密码重置验证码（无需登录）。

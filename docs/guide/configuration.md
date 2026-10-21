@@ -284,3 +284,42 @@ install:
   # 未初始化时也正常展示站点，需用户主动访问 /install。
   disabled: false
 ```
+
+## 管理员安全入口
+
+安全入口默认在后台「系统设置 → 运行设置」中开启并保存在数据库，入口格式为：
+
+```text
+https://<站点地址>/admin/entry/<32字节随机token>
+```
+
+开启后：
+
+- 普通 `/admin/login` 返回 404；
+- 未持有入口 Cookie 时，管理员登录接口同样返回 404；
+- 访问安全入口会写入 10 分钟有效的 HttpOnly 入口 Cookie，然后跳转到 `/admin/login`；
+- 登录成功后清除入口 Cookie；
+- 开启、关闭、轮换均需要当前密码；启用 TOTP 时还需动态验证码。
+
+数据库中的 token 使用 AES-GCM 加密存储。忘记入口或需要紧急关闭时，可用配置文件/环境变量强制覆盖：
+
+```yaml
+admin_entry:
+  # true 时以本配置为准；后台不能再修改安全入口。
+  override: true
+  enabled: false
+  # enabled=true 时必填，16-128 位 URL-safe 字符。
+  token: ""
+```
+
+对应环境变量：
+
+```bash
+AXMIPIC_ADMIN_ENTRY_OVERRIDE=true
+AXMIPIC_ADMIN_ENTRY_ENABLED=false
+# 恢复/强制指定入口时：
+# AXMIPIC_ADMIN_ENTRY_ENABLED=true
+# AXMIPIC_ADMIN_ENTRY_TOKEN=<token>
+```
+
+恢复后建议通过后台重新生成入口，并移除应急覆盖配置。

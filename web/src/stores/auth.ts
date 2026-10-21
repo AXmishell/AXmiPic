@@ -19,6 +19,7 @@ import type {
   User,
   UserPreferences,
 } from '@/api/types'
+import { useAppStore } from '@/stores/app'
 
 /** 登录结果：直接成功，或需要完成 TOTP 二次验证。 */
 export type LoginOutcome =
@@ -163,7 +164,12 @@ export const useAuthStore = defineStore('auth', () => {
   /** 通过独立的管理员入口登录。 */
   async function adminLogin(credentials: Credentials): Promise<LoginOutcome> {
     const result = await adminLoginApi(credentials)
-    return handleLoginResult(result)
+    const outcome = handleLoginResult(result)
+    // 登录成功后服务端会清除安全入口 Cookie，刷新状态以便后续路由判断。
+    if (!outcome.totpRequired) {
+      void useAppStore().checkAdminEntry(true)
+    }
+    return outcome
   }
 
   /** 登录响应可能是直接会话，也可能是 TOTP 挑战。 */
@@ -177,7 +183,11 @@ export const useAuthStore = defineStore('auth', () => {
   /** 完成 TOTP 二次验证并建立会话。 */
   async function verifyTOTP(challengeToken: string, code: string): Promise<User> {
     const result = await verifyTOTPLoginApi(challengeToken, code)
-    return applySession(result)
+    const user = applySession(result)
+    if (user.role === 'admin') {
+      void useAppStore().checkAdminEntry(true)
+    }
+    return user
   }
 
   function applySession(result: LoginResult): User {
