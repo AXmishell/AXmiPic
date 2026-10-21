@@ -97,6 +97,7 @@ func newTestEnv(t *testing.T, requireAuth bool, quotaBytes int64) *testEnv {
 		},
 		MaxUploadMB: 1,
 		Pprof:       true,
+		Database:    repo,
 		Logger:      logger,
 	})
 	return &testEnv{router: router, repo: repo, accounts: accounts, mail: mail, settings: settingsSvc}
@@ -209,6 +210,53 @@ func TestHealthz(t *testing.T) {
 	env.router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var body struct {
+		Data struct {
+			Status   string `json:"status"`
+			Database struct {
+				Status  string `json:"status"`
+				Message string `json:"message"`
+			} `json:"database"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Data.Status != "ok" || body.Data.Database.Status != "ok" {
+		t.Fatalf("health = %+v, want ok/ok", body.Data)
+	}
+}
+
+func TestHealthzReportsDatabaseFailure(t *testing.T) {
+	env := newTestEnv(t, true, 1<<20)
+	// 关闭底层连接池模拟数据库不可用。
+	if err := env.repo.Close(); err != nil {
+		t.Fatalf("repo.Close: %v", err)
+	}
+	rec := httptest.NewRecorder()
+	env.router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	// 进程仍然存活，HTTP 状态保持 200，由 body 表达数据库异常。
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var body struct {
+		Data struct {
+			Status   string `json:"status"`
+			Database struct {
+				Status  string `json:"status"`
+				Message string `json:"message"`
+			} `json:"database"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Data.Status != "degraded" || body.Data.Database.Status != "error" {
+		t.Fatalf("health = %+v, want degraded/error", body.Data)
+	}
+	if body.Data.Database.Message == "" {
+		t.Fatal("database message is empty")
 	}
 }
 

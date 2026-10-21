@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
@@ -11,6 +12,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -19,8 +21,38 @@ import (
 	"github.com/AXmishell/axmipic/internal/storage"
 )
 
+// databaseHealth 描述健康检查中的数据库状态。
+type databaseHealth struct {
+	Status  string `json:"status"`
+	Message string `json:"message,omitempty"`
+}
+
+// health 返回服务与数据库的连接状态。
+//
+// 数据库不可用时仍返回 HTTP 200：/healthz 同时被外部存活探针使用，进程本身
+// 仍然健康，不应因数据库故障而被反复重启。真实状态由 data.status（ok /
+// degraded）与 data.database.status 表达，前端据此决定是否展示异常提示。
 func (h *Handler) health(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, envelope{Code: 0, Message: "ok", Data: map[string]string{"status": "ok"}})
+	data := map[string]any{
+		"status":   "ok",
+		"database": databaseHealth{Status: "ok"},
+	}
+	switch {
+	case h.db == nil:
+		data["status"] = "degraded"
+		data["database"] = databaseHealth{Status: "error", Message: "数据库尚未初始化"}
+	default:
+		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+		defer cancel()
+		if err := h.db.Ping(ctx); err != nil {
+			if h.logger != nil {
+				h.logger.Warn("database health check failed", slog.Any("error", err))
+			}
+			data["status"] = "degraded"
+			data["database"] = databaseHealth{Status: "error", Message: "数据库连接不可用"}
+		}
+	}
+	writeJSON(w, http.StatusOK, envelope{Code: 0, Message: "ok", Data: data})
 }
 
 func (h *Handler) listImages(w http.ResponseWriter, r *http.Request) {

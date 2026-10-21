@@ -39,6 +39,10 @@ export default defineConfig({
         target: 'http://localhost:8080',
         changeOrigin: true,
       },
+      '/healthz': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+      },
     },
   },
   preview: {
@@ -49,6 +53,10 @@ export default defineConfig({
         changeOrigin: true,
       },
       '^/i/': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+      },
+      '/healthz': {
         target: 'http://localhost:8080',
         changeOrigin: true,
       },

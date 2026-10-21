@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
@@ -14,6 +14,7 @@ import {
 
 import { listAnnouncements } from '@/api/site'
 import { uploadImage } from '@/api/images'
+import { fetchHealthStatus, isDatabaseHealthy } from '@/api/health'
 import { toApiError } from '@/api/client'
 import type { Announcement, ImageItem } from '@/api/types'
 import BrandMark from '@/components/BrandMark.vue'
@@ -32,6 +33,12 @@ const dragActive = ref(false)
 const uploaded = ref<ImageItem | null>(null)
 const announcements = ref<Announcement[]>([])
 const ACCEPT = 'image/jpeg,image/png,image/gif,image/webp'
+
+/** 数据库异常提示文案；为 null 表示连接正常，不展示提示。 */
+const dbIssue = ref<string | null>(null)
+const dbChecking = ref(false)
+const DB_CHECK_INTERVAL = 30_000
+let dbTimer: number | undefined
 
 const displayName = computed(() => (auth.isAuthenticated ? auth.username : '访客'))
 
@@ -101,12 +108,42 @@ function goUserCenter(): void {
 }
 
 onMounted(async () => {
+  void checkDatabase()
+  dbTimer = window.setInterval(() => {
+    void checkDatabase()
+  }, DB_CHECK_INTERVAL)
   try {
     announcements.value = await listAnnouncements()
   } catch {
     // 首页公告为可选内容。
   }
 })
+
+onBeforeUnmount(() => {
+  if (dbTimer !== undefined) {
+    window.clearInterval(dbTimer)
+    dbTimer = undefined
+  }
+})
+
+/**
+ * 探测数据库连接状态：仅在异常时设置提示文案，连接正常时清除提示。
+ * 后端不可达同样视为异常，因为此时页面的大部分功能都不可用。
+ */
+async function checkDatabase(): Promise<void> {
+  if (dbChecking.value) return
+  dbChecking.value = true
+  try {
+    const health = await fetchHealthStatus()
+    dbIssue.value = isDatabaseHealthy(health)
+      ? null
+      : health.database?.message || '数据库连接不可用'
+  } catch {
+    dbIssue.value = '无法连接到服务器，请确认后端服务与数据库是否正常运行'
+  } finally {
+    dbChecking.value = false
+  }
+}
 </script>
 
 <template>
@@ -157,6 +194,19 @@ onMounted(async () => {
     </header>
 
     <main class="home__main">
+      <section v-if="dbIssue" class="home__db-alert" aria-live="polite">
+        <el-alert type="error" :closable="false" show-icon>
+          <template #title>数据库连接异常</template>
+          <div class="home__db-alert-body">
+            <span>{{ dbIssue }}</span>
+            <el-button size="small" :loading="dbChecking" @click="checkDatabase">重试</el-button>
+            <el-button size="small" link type="primary" @click="router.push('/install')">
+              前往初始化
+            </el-button>
+          </div>
+        </el-alert>
+      </section>
+
       <section class="hero">
         <div class="hero__glow" aria-hidden="true" />
         <h1 class="hero__title">轻量、可靠的自托管图床</h1>
@@ -322,6 +372,18 @@ onMounted(async () => {
   max-width: 780px;
   margin: 0 auto;
   padding: var(--ax-space-6) var(--ax-space-5) var(--ax-space-12);
+}
+
+.home__db-alert {
+  margin-bottom: var(--ax-space-4);
+}
+
+.home__db-alert-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ax-space-2);
+  margin-top: var(--ax-space-1);
 }
 
 .hero {

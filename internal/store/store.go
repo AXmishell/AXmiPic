@@ -2,6 +2,7 @@
 package store
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -182,6 +183,21 @@ func (r *Repository) Close() error {
 	}
 	if err := sqlDB.Close(); err != nil {
 		return fmt.Errorf("store: close: %w", err)
+	}
+	return nil
+}
+
+// Ping 检查底层数据库连接是否可用，供健康检查探测。
+func (r *Repository) Ping(ctx context.Context) error {
+	if r == nil || r.db == nil {
+		return errors.New("store: repository is not open")
+	}
+	sqlDB, err := r.db.DB()
+	if err != nil {
+		return fmt.Errorf("store: connection: %w", err)
+	}
+	if err := sqlDB.PingContext(ctx); err != nil {
+		return fmt.Errorf("store: ping: %w", err)
 	}
 	return nil
 }

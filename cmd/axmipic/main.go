@@ -467,6 +467,7 @@ func run() error {
 		MaxUploadMB:      cfg.Upload.MaxSizeMB,
 		Pprof:            cfg.Server.PprofEnabled,
 		Static:           webui.Handler(),
+		Database:         repo,
 		Logger:           logger,
 	})
 	srv := server.New(cfg, logger, router)

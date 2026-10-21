@@ -53,6 +53,8 @@ type Deps struct {
 	InstallSeed func(ctx context.Context, repo *store.Repository, in service.InstallInput) error
 	// Static 非 nil 时，为未匹配的路由提供单页应用服务。
 	Static http.Handler
+	// Database 为元数据数据库，供健康检查探测连接状态。
+	Database *store.Repository
 	// ClientIPResolver 解析客户端真实 IP（可信代理由配置决定）。
 	ClientIPResolver *ClientIPResolver
 	MaxUploadMB      int
@@ -89,6 +91,8 @@ type Handler struct {
 	// 与 Deps.PolicyLimiter 均非 nil 时启用。
 	policyRateLimiter *auth.RateLimiter
 	policyLimits      *policyLimits
+	// db 用于健康检查探测数据库连接状态。
+	db *store.Repository
 }
 
 // NewRouter 构建 HTTP 路由并注册中间件和路由。
@@ -115,6 +119,7 @@ func NewRouter(d Deps) http.Handler {
 		maxUploadBytes: int64(d.MaxUploadMB) << 20,
 		logger:         d.Logger,
 		clientIP:       d.ClientIPResolver,
+		db:             d.Database,
 	}
 	if d.PolicyLimiter != nil && d.Policies != nil {
 		h.policyRateLimiter = d.PolicyLimiter

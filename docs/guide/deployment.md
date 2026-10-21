@@ -43,4 +43,4 @@ docker compose logs -f
 - 初始化模式会把数据库连接等写入具名卷 `axmipic-config`（容器内 `/app/configs/config.yaml`）并初始化目标数据库；数据库切换在**重启容器后**生效。
 - 数据（SQLite 数据库、本地上传文件、自动生成的主密钥）保存在具名卷 `axmipic-data`；`docker compose down` 不删除数据，`docker compose down -v` 会连同数据卷一并删除。
 - 需要自定义时，可给服务添加 `environment:` 用 `AXMIPIC_*` 覆盖单项配置（如 PostgreSQL 用 `AXMIPIC_DATABASE_DRIVER=postgres`、`AXMIPIC_DATABASE_DSN=host=... port=5432 user=... password=... dbname=... sslmode=disable`），或挂载 `configs/config.yaml`；也可设 `AXMIPIC_INSTALL_DISABLED=true` + `AXMIPIC_AUTH_BOOTSTRAP_ADMIN=admin:<密码>` 跳过初始化模式。
-- 镜像为 distroless，未内置 healthcheck，可通过外部探测 `GET /healthz` 做健康检查。
+- 镜像为 distroless，未内置 healthcheck，可通过外部探测 `GET /healthz` 做健康检查。该接口始终返回 HTTP 200 表示进程存活，响应体中的 `data.status`（`ok` / `degraded`）与 `data.database.status`（`ok` / `error`）反映数据库连接是否可用；首页会据此在数据库异常时展示提示，连接正常时不显示。
