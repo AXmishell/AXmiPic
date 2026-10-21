@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
-import { Delete, EditPen, FolderOpened, Plus, Refresh, Star } from '@element-plus/icons-vue'
+import { Delete, EditPen, FolderOpened, Plus, QuestionFilled, Refresh, Star } from '@element-plus/icons-vue'
 
 import {
   activateStorage,
@@ -36,6 +36,10 @@ const pools = ref<StoragePool[]>([])
 const loading = ref(false)
 const errorMessage = ref('')
 const pendingId = ref<string | null>(null)
+
+const storageDocsUrl = 'https://axmipic.gpcn.cc/guide/configuration#存储池'
+const currentBackend = computed(() => backends.value.find((backend) => backend.is_current) ?? null)
+const canCreatePool = computed(() => backends.value.length >= 2)
 
 const dialogOpen = ref(false)
 const editingId = ref<string | null>(null)
@@ -549,12 +553,22 @@ onMounted(load)
   <div class="ax-page">
     <PageHeader
       title="存储配置"
-      description="配置并切换图片存储后端：本地文件系统、S3 兼容对象存储、阿里云 OSS、腾讯云 COS 或七牛云。切换即时生效，无需重启。"
+      description="管理图片的写入位置：先添加存储，再按需组合成存储池。"
     >
       <template #actions>
+        <a
+          class="storage-help"
+          :href="storageDocsUrl"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <el-icon :size="14"><QuestionFilled /></el-icon>
+          帮助
+        </a>
         <el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button>
-        <el-button type="primary" :icon="Plus" @click="openCreate">新建存储</el-button>
-        <el-button :icon="Plus" @click="openPoolCreate">新建存储池</el-button>
+        <el-button v-if="backends.length > 0" type="primary" :icon="Plus" @click="openCreate">
+          新建存储
+        </el-button>
       </template>
     </PageHeader>
 
@@ -567,13 +581,50 @@ onMounted(load)
     <EmptyState
       v-else-if="backends.length === 0"
       title="还没有存储配置"
-      description="创建本地或对象存储配置后，即可在后台随时切换默认存储。"
+      description="先添加一个本地目录或云存储。添加完成后，可按需把多个存储组合成存储池。"
     >
       <el-button type="primary" :icon="Plus" @click="openCreate">新建存储</el-button>
+      <a class="storage-empty-help" :href="storageDocsUrl" target="_blank" rel="noopener noreferrer">
+        查看存储说明
+      </a>
     </EmptyState>
 
-    <div v-else class="ax-card table-card">
-      <div class="ax-table-scroll">
+    <template v-else>
+      <section class="storage-concepts" aria-label="存储与存储池说明">
+        <div class="storage-concept">
+          <span class="storage-concept__step">1</span>
+          <div>
+            <strong>存储</strong>
+            <p>连接一个具体位置：本地目录或云存储账号。</p>
+          </div>
+        </div>
+        <span class="storage-concept__arrow" aria-hidden="true">→</span>
+        <div class="storage-concept">
+          <span class="storage-concept__step">2</span>
+          <div>
+            <strong>存储池<el-tag size="small" type="info" effect="plain">可选</el-tag></strong>
+            <p>把多个存储组合起来，按权重或优先级分配新上传。</p>
+          </div>
+        </div>
+        <a class="storage-concept__link" :href="storageDocsUrl" target="_blank" rel="noopener noreferrer">
+          了解详情
+        </a>
+      </section>
+
+      <div class="ax-card table-card">
+        <div class="ax-card__head">
+          <div class="storage-table-head">
+            <h2 class="ax-card__title">存储后端</h2>
+            <p class="storage-table-head__hint">
+              <template v-if="currentBackend">
+                新上传写入「{{ currentBackend.name }}」；切换即时生效，无需重启。
+              </template>
+              <template v-else>尚未设置默认存储，请在下方选择一个存储并「设为默认」。</template>
+            </p>
+          </div>
+          <el-tag size="small" type="info" effect="plain">{{ backends.length }} 个</el-tag>
+        </div>
+        <div class="ax-table-scroll">
         <el-table :data="backends" style="width: 100%">
           <el-table-column label="名称" min-width="180">
             <template #default="{ row }">
@@ -634,12 +685,29 @@ onMounted(load)
       </div>
     </div>
 
-    <div class="ax-card table-card pool-card">
-      <div class="ax-card__head">
-        <h2 class="ax-card__title">存储池</h2>
-        <el-tag size="small" type="info" effect="plain">{{ pools.length }} 个</el-tag>
-      </div>
-      <div class="ax-table-scroll">
+    <template v-if="pools.length > 0">
+      <div class="ax-card table-card pool-card">
+        <div class="ax-card__head">
+          <div class="storage-table-head">
+            <h2 class="ax-card__title">存储池</h2>
+            <p class="storage-table-head__hint">
+              池只决定新对象写入哪个存储，已有图片仍从原存储读取。
+            </p>
+          </div>
+          <div class="storage-head-actions">
+            <el-tag size="small" type="info" effect="plain">{{ pools.length }} 个</el-tag>
+            <el-button
+              size="small"
+              :icon="Plus"
+              :disabled="!canCreatePool"
+              :title="canCreatePool ? '新建存储池' : '至少需要 2 个存储后端'"
+              @click="openPoolCreate"
+            >
+              新建存储池
+            </el-button>
+          </div>
+        </div>
+        <div class="ax-table-scroll">
         <el-table :data="pools" style="width: 100%" empty-text="暂无存储池">
           <el-table-column label="名称" min-width="180">
             <template #default="{ row }">
@@ -701,7 +769,30 @@ onMounted(load)
           </el-table-column>
         </el-table>
       </div>
+      </div>
+    </template>
+
+    <div v-else class="ax-card storage-pool-empty pool-card">
+      <span class="storage-pool-empty__badge">可选</span>
+      <div class="storage-pool-empty__text">
+        <h3 class="storage-pool-empty__title">还没有存储池</h3>
+        <p v-if="canCreatePool">
+          将多个存储组合成池，可按权重或优先级分流新上传；单个存储无需创建池。
+        </p>
+        <p v-else>
+          存储池用于在多个存储之间分流写入。再添加一个存储后，即可把两个存储组合成池。
+        </p>
+      </div>
+      <el-button
+        v-if="canCreatePool"
+        :icon="Plus"
+        @click="openPoolCreate"
+      >
+        新建存储池
+      </el-button>
+      <el-button v-else :icon="Plus" @click="openCreate">再添加一个存储</el-button>
     </div>
+    </template>
 
     <el-dialog
       v-model="poolDialogOpen"
@@ -954,6 +1045,165 @@ onMounted(load)
 <style scoped>
 .table-card {
   overflow: hidden;
+}
+
+.storage-help {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 var(--ax-space-3);
+  color: var(--ax-text-3);
+  border: 1px solid transparent;
+  border-radius: var(--ax-radius-sm);
+  font-size: var(--ax-text-sm);
+  font-weight: var(--ax-weight-medium);
+  transition:
+    color var(--ax-duration-fast) var(--ax-ease),
+    background-color var(--ax-duration-fast) var(--ax-ease);
+}
+
+.storage-help:hover {
+  color: var(--ax-text);
+  background: var(--ax-tint);
+}
+
+.storage-empty-help {
+  align-self: center;
+  color: var(--ax-text-3);
+  font-size: var(--ax-text-sm);
+}
+
+.storage-empty-help:hover {
+  color: var(--ax-accent-hover);
+}
+
+.storage-concepts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ax-space-3);
+  margin-bottom: var(--ax-space-4);
+  padding: var(--ax-space-3) var(--ax-space-4);
+  background: var(--ax-tint-weak);
+  border: 1px solid var(--ax-border-subtle);
+  border-radius: var(--ax-radius-md);
+}
+
+.storage-concept {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ax-space-2);
+  min-width: 0;
+}
+
+.storage-concept__step {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  color: var(--ax-accent-hover);
+  background: var(--ax-accent-soft);
+  border-radius: var(--ax-radius-full);
+  font-size: var(--ax-text-2xs);
+  font-weight: var(--ax-weight-semibold);
+}
+
+.storage-concept strong {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ax-text);
+  font-size: var(--ax-text-sm);
+  font-weight: var(--ax-weight-medium);
+}
+
+.storage-concept p {
+  margin-top: 2px;
+  color: var(--ax-text-4);
+  font-size: var(--ax-text-xs);
+}
+
+.storage-concept__arrow {
+  color: var(--ax-text-4);
+}
+
+.storage-concept__link {
+  margin-left: auto;
+  color: var(--ax-accent-hover);
+  font-size: var(--ax-text-sm);
+  white-space: nowrap;
+}
+
+.storage-table-head__hint {
+  margin-top: 2px;
+  color: var(--ax-text-4);
+  font-size: var(--ax-text-xs);
+}
+
+.storage-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ax-space-2);
+}
+
+.storage-pool-empty {
+  display: flex;
+  align-items: center;
+  gap: var(--ax-space-4);
+  padding: var(--ax-space-5);
+}
+
+.storage-pool-empty__badge {
+  flex: none;
+  padding: 3px 8px;
+  color: var(--ax-text-3);
+  background: var(--ax-tint);
+  border-radius: var(--ax-radius-full);
+  font-size: var(--ax-text-2xs);
+  font-weight: var(--ax-weight-medium);
+}
+
+.storage-pool-empty__text {
+  flex: 1;
+  min-width: 0;
+}
+
+.storage-pool-empty__title {
+  color: var(--ax-text);
+  font-size: var(--ax-text-base);
+  font-weight: var(--ax-weight-medium);
+}
+
+.storage-pool-empty__text p {
+  margin-top: var(--ax-space-1);
+  color: var(--ax-text-3);
+  font-size: var(--ax-text-sm);
+}
+
+.storage-pool-empty > .el-button {
+  flex: none;
+}
+
+@media (max-width: 768px) {
+  .storage-concept__arrow {
+    display: none;
+  }
+
+  .storage-concept__link {
+    margin-left: 0;
+  }
+
+  .storage-pool-empty {
+    flex-wrap: wrap;
+  }
+
+  .storage-pool-empty > .el-button {
+    margin-left: 0;
+  }
 }
 
 .storage-name {
