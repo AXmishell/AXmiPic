@@ -40,6 +40,17 @@ const stageEl = ref<HTMLElement | null>(null)
 const dpr = ref(typeof window !== 'undefined' && window.devicePixelRatio ? window.devicePixelRatio : 1)
 
 const start = { x: 0, y: 0, ox: 0, oy: 0 }
+// 触摸手势：记录活动指针，支持双指缩放与单指平移/左右滑动切换。
+const activePointers = new Map<number, { x: number; y: number }>()
+const pinchState = {
+  active: false,
+  startDistance: 0,
+  startScale: 1,
+  anchorX: 0,
+  anchorY: 0,
+}
+const swipeState = { tracking: false, x: 0, y: 0, horizontal: false }
+const SWIPE_THRESHOLD = 56
 const MIN_SCALE = 0.05
 const MAX_SCALE = 8
 
@@ -50,7 +61,13 @@ const title = computed(
   () => current.value?.original_name || current.value?.filename || current.value?.key || '',
 )
 // 已保存的默认显示模式：fit=适应窗口，actual=原始像素 1:1。
-const defaultMode = computed<'fit' | 'actual'>(() => auth.preferences?.viewer_mode ?? 'actual')
+// 手机屏幕较窄，未显式设置偏好时默认适应窗口，避免一打开就是超大原图。
+const defaultMode = computed<'fit' | 'actual'>(() => {
+  const saved = auth.preferences?.viewer_mode
+  if (saved) return saved
+  const mobile = typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches
+  return mobile ? 'fit' : 'actual'
+})
 
 // 渲染尺寸（px）= 原图像素 × 缩放。默认 scale=1，即 100% 按原始像素尺寸展示。
 const renderedW = computed(() => naturalW.value * scale.value)
@@ -84,6 +101,7 @@ function setNatural(): void {
 }
 
 function resetView(): void {
+  cancelGestures()
   setNatural()
   ready.value = false
   failed.value = false
@@ -205,31 +223,152 @@ function onWheel(event: WheelEvent): void {
   clampOffset()
 }
 
+/** 客户端坐标转换为相对舞台中心的坐标。 */
+function stagePoint(clientX: number, clientY: number): { x: number; y: number } {
+  const rect = stageEl.value?.getBoundingClientRect()
+  if (!rect) return { x: 0, y: 0 }
+  return {
+    x: clientX - (rect.left + rect.width / 2),
+    y: clientY - (rect.top + rect.height / 2),
+  }
+}
+
+/** 清理进行中的触摸手势（不重置 moved，避免滑动切换后紧跟的 click 关闭查看器）。 */
+function cancelGestures(): void {
+  activePointers.clear()
+  pinchState.active = false
+  swipeState.tracking = false
+  dragging.value = false
+}
+
+function startPinch(): void {
+  const points = [...activePointers.values()]
+  if (points.length < 2) return
+  const [a, b] = points
+  const midX = (a.x + b.x) / 2
+  const midY = (a.y + b.y) / 2
+  const point = stagePoint(midX, midY)
+  pinchState.active = true
+  pinchState.startDistance = Math.max(1, Math.hypot(a.x - b.x, a.y - b.y))
+  pinchState.startScale = scale.value
+  pinchState.anchorX = (point.x - offsetX.value) / scale.value
+  pinchState.anchorY = (point.y - offsetY.value) / scale.value
+  dragging.value = false
+  swipeState.tracking = false
+  moved = true
+}
+
 function onPointerDown(event: PointerEvent): void {
-  // 交互控件（左右切换按钮等）不参与拖拽，也不捕获指针，否则 click 会被
+  // 交互控件（左右切换按钮等）不参与手势，也不捕获指针，否则 click 会被
   // 重定向到舞台，导致按钮失效并误触发关闭。
-  if (!canPan.value) return
   if ((event.target as HTMLElement | null)?.closest('button')) return
-  dragging.value = true
-  moved = false
-  start.x = event.clientX
-  start.y = event.clientY
-  start.ox = offsetX.value
-  start.oy = offsetY.value
+  if (event.pointerType === 'mouse' && event.button !== 0) return
+
   ;(event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId)
+  activePointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
+
+  if (activePointers.size === 2) {
+    startPinch()
+    return
+  }
+  if (activePointers.size !== 1) return
+
+  moved = false
+  if (canPan.value) {
+    dragging.value = true
+    start.x = event.clientX
+    start.y = event.clientY
+    start.ox = offsetX.value
+    start.oy = offsetY.value
+    return
+  }
+  // 图片完整显示时，单指左右滑动用于切换上一张/下一张。
+  swipeState.tracking = true
+  swipeState.x = event.clientX
+  swipeState.y = event.clientY
+  swipeState.horizontal = false
 }
 
 function onPointerMove(event: PointerEvent): void {
-  if (!dragging.value) return
-  const dx = event.clientX - start.x
-  const dy = event.clientY - start.y
-  if (Math.abs(dx) + Math.abs(dy) > 4) moved = true
-  offsetX.value = start.ox + dx
-  offsetY.value = start.oy + dy
-  clampOffset()
+  const pointer = activePointers.get(event.pointerId)
+  if (!pointer) return
+  pointer.x = event.clientX
+  pointer.y = event.clientY
+
+  if (pinchState.active && activePointers.size >= 2) {
+    const points = [...activePointers.values()]
+    const [a, b] = points
+    const distance = Math.max(1, Math.hypot(a.x - b.x, a.y - b.y))
+    const nextScale = Math.min(
+      MAX_SCALE,
+      Math.max(MIN_SCALE, pinchState.startScale * (distance / pinchState.startDistance)),
+    )
+    const point = stagePoint((a.x + b.x) / 2, (a.y + b.y) / 2)
+    // 以双指中点为锚点缩放，同时允许双指整体移动来平移图片。
+    scale.value = nextScale
+    offsetX.value = point.x - pinchState.anchorX * nextScale
+    offsetY.value = point.y - pinchState.anchorY * nextScale
+    clampOffset()
+    moved = true
+    return
+  }
+
+  if (dragging.value) {
+    const dx = event.clientX - start.x
+    const dy = event.clientY - start.y
+    if (Math.abs(dx) + Math.abs(dy) > 4) moved = true
+    offsetX.value = start.ox + dx
+    offsetY.value = start.oy + dy
+    clampOffset()
+    return
+  }
+
+  if (swipeState.tracking) {
+    const dx = event.clientX - swipeState.x
+    const dy = event.clientY - swipeState.y
+    if (Math.abs(dx) + Math.abs(dy) > 8) moved = true
+    if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy)) {
+      swipeState.horizontal = true
+    }
+  }
 }
 
-function onPointerUp(): void {
+function onPointerUp(event: PointerEvent): void {
+  activePointers.delete(event.pointerId)
+  const cancelled = event.type === 'pointercancel'
+
+  if (pinchState.active) {
+    if (activePointers.size < 2) {
+      pinchState.active = false
+      // 双指中抬起一根后，剩下的一根手指继续平移。
+      if (!cancelled && activePointers.size === 1 && canPan.value) {
+        const point = [...activePointers.values()][0]
+        dragging.value = true
+        start.x = point.x
+        start.y = point.y
+        start.ox = offsetX.value
+        start.oy = offsetY.value
+      } else {
+        dragging.value = false
+      }
+    }
+    return
+  }
+
+  if (swipeState.tracking) {
+    const dx = event.clientX - swipeState.x
+    const dy = event.clientY - swipeState.y
+    const shouldSwitch =
+      !cancelled &&
+      swipeState.horizontal &&
+      Math.abs(dx) >= SWIPE_THRESHOLD &&
+      Math.abs(dx) > Math.abs(dy) * 1.2
+    swipeState.tracking = false
+    if (shouldSwitch) {
+      moved = true
+      go(dx > 0 ? -1 : 1)
+    }
+  }
   dragging.value = false
 }
 
@@ -331,12 +470,14 @@ function watchDprMedia(): void {
 
 watch(open, async (value) => {
   document.body.style.overflow = value ? 'hidden' : ''
+  moved = false
   if (value) {
     resetView()
     await nextTick()
     measureStage()
     setupObserver()
   } else {
+    cancelGestures()
     teardownObserver()
   }
 })
@@ -355,6 +496,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown)
   window.removeEventListener('resize', syncDpr)
   dprMedia?.removeEventListener('change', syncDpr)
+  cancelGestures()
   teardownObserver()
   cancelClose()
   document.body.style.overflow = ''
@@ -544,11 +686,14 @@ onBeforeUnmount(() => {
   inset: 0;
   z-index: var(--ax-z-modal, 3000);
   display: grid;
-  grid-template-columns: 1fr 320px;
-  grid-template-rows: auto 1fr;
+  /* 使用 minmax(0, 1fr)：默认的 1fr 会被工具栏的 min-content 撑宽，移动端
+     会导致舞台超出视口、图片看起来偏向右侧。 */
+  grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-rows: auto minmax(0, 1fr);
   grid-template-areas:
     'bar info'
     'stage info';
+  overflow: hidden;
   color: #f5f5f5;
   background: rgba(8, 8, 10, 0.96);
   backdrop-filter: blur(4px);
@@ -557,14 +702,18 @@ onBeforeUnmount(() => {
 .ax-viewer__bar {
   grid-area: bar;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: var(--ax-space-4);
+  gap: 8px var(--ax-space-4);
+  min-width: 0;
   padding: 10px 16px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .ax-viewer__title {
+  flex: 1 1 160px;
+  min-width: 0;
   margin: 0;
   overflow: hidden;
   color: #fff;
@@ -576,9 +725,12 @@ onBeforeUnmount(() => {
 
 .ax-viewer__tools {
   display: flex;
-  flex: none;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: var(--ax-space-2);
+  min-width: 0;
 }
 
 .ax-viewer__counter,
@@ -599,7 +751,12 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
+  min-width: 0;
+  min-height: 0;
   overflow: hidden;
+  /* 交给我们自己处理拖动、双指缩放与滑动切换，避免触发页面滚动/浏览器缩放。 */
+  touch-action: none;
+  overscroll-behavior: contain;
 }
 
 .ax-viewer__stage.is-zoomed {
@@ -617,6 +774,9 @@ onBeforeUnmount(() => {
   object-fit: contain;
   opacity: 0;
   user-select: none;
+  transform-origin: center center;
+  touch-action: none;
+  -webkit-user-drag: none;
   transition: opacity var(--ax-duration) var(--ax-ease);
   will-change: transform;
 }
@@ -741,16 +901,54 @@ onBeforeUnmount(() => {
 
 @media (max-width: 768px) {
   .ax-viewer {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
       'bar'
       'stage'
       'info';
-    grid-template-rows: auto 1fr auto;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+  }
+
+  .ax-viewer__bar {
+    gap: 6px 10px;
+    padding: 8px 10px;
+  }
+
+  .ax-viewer__title {
+    flex-basis: 100%;
+  }
+
+  .ax-viewer__tools {
+    flex: 1 1 100%;
+    flex-wrap: nowrap;
+    justify-content: space-between;
+    gap: 2px;
+  }
+
+  .ax-viewer__tools .el-button {
+    margin-left: 0;
+  }
+
+  .ax-viewer__zoom {
+    min-width: 38px;
+  }
+
+  .ax-viewer__nav {
+    width: 38px;
+    height: 38px;
+  }
+
+  .ax-viewer__nav.is-prev {
+    left: 8px;
+  }
+
+  .ax-viewer__nav.is-next {
+    right: 8px;
   }
 
   .ax-viewer__info {
-    max-height: 38vh;
+    max-height: 32vh;
+    padding: var(--ax-space-3);
     border-top: 1px solid rgba(255, 255, 255, 0.08);
     border-left: none;
   }
