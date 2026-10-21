@@ -2,6 +2,7 @@ import { request } from './client'
 import type {
   AdminStats,
   Credentials,
+  PageData,
   Policy,
   PolicyInput,
   RoleGroup,
@@ -16,9 +17,20 @@ export function fetchStats(): Promise<AdminStats> {
   return request<AdminStats>({ method: 'GET', url: '/admin/stats' })
 }
 
-/** 普通账号。 */
-export function listCustomers(): Promise<User[]> {
-  return request<User[]>({ method: 'GET', url: '/admin/customers' })
+/** 普通用户列表的分页与筛选参数。 */
+export interface ListCustomersParams {
+  page?: number
+  page_size?: number
+  keyword?: string
+  status?: 'enabled' | 'disabled'
+  role_group_id?: string
+  /** newest（默认）| oldest | username | usage */
+  sort?: string
+}
+
+/** 普通账号（服务端分页）。 */
+export function listCustomers(params: ListCustomersParams = {}): Promise<PageData<User>> {
+  return request<PageData<User>>({ method: 'GET', url: '/admin/customers', params })
 }
 
 /** 特权账号。 */

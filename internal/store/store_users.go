@@ -133,6 +133,20 @@ func (r *Repository) GetAccountByEmail(ctx context.Context, role AccountRole, em
 	return accountFromCustomer(&customer), nil
 }
 
+// CustomerListOptions 约束普通用户的列表查询。
+type CustomerListOptions struct {
+	Offset int
+	Limit  int
+	// Keyword 非空时按用户名或邮箱进行模糊匹配。
+	Keyword string
+	// Status 为 enabled 或 disabled；空字符串表示全部。
+	Status string
+	// RoleGroupID 非空时仅返回该角色组的用户。
+	RoleGroupID string
+	// Sort 为排序方式：newest（默认）、oldest、username、usage。
+	Sort string
+}
+
 // ListCustomers 返回按创建时间排序的所有客户账户。
 func (r *Repository) ListCustomers(ctx context.Context) ([]Account, error) {
 	var customers []Customer
@@ -144,6 +158,60 @@ func (r *Repository) ListCustomers(ctx context.Context) ([]Account, error) {
 		accounts = append(accounts, *accountFromCustomer(&customers[i]))
 	}
 	return accounts, nil
+}
+
+// ListCustomersPaged 返回一页普通用户以及过滤后的记录总数。
+func (r *Repository) ListCustomersPaged(ctx context.Context, opts CustomerListOptions) ([]Account, int64, error) {
+	build := func() *gorm.DB {
+		query := r.db.WithContext(ctx).Model(&Customer{}).Where("is_guest = ?", false)
+		if keyword := strings.TrimSpace(opts.Keyword); keyword != "" {
+			like := "%" + keyword + "%"
+			query = query.Where("username LIKE ? OR email LIKE ?", like, like)
+		}
+		switch opts.Status {
+		case "enabled":
+			query = query.Where("disabled = ?", false)
+		case "disabled":
+			query = query.Where("disabled = ?", true)
+		}
+		if roleGroupID := strings.TrimSpace(opts.RoleGroupID); roleGroupID != "" {
+			query = query.Where("role_group_id = ?", roleGroupID)
+		}
+		return query
+	}
+
+	var total int64
+	if err := build().Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("store: count customers: %w", err)
+	}
+
+	listQuery := build().Order(customerOrderClause(opts.Sort))
+	if opts.Limit > 0 {
+		listQuery = listQuery.Offset(opts.Offset).Limit(opts.Limit)
+	}
+	var customers []Customer
+	if err := listQuery.Find(&customers).Error; err != nil {
+		return nil, 0, fmt.Errorf("store: list customers: %w", err)
+	}
+	accounts := make([]Account, 0, len(customers))
+	for i := range customers {
+		accounts = append(accounts, *accountFromCustomer(&customers[i]))
+	}
+	return accounts, total, nil
+}
+
+// customerOrderClause 将排序键映射为固定的 SQL 片段（白名单，避免注入）。
+func customerOrderClause(sort string) string {
+	switch strings.ToLower(strings.TrimSpace(sort)) {
+	case "oldest":
+		return "created_at ASC"
+	case "username":
+		return "username ASC"
+	case "usage":
+		return "used_bytes DESC"
+	default:
+		return "created_at DESC"
+	}
 }
 
 // ListAdmins 返回按创建时间排序的所有管理员账户。

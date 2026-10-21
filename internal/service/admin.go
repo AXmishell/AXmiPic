@@ -134,6 +134,32 @@ func (s *AdminService) ListCustomers(ctx context.Context) ([]UserDTO, error) {
 	return toUserDTOs(accounts), nil
 }
 
+// CustomerQuery 是普通用户列表的分页与筛选条件。
+type CustomerQuery struct {
+	Offset      int
+	Limit       int
+	Keyword     string
+	Status      string
+	RoleGroupID string
+	Sort        string
+}
+
+// SearchCustomers 返回一页普通用户与过滤后的总数。
+func (s *AdminService) SearchCustomers(ctx context.Context, q CustomerQuery) ([]UserDTO, int64, error) {
+	accounts, total, err := s.repo.ListCustomersPaged(ctx, store.CustomerListOptions{
+		Offset:      q.Offset,
+		Limit:       q.Limit,
+		Keyword:     q.Keyword,
+		Status:      q.Status,
+		RoleGroupID: q.RoleGroupID,
+		Sort:        q.Sort,
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("list customers: %w", err)
+	}
+	return toUserDTOs(accounts), total, nil
+}
+
 // ListAdmins 返回所有管理员账户。
 func (s *AdminService) ListAdmins(ctx context.Context) ([]UserDTO, error) {
 	accounts, err := s.repo.ListAdmins(ctx)

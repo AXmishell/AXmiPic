@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -19,14 +20,63 @@ func (h *Handler) adminStats(w http.ResponseWriter, r *http.Request) {
 	writeOK(w, stats)
 }
 
+// adminCustomerPage 是普通用户列表的分页响应。
+type adminCustomerPage struct {
+	Items    []service.UserDTO `json:"items"`
+	Total    int64             `json:"total"`
+	Page     int               `json:"page"`
+	PageSize int               `json:"page_size"`
+}
+
 // adminCustomers 列出普通账户。
+//
+// 未提供任何分页/筛选参数时保持旧的数组响应（Go SDK 依赖该形状）；提供
+// page、page_size、keyword、status、role_group_id 或 sort 任一参数时返回
+// 分页对象。
 func (h *Handler) adminCustomers(w http.ResponseWriter, r *http.Request) {
-	users, err := h.admin.ListCustomers(r.Context())
+	query := r.URL.Query()
+	paged := query.Has("page") || query.Has("page_size") || query.Has("keyword") ||
+		query.Has("status") || query.Has("role_group_id") || query.Has("sort")
+	if !paged {
+		users, err := h.admin.ListCustomers(r.Context())
+		if err != nil {
+			h.fail(w, r, err)
+			return
+		}
+		writeOK(w, users)
+		return
+	}
+
+	const defaultPageSize, maxPageSize = 20, 200
+	page := queryInt(r, "page")
+	if page < 1 {
+		page = 1
+	}
+	pageSize := queryInt(r, "page_size")
+	if pageSize <= 0 {
+		pageSize = defaultPageSize
+	}
+	if pageSize > maxPageSize {
+		pageSize = maxPageSize
+	}
+
+	status := strings.ToLower(strings.TrimSpace(query.Get("status")))
+	if status != "enabled" && status != "disabled" {
+		status = ""
+	}
+	items, total, err := h.admin.SearchCustomers(r.Context(), service.CustomerQuery{
+		Offset:      (page - 1) * pageSize,
+		Limit:       pageSize,
+		Keyword:     strings.TrimSpace(query.Get("keyword")),
+		Status:      status,
+		RoleGroupID: strings.TrimSpace(query.Get("role_group_id")),
+		Sort:        strings.TrimSpace(query.Get("sort")),
+	})
 	if err != nil {
 		h.fail(w, r, err)
 		return
 	}
-	writeOK(w, users)
+	writeOK(w, adminCustomerPage{Items: items, Total: total, Page: page, PageSize: pageSize})
 }
 
 // adminAdmins 列出特权账户。

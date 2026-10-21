@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import { Delete, Plus, Refresh, Search } from '@element-plus/icons-vue'
@@ -37,6 +37,14 @@ const errorMessage = ref('')
 const search = ref('')
 const pendingIds = ref<Set<string>>(new Set())
 
+// 服务端分页与筛选（普通用户标签页）。
+const page = ref(1)
+const pageSize = ref(20)
+const customerTotal = ref(0)
+const statusFilter = ref<'' | 'enabled' | 'disabled'>('')
+const roleGroupFilter = ref('')
+const sort = ref<'newest' | 'oldest' | 'username' | 'usage'>('newest')
+
 // 新建管理员对话框
 const createOpen = ref(false)
 const creating = ref(false)
@@ -53,10 +61,13 @@ const createRules: FormRules = {
 function filter(list: UserModel[]): UserModel[] {
   const keyword = search.value.trim().toLowerCase()
   if (!keyword) return list
-  return list.filter((user) => user.username.toLowerCase().includes(keyword))
+  return list.filter(
+    (user) =>
+      user.username.toLowerCase().includes(keyword) ||
+      (user.email ?? '').toLowerCase().includes(keyword),
+  )
 }
 
-const filteredCustomers = computed(() => filter(customers.value))
 const filteredAdmins = computed(() => filter(admins.value))
 const totalCount = computed(() => customers.value.length + admins.value.length)
 
@@ -64,16 +75,36 @@ function isSelf(user: UserModel): boolean {
   return auth.user?.id === user.id
 }
 
+function customerQuery(): Parameters<typeof listCustomers>[0] {
+  return {
+    page: page.value,
+    page_size: pageSize.value,
+    keyword: search.value.trim() || undefined,
+    status: statusFilter.value || undefined,
+    role_group_id: roleGroupFilter.value || undefined,
+    sort: sort.value,
+  }
+}
+
+async function loadCustomers(): Promise<void> {
+  const data = await listCustomers(customerQuery())
+  customers.value = data.items ?? []
+  customerTotal.value = data.total ?? 0
+  if (customers.value.length === 0 && page.value > 1 && customerTotal.value > 0) {
+    page.value -= 1
+    await loadCustomers()
+  }
+}
+
 async function load(): Promise<void> {
   loading.value = true
   errorMessage.value = ''
   try {
-    const [customerList, adminList, groupList] = await Promise.all([
-      listCustomers(),
+    const [, adminList, groupList] = await Promise.all([
+      loadCustomers(),
       listAdmins(),
       listRoleGroups(),
     ])
-    customers.value = customerList ?? []
     admins.value = adminList ?? []
     roleGroups.value = groupList ?? []
   } catch (error) {
@@ -82,6 +113,41 @@ async function load(): Promise<void> {
     loading.value = false
   }
 }
+
+function onPageChange(value: number): void {
+  page.value = value
+  void loadCustomers().catch((error) => {
+    ElMessage.error(toApiError(error).message)
+  })
+}
+
+function onSizeChange(value: number): void {
+  pageSize.value = value
+  page.value = 1
+  void loadCustomers().catch((error) => {
+    ElMessage.error(toApiError(error).message)
+  })
+}
+
+let searchTimer: number | undefined
+watch(search, () => {
+  if (searchTimer !== undefined) window.clearTimeout(searchTimer)
+  searchTimer = window.setTimeout(() => {
+    if (activeTab.value !== 'customers') return
+    page.value = 1
+    void loadCustomers().catch((error) => {
+      ElMessage.error(toApiError(error).message)
+    })
+  }, 300)
+})
+
+watch([statusFilter, roleGroupFilter, sort], () => {
+  if (activeTab.value !== 'customers') return
+  page.value = 1
+  void loadCustomers().catch((error) => {
+    ElMessage.error(toApiError(error).message)
+  })
+})
 
 function openCreate(): void {
   createForm.value = { username: '', password: '' }
@@ -120,6 +186,10 @@ async function patch(
     const updated = await run(target.id, payload)
     list.value = list.value.map((user) => (user.id === updated.id ? updated : user))
     ElMessage.success('用户信息已更新')
+    // 状态/角色组筛选生效时，变更后需重新取当前页，避免残留不匹配的行。
+    if (list === customers && (statusFilter.value || roleGroupFilter.value)) {
+      await loadCustomers()
+    }
   } catch (error) {
     ElMessage.error(toApiError(error).message)
   } finally {
@@ -180,7 +250,8 @@ async function removeUser(target: UserModel, isAdmin: boolean): Promise<void> {
       admins.value = admins.value.filter((user) => user.id !== target.id)
     } else {
       await deleteCustomer(target.id)
-      customers.value = customers.value.filter((user) => user.id !== target.id)
+      if (customers.value.length === 1 && page.value > 1) page.value -= 1
+      await loadCustomers()
     }
     ElMessage.success('账号已删除')
   } catch (error) {
@@ -200,7 +271,7 @@ onMounted(load)
         <el-input
           v-model="search"
           class="user-search"
-          placeholder="搜索用户名"
+          placeholder="搜索用户名 / 邮箱"
           clearable
           :prefix-icon="Search"
         />
@@ -216,15 +287,41 @@ onMounted(load)
     </div>
 
     <el-tabs v-else v-model="activeTab" class="user-tabs">
-      <el-tab-pane :label="`普通用户 (${customers.length})`" name="customers">
+      <el-tab-pane :label="`普通用户 (${customerTotal})`" name="customers">
+        <div class="user-toolbar">
+          <el-select v-model="statusFilter" placeholder="全部状态" clearable class="user-toolbar__select">
+            <el-option label="正常" value="enabled" />
+            <el-option label="已禁用" value="disabled" />
+          </el-select>
+          <el-select v-model="roleGroupFilter" placeholder="全部角色组" clearable class="user-toolbar__select">
+            <el-option
+              v-for="group in roleGroups"
+              :key="group.id"
+              :label="group.name"
+              :value="group.id"
+            />
+          </el-select>
+          <el-select v-model="sort" class="user-toolbar__sort">
+            <el-option label="注册时间（新→旧）" value="newest" />
+            <el-option label="注册时间（旧→新）" value="oldest" />
+            <el-option label="用户名 A→Z" value="username" />
+            <el-option label="用量（高→低）" value="usage" />
+          </el-select>
+          <span class="user-toolbar__total">共 {{ customerTotal }} 位用户</span>
+        </div>
+
         <EmptyState
-          v-if="filteredCustomers.length === 0"
+          v-if="customers.length === 0"
           title="暂无普通用户"
-          description="用户注册后会显示在这里。"
+          :description="
+            search.trim() || statusFilter || roleGroupFilter
+              ? '没有符合当前筛选条件的用户。'
+              : '用户注册后会显示在这里。'
+          "
         />
         <div v-else class="ax-card table-card">
           <div class="ax-table-scroll">
-            <el-table :data="filteredCustomers" style="width: 100%">
+            <el-table :data="customers" style="width: 100%">
               <el-table-column label="用户" min-width="200">
                 <template #default="{ row }">
                   <div class="user-cell">
@@ -320,6 +417,18 @@ onMounted(load)
               </el-table-column>
             </el-table>
           </div>
+        </div>
+        <div v-if="customerTotal > 0" class="user-pagination">
+          <el-pagination
+            background
+            layout="sizes, prev, pager, next, jumper"
+            :total="customerTotal"
+            :current-page="page"
+            :page-size="pageSize"
+            :page-sizes="[20, 50, 100]"
+            @current-change="onPageChange"
+            @size-change="onSizeChange"
+          />
         </div>
       </el-tab-pane>
 
@@ -433,6 +542,34 @@ onMounted(load)
 
 .user-search {
   width: 220px;
+}
+
+.user-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ax-space-2);
+  margin-bottom: var(--ax-space-3);
+}
+
+.user-toolbar__select {
+  width: 150px;
+}
+
+.user-toolbar__sort {
+  width: 190px;
+}
+
+.user-toolbar__total {
+  margin-left: auto;
+  color: var(--ax-text-4);
+  font-size: var(--ax-text-xs);
+}
+
+.user-pagination {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--ax-space-3);
 }
 
 .user-cell {
