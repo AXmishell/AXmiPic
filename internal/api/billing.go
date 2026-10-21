@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -194,12 +195,30 @@ func (h *Handler) createOrder(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) listOrders(w http.ResponseWriter, r *http.Request) {
-	orders, err := h.billing.ListOrders(r.Context(), principalOf(r))
+	query := r.URL.Query()
+	if !query.Has("page") && !query.Has("page_size") {
+		orders, err := h.billing.ListOrders(r.Context(), principalOf(r))
+		if err != nil {
+			h.fail(w, r, err)
+			return
+		}
+		writeOK(w, orders)
+		return
+	}
+
+	page, pageSize := paginationParams(r)
+	items, total, err := h.billing.SearchOrders(r.Context(), principalOf(r), service.OrderQuery{
+		Status: strings.ToLower(strings.TrimSpace(query.Get("status"))),
+		Offset: (page - 1) * pageSize,
+		Limit:  pageSize,
+	})
 	if err != nil {
 		h.fail(w, r, err)
 		return
 	}
-	writeOK(w, orders)
+	writeOK(w, pageResponse[service.OrderDTO]{
+		Items: items, Total: total, Page: page, PageSize: pageSize,
+	})
 }
 
 // payOrder 完成一笔订单的支付：普通用户仅可完成 mock（开发用）订单，管理员
@@ -262,12 +281,30 @@ func (h *Handler) createTicket(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) listTickets(w http.ResponseWriter, r *http.Request) {
-	tickets, err := h.billing.ListTickets(r.Context(), principalOf(r), r.URL.Query().Get("status"))
+	query := r.URL.Query()
+	if !query.Has("page") && !query.Has("page_size") {
+		tickets, err := h.billing.ListTickets(r.Context(), principalOf(r), query.Get("status"))
+		if err != nil {
+			h.fail(w, r, err)
+			return
+		}
+		writeOK(w, tickets)
+		return
+	}
+
+	page, pageSize := paginationParams(r)
+	items, total, err := h.billing.SearchTickets(r.Context(), principalOf(r), service.TicketQuery{
+		Status: strings.ToLower(strings.TrimSpace(query.Get("status"))),
+		Offset: (page - 1) * pageSize,
+		Limit:  pageSize,
+	})
 	if err != nil {
 		h.fail(w, r, err)
 		return
 	}
-	writeOK(w, tickets)
+	writeOK(w, pageResponse[service.TicketDTO]{
+		Items: items, Total: total, Page: page, PageSize: pageSize,
+	})
 }
 
 func (h *Handler) getTicket(w http.ResponseWriter, r *http.Request) {

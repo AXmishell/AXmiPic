@@ -543,6 +543,35 @@ func (s *BillingService) ListOrders(ctx context.Context, principal *auth.Princip
 	return dtos, nil
 }
 
+// OrderQuery 是订单列表的分页与状态过滤条件。
+type OrderQuery struct {
+	Status string
+	Offset int
+	Limit  int
+}
+
+// SearchOrders 返回一页订单；普通用户只能看到自己的订单。
+func (s *BillingService) SearchOrders(ctx context.Context, principal *auth.Principal, q OrderQuery) ([]OrderDTO, int64, error) {
+	switch q.Status {
+	case "", "pending", "paid", "cancelled":
+	default:
+		return nil, 0, fmt.Errorf("%w: unknown order status %q", ErrInvalidInput, q.Status)
+	}
+	userID := ""
+	if !principal.IsAdmin() {
+		userID = principal.UserID
+	}
+	orders, total, err := s.repo.ListOrdersPaged(ctx, userID, q.Status, q.Offset, q.Limit)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list orders: %w", err)
+	}
+	dtos := make([]OrderDTO, 0, len(orders))
+	for i := range orders {
+		dtos = append(dtos, *orderToDTO(&orders[i]))
+	}
+	return dtos, total, nil
+}
+
 // PayOrder 完成一笔订单的支付并发放权益。为避免绕过真实支付，普通用户只能
 // 完成 mock（仅开发用）订单；manual 订单需由管理员核销，alipay/wechat 订单
 // 只能由对应的支付回调确认。
@@ -745,6 +774,38 @@ func (s *BillingService) ListTickets(ctx context.Context, principal *auth.Princi
 		dtos = append(dtos, *dto)
 	}
 	return dtos, nil
+}
+
+// TicketQuery 是工单列表的分页与状态过滤条件。
+type TicketQuery struct {
+	Status string
+	Offset int
+	Limit  int
+}
+
+// SearchTickets 返回一页工单；普通用户只能看到自己的工单。
+func (s *BillingService) SearchTickets(ctx context.Context, principal *auth.Principal, q TicketQuery) ([]TicketDTO, int64, error) {
+	switch q.Status {
+	case "", "open", "answered", "closed":
+	default:
+		return nil, 0, fmt.Errorf("%w: unknown ticket status %q", ErrInvalidInput, q.Status)
+	}
+	userID := ""
+	if !principal.IsAdmin() {
+		userID = principal.UserID
+	}
+	tickets, total, err := s.repo.ListTicketsPaged(ctx, userID, q.Status, q.Offset, q.Limit)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list tickets: %w", err)
+	}
+	dtos := make([]TicketDTO, 0, len(tickets))
+	names := s.usernamesFor(ctx, tickets)
+	for i := range tickets {
+		dto := ticketToDTO(&tickets[i])
+		dto.Username = names[tickets[i].UserID]
+		dtos = append(dtos, *dto)
+	}
+	return dtos, total, nil
 }
 
 // GetTicket 返回单个工单及其消息，并强制校验访问权限。

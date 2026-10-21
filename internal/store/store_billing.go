@@ -146,6 +146,30 @@ func (r *Repository) ListOrders(ctx context.Context) ([]Order, error) {
 	return orders, nil
 }
 
+// ListOrdersPaged 返回一页订单与过滤后的总数。userID 非空时只返回该用户的订单，
+// status 非空时按状态过滤。
+func (r *Repository) ListOrdersPaged(ctx context.Context, userID, status string, offset, limit int) ([]Order, int64, error) {
+	build := func() *gorm.DB {
+		query := r.db.WithContext(ctx).Model(&Order{})
+		if userID != "" {
+			query = query.Where("user_id = ?", userID)
+		}
+		if status != "" {
+			query = query.Where("status = ?", status)
+		}
+		return query
+	}
+	var total int64
+	if err := build().Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("store: count orders: %w", err)
+	}
+	var orders []Order
+	if err := build().Order("created_at DESC").Offset(offset).Limit(limit).Find(&orders).Error; err != nil {
+		return nil, 0, fmt.Errorf("store: list orders: %w", err)
+	}
+	return orders, total, nil
+}
+
 // MarkOrderPaid 在订单尚未支付时将其标记为已支付，返回更新是否生效。
 func (r *Repository) MarkOrderPaid(ctx context.Context, id, provider, tradeNo string, paidAt time.Time) (bool, error) {
 	result := r.db.WithContext(ctx).Model(&Order{}).
@@ -383,6 +407,29 @@ func (r *Repository) ListTickets(ctx context.Context, status string) ([]Ticket, 
 		return nil, fmt.Errorf("store: list tickets: %w", err)
 	}
 	return tickets, nil
+}
+
+// ListTicketsPaged 返回一页工单与过滤后的总数。userID 非空时只返回该用户的工单。
+func (r *Repository) ListTicketsPaged(ctx context.Context, userID, status string, offset, limit int) ([]Ticket, int64, error) {
+	build := func() *gorm.DB {
+		query := r.db.WithContext(ctx).Model(&Ticket{})
+		if userID != "" {
+			query = query.Where("user_id = ?", userID)
+		}
+		if status != "" {
+			query = query.Where("status = ?", status)
+		}
+		return query
+	}
+	var total int64
+	if err := build().Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("store: count tickets: %w", err)
+	}
+	var tickets []Ticket
+	if err := build().Order("updated_at DESC").Offset(offset).Limit(limit).Find(&tickets).Error; err != nil {
+		return nil, 0, fmt.Errorf("store: list tickets: %w", err)
+	}
+	return tickets, total, nil
 }
 
 // UpdateTicketStatus 更新工单状态。

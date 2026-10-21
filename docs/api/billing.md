@@ -17,4 +17,22 @@
 
 套餐字段：`price_cents`（价格，分）、`duration_days`（0 为永久）、`quota_mb`（0 为不限）、`role_group_id`（购买后应用的角色组，可空）、`active`、`sort_order`。优惠券的 `type` 取值为 `fixed`（金额，分）或 `percent`（百分比），并支持 `min_amount_cents` 门槛、`max_uses` 总量、`per_user_limit` 每用户限次与 `expires_at`。下单请求体为 `{"plan_id":"…","coupon_code":"…","provider":"manual"}`；支付成功（含免费订单）后自动应用套餐的配额与角色组。
 
+## 分页
+
+`GET /orders` 与 `GET /tickets` 支持服务端分页：
+
+| 参数 | 说明 |
+|------|------|
+| `page` | 页码，从 1 开始，默认 1 |
+| `page_size` | 每页条数，默认 20，最大 200 |
+| `status` | 订单：`pending` / `paid` / `cancelled`；工单：`open` / `answered` / `closed` |
+
+传入 `page` 或 `page_size` 时返回分页对象；**不传分页参数时仍返回旧数组**，以兼容既有 SDK：
+
+```json
+{ "items": [], "total": 0, "page": 1, "page_size": 20 }
+```
+
+管理员调用这两个接口时返回全站数据，普通用户只能看到自己的订单/工单。
+
 当 `duration_days` 大于 0 时，购买会从当前到期时间（未到期时）或现在起顺延有效期，用户可通过 `plan_expires_at`（`GET /auth/me` 返回）查看；到期后服务会（最迟一小时内）自动把该用户回退到默认角色组与默认配额。`duration_days` 为 0 表示永久，会清除到期时间。

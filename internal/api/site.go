@@ -125,12 +125,27 @@ func (h *Handler) adminDeleteAnnouncement(w http.ResponseWriter, r *http.Request
 // ---- 管理：举报 ----
 
 func (h *Handler) adminListReports(w http.ResponseWriter, r *http.Request) {
-	reports, err := h.site.ListReports(r.Context(), r.URL.Query().Get("status"))
+	query := r.URL.Query()
+	status := query.Get("status")
+	if !query.Has("page") && !query.Has("page_size") {
+		reports, err := h.site.ListReports(r.Context(), status)
+		if err != nil {
+			h.fail(w, r, err)
+			return
+		}
+		writeOK(w, reports)
+		return
+	}
+
+	page, pageSize := paginationParams(r)
+	items, total, err := h.site.SearchReports(r.Context(), status, (page-1)*pageSize, pageSize)
 	if err != nil {
 		h.fail(w, r, err)
 		return
 	}
-	writeOK(w, reports)
+	writeOK(w, pageResponse[service.ReportDTO]{
+		Items: items, Total: total, Page: page, PageSize: pageSize,
+	})
 }
 
 func (h *Handler) adminUpdateReport(w http.ResponseWriter, r *http.Request) {

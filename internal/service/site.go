@@ -207,12 +207,18 @@ func (s *SiteService) CreateReport(ctx context.Context, principal *auth.Principa
 
 // ListReports 返回举报；status 非空时按状态过滤。
 func (s *SiteService) ListReports(ctx context.Context, status string) ([]ReportDTO, error) {
+	reports, _, err := s.SearchReports(ctx, status, 0, 0)
+	return reports, err
+}
+
+// SearchReports 返回一页举报与过滤后的总数；limit 为 0 时返回全部。
+func (s *SiteService) SearchReports(ctx context.Context, status string, offset, limit int) ([]ReportDTO, int64, error) {
 	if status != "" && !isValidReportStatus(status) {
-		return nil, fmt.Errorf("%w: unknown report status %q", ErrInvalidInput, status)
+		return nil, 0, fmt.Errorf("%w: unknown report status %q", ErrInvalidInput, status)
 	}
-	reports, err := s.repo.ListReports(ctx, status)
+	reports, total, err := s.repo.ListReportsPaged(ctx, status, offset, limit)
 	if err != nil {
-		return nil, fmt.Errorf("list reports: %w", err)
+		return nil, 0, fmt.Errorf("list reports: %w", err)
 	}
 	// 批量解析举报人用户名，避免 N+1。
 	ids := make([]string, 0, len(reports))
@@ -241,7 +247,7 @@ func (s *SiteService) ListReports(ctx context.Context, status string) ([]ReportD
 		}
 		dtos = append(dtos, *dto)
 	}
-	return dtos, nil
+	return dtos, total, nil
 }
 
 // UpdateReportStatus 更新举报状态与处理备注。

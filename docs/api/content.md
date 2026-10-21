@@ -13,3 +13,5 @@
 | PUT/DELETE | `/admin/pages/{id}` | 修改 / 删除页面 |
 
 公告的 `level` 取值为 `info`/`success`/`warning`/`danger`，可置顶（`pinned`）与设为草稿（`published=false`）。独立页面的 `slug` 仅允许小写字母、数字与连字符，公开地址为 `/p/{slug}`，前端以轻量 Markdown 渲染内容。
+
+`GET /admin/reports` 支持 `page`、`page_size`（默认 20，最大 200）与 `status`。传入分页参数时返回 `{items,total,page,page_size}`，不传时保持旧数组响应。

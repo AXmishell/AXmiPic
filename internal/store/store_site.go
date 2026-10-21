@@ -3,6 +3,8 @@ package store
 import (
 	"context"
 	"fmt"
+
+	"gorm.io/gorm"
 )
 
 // CreateAnnouncement 插入一条公告。
@@ -111,6 +113,30 @@ func (r *Repository) ListReports(ctx context.Context, status string) ([]Report, 
 		return nil, fmt.Errorf("store: list reports: %w", err)
 	}
 	return reports, nil
+}
+
+// ListReportsPaged 返回一页举报与过滤后的总数。
+func (r *Repository) ListReportsPaged(ctx context.Context, status string, offset, limit int) ([]Report, int64, error) {
+	build := func() *gorm.DB {
+		query := r.db.WithContext(ctx).Model(&Report{})
+		if status != "" {
+			query = query.Where("status = ?", status)
+		}
+		return query
+	}
+	var total int64
+	if err := build().Count(&total).Error; err != nil {
+		return nil, 0, fmt.Errorf("store: count reports: %w", err)
+	}
+	var reports []Report
+	listQuery := build().Order("created_at DESC")
+	if limit > 0 {
+		listQuery = listQuery.Offset(offset).Limit(limit)
+	}
+	if err := listQuery.Find(&reports).Error; err != nil {
+		return nil, 0, fmt.Errorf("store: list reports: %w", err)
+	}
+	return reports, total, nil
 }
 
 // UpdateReportStatus 更新举报状态与处理备注。

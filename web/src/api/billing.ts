@@ -3,6 +3,8 @@ import type {
   Coupon,
   CouponInput,
   Order,
+  OrderStatus,
+  Paged,
   Plan,
   PlanInput,
   Ticket,
@@ -38,6 +40,15 @@ export function listOrders(): Promise<Order[]> {
   return request<Order[]>({ method: 'GET', url: '/orders' })
 }
 
+/** 服务端分页的订单列表（管理员为全站订单）。 */
+export function listOrdersPaged(params: {
+  page: number
+  page_size: number
+  status?: OrderStatus
+}): Promise<Paged<Order>> {
+  return request<Paged<Order>>({ method: 'GET', url: '/orders', params })
+}
+
 /** 完成手动/模拟订单的支付。 */
 export function payOrder(id: string): Promise<Order> {
   return request<Order>({ method: 'POST', url: `/orders/${id}/pay` })
@@ -46,6 +57,15 @@ export function payOrder(id: string): Promise<Order> {
 /** 工单。 */
 export function listTickets(status?: TicketStatus): Promise<Ticket[]> {
   return request<Ticket[]>({ method: 'GET', url: '/tickets', params: status ? { status } : undefined })
+}
+
+/** 服务端分页的工单列表（管理员为全站工单）。 */
+export function listTicketsPaged(params: {
+  page: number
+  page_size: number
+  status?: TicketStatus
+}): Promise<Paged<Ticket>> {
+  return request<Paged<Ticket>>({ method: 'GET', url: '/tickets', params })
 }
 
 export function createTicket(input: TicketInput): Promise<Ticket> {

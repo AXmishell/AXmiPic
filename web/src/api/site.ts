@@ -4,6 +4,7 @@ import type {
   AnnouncementInput,
   Page,
   PageInput,
+  Paged,
   Report,
   ReportInput,
   ReportStatus,
@@ -48,6 +49,15 @@ export function listReports(status?: ReportStatus): Promise<Report[]> {
     url: '/admin/reports',
     params: status ? { status } : undefined,
   })
+}
+
+/** 管理端：服务端分页的举报列表。 */
+export function listReportsPaged(params: {
+  page: number
+  page_size: number
+  status?: ReportStatus
+}): Promise<Paged<Report>> {
+  return request<Paged<Report>>({ method: 'GET', url: '/admin/reports', params })
 }
 
 export function updateReport(id: string, status: ReportStatus, note: string): Promise<Report> {
