@@ -21,17 +21,11 @@ import (
 // exampleWasm 保存各示例插件的编译产物路径，由 TestMain 准备。
 var exampleWasm = map[string]string{}
 
-// exampleBin 保存各进程插件的可执行文件路径，由 TestMain 准备。
-var exampleBin = map[string]string{}
-
 // exampleDirs 保存编译临时目录，退出时清理。
 var exampleDirs []string
 
 // examplePlugins 是需要预编译的 WASM 示例插件（目录名）。
 var examplePlugins = []string{"smsbao", "aliyun-sms", "tencent-sms"}
-
-// exampleProcessPlugins 是需要预编译的进程示例插件（目录名）。
-var exampleProcessPlugins = []string{"process-webhook"}
 
 // TestMain 预编译示例插件；失败时相关测试会跳过。
 func TestMain(m *testing.M) {
@@ -44,15 +38,6 @@ func TestMain(m *testing.M) {
 				continue
 			}
 			exampleWasm[name] = path
-			exampleDirs = append(exampleDirs, dir)
-		}
-		for _, name := range exampleProcessPlugins {
-			path, dir, err := buildExampleBinary(name)
-			if err != nil {
-				slog.Default().Warn("skipping process plugin test for " + name + ": " + err.Error())
-				continue
-			}
-			exampleBin[name] = path
 			exampleDirs = append(exampleDirs, dir)
 		}
 	}
@@ -87,29 +72,6 @@ func buildExampleModule(name string) (string, string, error) {
 	return out, tmp, nil
 }
 
-// buildExampleBinary 使用 Go 工具链把进程示例插件编译为宿主可执行文件。
-func buildExampleBinary(name string) (string, string, error) {
-	repoRoot, err := filepath.Abs("../..")
-	if err != nil {
-		return "", "", err
-	}
-	exampleDir := filepath.Join(repoRoot, "sdk", "plugin-go", "examples", name)
-	if _, err := os.Stat(exampleDir); err != nil {
-		return "", "", err
-	}
-	tmp, err := os.MkdirTemp("", "axmipic-plugin-")
-	if err != nil {
-		return "", "", err
-	}
-	out := filepath.Join(tmp, "plugin-bin")
-	cmd := exec.Command("go", "build", "-o", out, ".")
-	cmd.Dir = exampleDir
-	if buildOut, err := cmd.CombinedOutput(); err != nil {
-		return "", tmp, fmt.Errorf("%w: %s", err, buildOut)
-	}
-	return out, tmp, nil
-}
-
 func requireExample(t *testing.T) {
 	t.Helper()
 	requireModule(t, "smsbao")
@@ -134,32 +96,6 @@ func installModule(t *testing.T, name, manifest string) string {
 	}
 	if err := os.WriteFile(filepath.Join(dir, "plugin.wasm"), data, 0o600); err != nil {
 		t.Fatalf("write example wasm: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, ManifestFileName), []byte(manifest), 0o600); err != nil {
-		t.Fatalf("write manifest: %v", err)
-	}
-	return dir
-}
-
-// requireBinary 要求指定进程插件已编译。
-func requireBinary(t *testing.T, name string) {
-	t.Helper()
-	if exampleBin[name] == "" {
-		t.Skipf("process plugin %q binary not available", name)
-	}
-}
-
-// installProcess 把进程插件可执行文件与清单复制到临时目录，返回该目录。
-func installProcess(t *testing.T, name, manifest string) string {
-	t.Helper()
-	requireBinary(t, name)
-	dir := t.TempDir()
-	data, err := os.ReadFile(exampleBin[name])
-	if err != nil {
-		t.Fatalf("read example binary: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "plugin-bin"), data, 0o755); err != nil {
-		t.Fatalf("write example binary: %v", err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, ManifestFileName), []byte(manifest), 0o600); err != nil {
 		t.Fatalf("write manifest: %v", err)

@@ -37,10 +37,21 @@ const (
 type RuntimeKind = string
 
 const (
-	// RuntimeWASM 表示插件以 WASM 模块运行（wazero 沙箱）。
+	// RuntimeWASM 表示外置插件以 WASM 模块运行（wazero 沙箱）。
 	RuntimeWASM RuntimeKind = "wasm"
-	// RuntimeProcess 表示插件作为独立进程运行（gRPC），暂未实现。
-	RuntimeProcess RuntimeKind = "process"
+	// RuntimeBuiltin 表示内置插件直接编译进宿主，以进程内 Provider 运行。
+	// 内置插件由宿主签名/发布，默认受信，不经过沙箱，也不从磁盘加载。
+	RuntimeBuiltin RuntimeKind = "builtin"
+)
+
+// Origin 表示插件的来源与信任级别。
+type Origin = string
+
+const (
+	// OriginBuiltin 为随宿主编译发布的内置插件：默认信任、进程内运行、无沙箱。
+	OriginBuiltin Origin = "builtin"
+	// OriginExternal 为从 plugins.dir 安装的外置插件：必须运行在 WASM 沙箱中。
+	OriginExternal Origin = "external"
 )
 
 // FieldType 是插件配置字段的输入类型。
@@ -74,6 +85,10 @@ type Descriptor struct {
 	Title    string  `json:"title,omitempty"`
 	Version  string  `json:"version,omitempty"`
 	Fields   []Field `json:"fields,omitempty"`
+	// Origin 由宿主填充，插件自描述中的值会被忽略。
+	Origin Origin `json:"origin,omitempty"`
+	// Sandboxed 为 true 表示运行在 WASM 沙箱中；内置插件为 false。
+	Sandboxed bool `json:"sandboxed,omitempty"`
 }
 
 // Provider 是一个已加载并可调用的插件实例。

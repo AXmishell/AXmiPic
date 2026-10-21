@@ -61,7 +61,11 @@ func TestLoadManifestErrors(t *testing.T) {
 	}{
 		{"missing name", "version: 1\ncategory: c\nruntime: wasm\nentry: plugin.wasm\nabi: 1\n", "plugin.wasm", "name is required"},
 		{"missing category", "name: p\nversion: 1\nruntime: wasm\nentry: plugin.wasm\nabi: 1\n", "plugin.wasm", "category is required"},
-		{"unknown runtime", "name: p\ncategory: c\nruntime: native\nentry: plugin.wasm\nabi: 1\n", "plugin.wasm", "unknown runtime"},
+		{"unknown runtime", "name: p\ncategory: c\nruntime: native\nentry: plugin.wasm\nabi: 1\n", "plugin.wasm", "must use the wasm sandbox runtime"},
+		{"process runtime", "name: p\ncategory: c\nruntime: process\nentry: plugin.wasm\nabi: 1\n", "plugin.wasm", "must use the wasm sandbox runtime"},
+		{"dot name", "name: ..\ncategory: c\nruntime: wasm\nentry: plugin.wasm\nabi: 1\n", "plugin.wasm", "name must match"},
+		{"path name", "name: ../evil\ncategory: c\nruntime: wasm\nentry: plugin.wasm\nabi: 1\n", "plugin.wasm", "name must match"},
+		{"reserved name", "name: builtin-sms-log\ncategory: c\nruntime: wasm\nentry: plugin.wasm\nabi: 1\n", "plugin.wasm", "reserved"},
 		{"bad abi", "name: p\ncategory: c\nruntime: wasm\nentry: plugin.wasm\nabi: 2\n", "plugin.wasm", "unsupported abi"},
 		{"missing entry", "name: p\ncategory: c\nruntime: wasm\nentry: missing.wasm\nabi: 1\n", "", "entry not found"},
 		{"escape", "name: p\ncategory: c\nruntime: wasm\nentry: ../escape.wasm\nabi: 1\n", "plugin.wasm", "escapes"},

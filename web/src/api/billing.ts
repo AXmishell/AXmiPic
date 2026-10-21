@@ -142,38 +142,6 @@ export function getNotifyLogs(params: {
   return request<NotifyLogList>({ method: 'GET', url: '/admin/notify/logs', params })
 }
 
-/** SMTP 邮件渠道设置。密码只返回是否已设置，不回传明文。 */
-export interface SMTPConfig {
-  enabled: boolean
-  host: string
-  port: number
-  username: string
-  from: string
-  use_tls: boolean
-  password_set: boolean
-}
-
-/** 更新 SMTP 设置的输入；password 为空表示保持原密码。 */
-export interface SMTPInput {
-  enabled: boolean
-  host: string
-  port: number
-  username: string
-  password: string
-  from: string
-  use_tls: boolean
-}
-
-/** 管理端：读取 SMTP 设置。 */
-export function getSMTPConfig(): Promise<SMTPConfig> {
-  return request<SMTPConfig>({ method: 'GET', url: '/admin/notify/smtp' })
-}
-
-/** 管理端：保存 SMTP 设置并即时生效。 */
-export function updateSMTPConfig(input: SMTPInput): Promise<SMTPConfig> {
-  return request<SMTPConfig>({ method: 'PUT', url: '/admin/notify/smtp', data: input })
-}
-
 /** 支付渠道设置（密钥仅返回是否已设置）。 */
 export interface PaymentSettings {
   default_gateway: string
@@ -398,15 +366,6 @@ export interface SecuritySettings {
   cloud_processor: string
 }
 
-export interface SMSSettings {
-  enabled: boolean
-  /** 渠道类型：'log' 日志、'http' 通用网关，或已加载的短信插件名。 */
-  channel: string
-  provider: string
-  endpoint: string
-  method: string
-}
-
 /** 插件配置字段（与后端 plugin.Field 对齐）。 */
 export interface PluginField {
   key: string
@@ -426,6 +385,9 @@ export interface PluginDescriptor {
   title?: string
   version?: string
   fields?: PluginField[]
+  /** builtin 为随宿主编译发布的内置插件；external 为沙箱外置插件。 */
+  origin?: 'builtin' | 'external'
+  sandboxed?: boolean
 }
 
 /** 插件配置（秘钥字段只返回是否已设置）。 */
@@ -520,6 +482,10 @@ export function reloadPlugin(name: string): Promise<PluginConfig> {
 /** 插件安装与启用状态。 */
 export interface PluginStatus extends PluginDescriptor {
   runtime: string
+  /** 内置插件：默认信任、进程内运行、无沙箱。 */
+  builtin: boolean
+  /** 外置插件运行在 WASM 沙箱中。 */
+  sandboxed: boolean
   /** 三态：disabled（暂停）/ standby（已启用待激活）/ active（已加载）。 */
   state: 'disabled' | 'standby' | 'active'
   enabled: boolean
@@ -528,6 +494,27 @@ export interface PluginStatus extends PluginDescriptor {
   last_used?: number
   last_error?: string
   configured: boolean
+}
+
+/** 读取某通知类别当前使用的插件。 */
+export function getActivePlugin(category: string): Promise<{ category: string; name: string }> {
+  return request<{ category: string; name: string }>({
+    method: 'GET',
+    url: '/admin/plugins/active',
+    params: { category },
+  })
+}
+
+/** 设置某通知类别当前使用的插件。 */
+export function setActivePlugin(
+  category: string,
+  name: string,
+): Promise<{ category: string; name: string }> {
+  return request<{ category: string; name: string }>({
+    method: 'PUT',
+    url: '/admin/plugins/active',
+    data: { category, name },
+  })
 }
 
 /** 列出全部已安装插件及其状态。 */

@@ -30,3 +30,11 @@ func (r *Repository) SetSetting(ctx context.Context, key, value string) error {
 	}
 	return nil
 }
+
+// DeleteSetting 删除指定键的设置；键不存在时视为成功。
+func (r *Repository) DeleteSetting(ctx context.Context, key string) error {
+	if err := r.db.WithContext(ctx).Where(map[string]any{"key": key}).Delete(&Setting{}).Error; err != nil {
+		return fmt.Errorf("store: delete setting %q: %w", key, err)
+	}
+	return nil
+}

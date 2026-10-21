@@ -16,17 +16,13 @@ import {
   getRuntimeInfo,
   getSecurityInfo,
   getSettingDomain,
-  getSMTPConfig,
   listPaymentGateways,
-  listInstalledPlugins,
-  listPlugins,
   previewClientIP,
   sendTestNotify,
   updateAuthSettings,
   updateModerationSettings,
   updatePaymentSettings,
   updateSettingDomain,
-  updateSMTPConfig,
   type AuthConfig,
   type ClientIPInfo,
   type ClientIPSettings,
@@ -36,14 +32,10 @@ import {
   type ModerationSettings,
   type PaymentSettings,
   type PaymentSettingsInput,
-  type PluginDescriptor,
-  type PluginStatus,
   type ProcessInfo,
   type RuntimeInfo,
   type SecuritySettings,
   type SiteSettings,
-  type SMSSettings,
-  type SMTPConfig,
   type SettingDomain,
   type UploadSettings,
 } from '@/api/billing'
@@ -56,6 +48,7 @@ import { formatBytes, formatNumber } from '@/utils/format'
 const loading = ref(false)
 const errorMessage = ref('')
 const activeTab = ref('overview')
+const router = useRouter()
 
 const stats = ref<AdminStats | null>(null)
 const runtime = ref<RuntimeInfo | null>(null)
@@ -147,57 +140,6 @@ function formatDuration(seconds: number): string {
 function formatMiB(mb: number): string {
   if (mb <= 0) return '不限'
   return formatBytes(mb * 1024 * 1024)
-}
-
-// ---- SMTP 邮件渠道设置 ----
-const smtpSaving = ref(false)
-const smtpMeta = ref<SMTPConfig | null>(null)
-const smtpForm = reactive({
-  enabled: false,
-  host: '',
-  port: 587,
-  username: '',
-  password: '',
-  from: '',
-  use_tls: true,
-})
-
-const smtpRules = computed(() => ({
-  host: smtpForm.enabled ? [{ required: true, message: '请输入 SMTP 服务器地址', trigger: 'blur' }] : [],
-}))
-
-/** 用服务端返回的配置填充表单，清空密码输入框。 */
-function fillSMTP(cfg: SMTPConfig): void {
-  smtpForm.enabled = cfg.enabled
-  smtpForm.host = cfg.host
-  smtpForm.port = cfg.port || 587
-  smtpForm.username = cfg.username
-  smtpForm.from = cfg.from
-  smtpForm.use_tls = cfg.use_tls
-  smtpForm.password = ''
-}
-
-function resetSMTP(): void {
-  if (smtpMeta.value) fillSMTP(smtpMeta.value)
-}
-
-async function saveSMTP(): Promise<void> {
-  if (smtpForm.enabled && !smtpForm.host.trim()) {
-    ElMessage.warning('请填写 SMTP 服务器地址')
-    return
-  }
-  smtpSaving.value = true
-  try {
-    const updated = await updateSMTPConfig({ ...smtpForm })
-    smtpMeta.value = updated
-    fillSMTP(updated)
-    channels.value = await getNotifyChannels().catch(() => channels.value)
-    ElMessage.success('SMTP 设置已保存并即时生效')
-  } catch (error) {
-    ElMessage.error(toApiError(error).message)
-  } finally {
-    smtpSaving.value = false
-  }
 }
 
 // ---- 图片广场 AI 审查设置 ----
@@ -437,62 +379,6 @@ const imagingForm = reactive<ImagingSettings>({
   watermark_text: '',
 })
 const securityForm = reactive<SecuritySettings>({ scanner: 'builtin', cloud_processor: 'local' })
-const smsForm = reactive<SMSSettings>({ enabled: false, channel: '', provider: '', endpoint: '', method: 'POST' })
-
-// ---- 短信插件渠道 ----
-const smsPlugins = ref<PluginDescriptor[]>([])
-
-/** 判断渠道值是否为插件名。 */
-function isPluginChannel(channel: string): boolean {
-  return !!channel && channel !== 'http' && channel !== 'log'
-}
-
-/** 短信渠道下拉选项：日志、通用 HTTP 网关与全部已加载插件。 */
-const smsChannelOptions = computed(() => {
-  const opts = [
-    { label: '日志（调试）', value: 'log' },
-    { label: '通用 HTTP 网关', value: 'http' },
-  ]
-  for (const p of smsPlugins.value) {
-    opts.push({ label: p.title || p.name, value: p.name })
-  }
-  return opts
-})
-
-const router = useRouter()
-// 已安装插件的完整状态（启用/配置/三态），用于在短信渠道页展示就绪情况。
-const installedPlugins = ref<PluginStatus[]>([])
-
-/** 当前选中的插件渠道对应的初始化状态。 */
-const selectedPlugin = computed<PluginStatus | undefined>(() =>
-  installedPlugins.value.find((p) => p.name === smsForm.channel),
-)
-
-/** 插件渠道就绪提示；非插件渠道返回 null。 */
-const pluginChannelNotice = computed<{ type: 'success' | 'warning' | 'error'; text: string } | null>(() => {
-  if (!isPluginChannel(smsForm.channel)) return null
-  const p = selectedPlugin.value
-  if (!p) return { type: 'error', text: `插件「${smsForm.channel}」未安装，请先到「插件市场」安装。` }
-  if (!p.enabled) return { type: 'warning', text: `插件「${p.name}」已暂停，请先在「插件市场」启用。` }
-  if (!p.configured) {
-    return { type: 'warning', text: `插件「${p.name}」尚未配置，请到「插件市场」填写配置后再启用短信。` }
-  }
-  return { type: 'success', text: `插件「${p.name}」已就绪（${pluginStateLabel(p)}）。` }
-})
-
-/** 插件三态的可读标签。 */
-function pluginStateLabel(p?: PluginStatus): string {
-  if (!p) return '未安装'
-  if (!p.enabled) return '已暂停'
-  if (p.state === 'active') return '运行中'
-  if (p.state === 'standby') return '待激活'
-  return '已启用'
-}
-
-/** 跳转到插件市场并打开对应插件的配置弹窗。 */
-function goPluginConfig(name: string): void {
-  void router.push({ path: '/admin/plugins', query: { config: name } })
-}
 const limitsForm = reactive<LimitsSettings>({
   upload_per_minute: 30,
   upload_burst: 5,
@@ -567,11 +453,6 @@ function fillImaging(v: ImagingSettings): void {
 function fillSecurity(v: SecuritySettings): void {
   Object.assign(securityForm, v)
 }
-function fillSMS(v: SMSSettings): void {
-  Object.assign(smsForm, v)
-  // 规范化历史渠道值：未显式设置 channel 时按 endpoint 推断，便于下拉展示。
-  if (!smsForm.channel) smsForm.channel = smsForm.endpoint ? 'http' : 'log'
-}
 function fillLimits(v: LimitsSettings): void {
   Object.assign(limitsForm, v)
 }
@@ -580,6 +461,11 @@ function fillMaintenance(v: MaintenanceSettings): void {
 }
 function fillSite(v: SiteSettings): void {
   Object.assign(siteForm, v)
+}
+
+/** 跳转到插件市场。 */
+function goPluginMarket(): void {
+  void router.push('/admin/plugins')
 }
 
 /** 保存单个设置域；可热应用的域即时生效，limits/maintenance 重启后生效。 */
@@ -602,23 +488,6 @@ async function saveDomain<T>(
   }
 }
 
-/** 保存短信设置，并刷新实际生效渠道；若插件未就绪而回退到日志则明确提示。 */
-async function saveSMS(): Promise<void> {
-  const ok = await saveDomain('sms', { ...smsForm }, fillSMS)
-  if (!ok) return
-  try {
-    channels.value = await getNotifyChannels()
-  } catch {
-    // 忽略：仅影响提示，不影响保存结果。
-  }
-  const want = smsForm.channel
-  if (smsForm.enabled && isPluginChannel(want) && channels.value.sms !== want) {
-    ElMessage.warning(
-      `插件「${want}」未就绪，短信渠道已回退为「${channels.value.sms || 'log'}」；请到「插件市场」启用并配置。`,
-    )
-  }
-}
-
 async function load(): Promise<void> {
   loading.value = true
   errorMessage.value = ''
@@ -627,7 +496,6 @@ async function load(): Promise<void> {
       statsData,
       runtimeData,
       processData,
-      smtpData,
       ch,
       sec,
       drv,
@@ -638,18 +506,14 @@ async function load(): Promise<void> {
       uploadData,
       imagingData,
       securityData,
-      smsData,
       limitsData,
       maintenanceData,
       siteData,
       clientIPData,
-      pluginList,
-      installedList,
     ] = await Promise.all([
       fetchStats(),
       getRuntimeInfo(),
       getProcessInfo(),
-      getSMTPConfig(),
       getNotifyChannels().catch(() => ({ sms: '', email: '' })),
       getSecurityInfo().catch(() => ({ scanner: '' })),
       getImagingDrivers().catch(() => ({ available: [], active: '' })),
@@ -660,19 +524,14 @@ async function load(): Promise<void> {
       getSettingDomain<UploadSettings>('upload').catch(() => null),
       getSettingDomain<ImagingSettings>('processing').catch(() => null),
       getSettingDomain<SecuritySettings>('security').catch(() => null),
-      getSettingDomain<SMSSettings>('sms').catch(() => null),
       getSettingDomain<LimitsSettings>('limits').catch(() => null),
       getSettingDomain<MaintenanceSettings>('maintenance').catch(() => null),
       getSettingDomain<SiteSettings>('site').catch(() => null),
       getSettingDomain<ClientIPSettings>('client_ip').catch(() => null),
-      listPlugins('notify.sms').catch(() => ({ items: [] })),
-      listInstalledPlugins().catch(() => ({ items: [] })),
     ])
     stats.value = statsData
     runtime.value = runtimeData
     process.value = processData
-    smtpMeta.value = smtpData
-    fillSMTP(smtpData)
     channels.value = ch ?? { sms: '', email: '' }
     scannerName.value = sec?.scanner ?? ''
     drivers.value = drv ?? { available: [], active: '' }
@@ -697,9 +556,6 @@ async function load(): Promise<void> {
     if (uploadData) fillUpload(uploadData)
     if (imagingData) fillImaging(imagingData)
     if (securityData) fillSecurity(securityData)
-    smsPlugins.value = pluginList?.items ?? []
-    installedPlugins.value = installedList?.items ?? []
-    if (smsData) fillSMS(smsData)
     if (limitsData) fillLimits(limitsData)
     if (maintenanceData) fillMaintenance(maintenanceData)
     if (siteData) fillSite(siteData)
@@ -893,53 +749,21 @@ onBeforeUnmount(() => {
       <el-tab-pane label="通知设置" name="notify">
         <article class="ax-card">
           <header class="ax-card__head">
-            <h2 class="ax-card__title">SMTP 邮件设置</h2>
-            <el-tag v-if="smtpMeta?.enabled" size="small" type="success" effect="plain">已启用</el-tag>
-            <el-tag v-else size="small" type="info" effect="plain">未启用</el-tag>
+            <h2 class="ax-card__title">通知渠道配置</h2>
+            <el-tag size="small" type="success" effect="plain">插件市场统一配置</el-tag>
           </header>
           <div class="ax-card__body">
-            <el-form
-              :model="smtpForm"
-              :rules="smtpRules"
-              label-position="top"
-              class="smtp-form"
-              @submit.prevent
-            >
-              <div class="smtp-grid">
-                <el-form-item label="启用 SMTP" prop="enabled">
-                  <el-switch v-model="smtpForm.enabled" />
-                </el-form-item>
-                <el-form-item label="服务器地址" prop="host" class="smtp-grid__wide">
-                  <el-input v-model="smtpForm.host" placeholder="smtp.example.com" />
-                </el-form-item>
-                <el-form-item label="端口" prop="port">
-                  <el-input-number v-model="smtpForm.port" :min="1" :max="65535" controls-position="right" />
-                </el-form-item>
-                <el-form-item label="用户名">
-                  <el-input v-model="smtpForm.username" placeholder="account@example.com" />
-                </el-form-item>
-                <el-form-item label="密码 / 授权码">
-                  <el-input
-                    v-model="smtpForm.password"
-                    type="password"
-                    show-password
-                    autocomplete="new-password"
-                    :placeholder="smtpMeta?.password_set ? '已设置，留空保持不变' : '请输入密码或授权码'"
-                  />
-                </el-form-item>
-                <el-form-item label="发件人">
-                  <el-input v-model="smtpForm.from" placeholder="默认与用户名相同" />
-                </el-form-item>
-                <el-form-item label="隐式 TLS">
-                  <el-switch v-model="smtpForm.use_tls" />
-                  <span class="smtp-form__hint">465 端口开启；587 端口使用 STARTTLS</span>
-                </el-form-item>
-              </div>
-              <div class="smtp-actions">
-                <el-button type="primary" :loading="smtpSaving" @click="saveSMTP">保存并应用</el-button>
-                <el-button :disabled="smtpSaving" @click="resetSMTP">重置</el-button>
-              </div>
-            </el-form>
+            <el-alert
+              title="短信与邮件的配置已迁移到「插件市场」"
+              type="info"
+              :closable="false"
+              show-icon
+            />
+            <p class="integration__hint" style="margin-top: 12px">
+              内置插件（日志短信、HTTP 短信、日志邮件、SMTP 邮件）默认受信、无需沙箱；
+              外置插件（WASM）在沙箱中运行。请到「插件市场」填写凭据，并将需要的渠道设为当前渠道。
+            </p>
+            <el-button type="primary" @click="goPluginMarket">打开插件市场</el-button>
           </div>
         </article>
 
@@ -972,95 +796,11 @@ onBeforeUnmount(() => {
               <el-button type="primary" :loading="testing" @click="sendTest">发送测试</el-button>
             </div>
             <p class="integration__hint">
-              保存 SMTP 设置后即时生效；未配置真实服务商时，通知会回退到日志渠道并记录到服务端日志。
+              通知通过当前选中的插件渠道发送；未配置真实服务商时会回退到内置日志渠道并记录到服务端日志。
             </p>
           </div>
         </article>
 
-        <article class="ax-card">
-          <header class="ax-card__head">
-            <h2 class="ax-card__title">短信渠道</h2>
-            <el-tag size="small" type="success" effect="plain">即时生效</el-tag>
-          </header>
-          <div class="ax-card__body">
-            <el-form label-position="top" class="smtp-form" @submit.prevent>
-              <div class="smtp-grid">
-                <el-form-item label="启用短信">
-                  <el-switch v-model="smsForm.enabled" />
-                </el-form-item>
-                <el-form-item label="渠道">
-                  <el-select v-model="smsForm.channel" style="width: 100%">
-                    <el-option
-                      v-for="opt in smsChannelOptions"
-                      :key="opt.value"
-                      :label="opt.label"
-                      :value="opt.value"
-                    />
-                  </el-select>
-                </el-form-item>
-
-                <template v-if="smsForm.channel === 'http'">
-                  <el-form-item label="服务商名称">
-                    <el-input v-model="smsForm.provider" placeholder="例如 aliyun" />
-                  </el-form-item>
-                  <el-form-item label="HTTP 网关地址" class="smtp-grid__wide">
-                    <el-input v-model="smsForm.endpoint" placeholder="https://sms.example.com/send" />
-                  </el-form-item>
-                  <el-form-item label="请求方法">
-                    <el-select v-model="smsForm.method" style="width: 100%">
-                      <el-option label="POST" value="POST" />
-                      <el-option label="GET" value="GET" />
-                    </el-select>
-                  </el-form-item>
-                </template>
-
-                <el-form-item
-                  v-else-if="!isPluginChannel(smsForm.channel)"
-                  label="说明"
-                  class="smtp-grid__wide"
-                >
-                  <span class="smtp-form__hint">日志渠道仅记录发送内容，便于本地调试。</span>
-                </el-form-item>
-              </div>
-
-              <template v-if="isPluginChannel(smsForm.channel)">
-                <el-form-item label="插件状态">
-                  <el-tag size="small" :type="selectedPlugin?.enabled ? 'success' : 'info'" effect="plain">
-                    {{ pluginStateLabel(selectedPlugin) }}
-                  </el-tag>
-                  <el-tag
-                    size="small"
-                    :type="selectedPlugin?.configured ? 'warning' : 'danger'"
-                    effect="plain"
-                    style="margin-left: 8px"
-                  >
-                    {{ selectedPlugin?.configured ? '已配置' : '未配置' }}
-                  </el-tag>
-                  <el-button link type="primary" style="margin-left: 8px" @click="goPluginConfig(smsForm.channel)">
-                    去插件市场配置
-                  </el-button>
-                </el-form-item>
-                <el-alert
-                  v-if="pluginChannelNotice"
-                  :title="pluginChannelNotice.text"
-                  :type="pluginChannelNotice.type"
-                  :closable="false"
-                  show-icon
-                  style="margin-bottom: 12px"
-                />
-              </template>
-
-              <div class="smtp-actions">
-                <el-button type="primary" :loading="savingDomain === 'sms'" @click="saveSMS">
-                  保存并应用
-                </el-button>
-                <span v-if="isPluginChannel(smsForm.channel)" class="smtp-form__hint">
-                  插件凭据在「插件市场」中配置
-                </span>
-              </div>
-            </el-form>
-          </div>
-        </article>
       </el-tab-pane>
 
       <!-- 支付设置 -->

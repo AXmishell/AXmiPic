@@ -26,6 +26,15 @@ server:
   # 用于排查内存/CPU/协程问题。默认关闭，仅在需要时临时开启。
   pprof_enabled: false
 
+web:
+  # HMR 热更新模式（仅本地开发使用，默认关闭）。
+  # 开启后，未匹配的前端请求（页面、模块与 HMR WebSocket）会反向代理到
+  # Vite 开发服务器；浏览器只需访问后端端口（默认 8080），无需再打开 :5173。
+  # 使用前请先在 web/ 目录运行 `pnpm dev`。请勿在生产环境开启。
+  hot_reload:
+    enabled: false
+    target: "http://127.0.0.1:5173"
+
 database:
   # driver: sqlite | postgres | mysql (MariaDB 兼容)
   driver: "sqlite"
@@ -267,8 +276,9 @@ moderation:
   max_image_mb: 10
 
 sms:
-  # SMS channel. `channel` may be "log", "http" (generic gateway below), or the
-  # name of a loaded WASM plugin under `plugins.dir` (e.g. "smsbao").
+  # Legacy bootstrap only: migrated once into the built-in SMS plugin config
+  # (`builtin-sms-log` / `builtin-sms-http`). Configure channels in the admin
+  # plugin marketplace afterwards.
   enabled: false
   channel: ""
   provider: ""
@@ -276,6 +286,7 @@ sms:
   method: "POST"
 
 email:
+  # Legacy bootstrap only: migrated once into `builtin-email-smtp`.
   enabled: false
   host: ""
   port: 587
@@ -284,11 +295,14 @@ email:
   from: ""
   use_tls: false
 
-# Runtime WASM plugins: each subdirectory of `dir` containing plugin.yaml is
-# loaded at startup. Plugins declare their capabilities (e.g. allowed HTTP
-# hosts) in the manifest and communicate with the host over the `axmipic`
-# WASM import module.
+# Plugins are split into built-ins and sandboxed externals:
+#   - built-in (compiled into the host): trusted, in-process, no sandbox;
+#     notification channels such as builtin-sms-http / builtin-email-smtp.
+#   - external (plugins.dir): must use runtime "wasm" and runs in the wazero
+#     sandbox; process/native runtimes are rejected.
+# Each subdirectory containing plugin.yaml is loaded lazily by default.
 plugins:
+  # Enable external (WASM) plugins. Built-in notification plugins are always registered.
   enabled: true
   dir: "./plugins"
   http_timeout_sec: 10

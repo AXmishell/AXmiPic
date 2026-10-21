@@ -25,6 +25,29 @@ server:
 
 > `trust_proxy` 为 `true` 时才会解析 `X-Forwarded-For` / `X-Real-IP`。直连部署请保持 `false`，否则客户端可伪造来源 IP 绕过限流。
 
+## 前端热更新（开发）
+
+HMR 热更新模式通过配置文件开启，**默认关闭**（使用编译时内嵌的前端产物）：
+
+```yaml
+web:
+  hot_reload:
+    enabled: false                    # 本地开发时改为 true
+    target: "http://127.0.0.1:5173"   # Vite 开发服务器地址
+```
+
+开启后，后端会把未匹配的前端请求（页面、模块与 HMR WebSocket）反向代理到 `target`，因此浏览器只需访问后端端口（默认 `8080`），前端改动会即时热更新，无需重新构建或刷新。`/api`、`/i/` 与 `/healthz` 仍由后端直接处理，不会转发。
+
+使用步骤：
+
+```bash
+cd web && pnpm dev        # 先启动 Vite 开发服务器
+# 在 configs/config.yaml 中设置 web.hot_reload.enabled: true，然后启动后端
+./bin/axmipic -config configs/config.yaml
+```
+
+> 仅用于本地开发，请勿在生产环境开启；生产环境请移除该项或保持 `false`，并在发布前执行 `make build` 重新内嵌前端产物。也可用环境变量覆盖：`AXMIPIC_WEB_HOT_RELOAD_ENABLED=true`、`AXMIPIC_WEB_HOT_RELOAD_TARGET=http://127.0.0.1:5173`。
+
 **客户端真实 IP**：`server.client_ip` 控制限流、访客配额与日志所用的 IP。
 - `source: remote`（默认）忽略所有转发头，直接使用对端地址，最安全。
 - 位于反向代理/Cloudflare 之后时，选择对应来源（如 `x-forwarded-for`、`cf-connecting-ip`），并**必须**配置 `trusted_proxies`（可信代理 CIDR）。只有当直接对端位于可信网段内才解析转发头，否则回退对端地址，防止伪造。
@@ -174,7 +197,35 @@ plugins:
   preload: []
 ```
 
+> 插件分为**内置**与**外置**：内置插件随宿主编译发布（默认受信、进程内运行、无需沙箱），外置插件必须使用 `runtime: wasm` 并运行在 wazero 沙箱中。旧版 `email.*` / `sms.*` 配置仅用于首次迁移，之后请在后台「插件市场」统一配置。
+
 > 插件启用/暂停与空闲卸载都是动态的，无需重启：暂停会立刻释放其 wazero 运行时，空闲卸载在下次调用时按需重建。启动时只实例化「启用」的插件，被暂停的插件不再在启动瞬间占用内存。后台「插件」页可查看每个插件的启用/加载状态；`GET /api/v1/admin/plugins/installed` 的 `memory_bytes` 字段显示已加载 WASM 插件的线性内存占用。
+
+## 通知渠道（内置插件）
+
+短信与邮件的配置已迁移到「插件市场」，配置文件中的 `sms` / `email` 仅作为首次启动的迁移种子：
+
+```yaml
+plugins:
+  # 外置插件目录；内置插件无需此目录。
+  dir: "./plugins"
+
+# 以下为旧版引导项，仅在首次迁移时读取，之后以插件配置为准。
+sms:
+  enabled: false
+email:
+  enabled: false
+```
+
+内置通知插件：
+
+- `builtin-sms-log` / `builtin-email-log`：日志渠道，调试用，默认当前渠道；
+- `builtin-sms-http`：通用 HTTP 短信网关（`provider`/`endpoint`/`method`）；
+- `builtin-email-smtp`：SMTP 邮件（`host`/`port`/`username`/`password`/`from`/`use_tls`）。
+
+在后台「插件市场」配置字段，并用「设为当前」切换短信/邮件当前渠道；也可调用
+`PUT /api/v1/admin/plugins/active`。密文字段以 AES-256-GCM 加密存储，接口不回显。
+
 
 > 也可以用标准环境变量 `GOMEMLIMIT` / `GOGC` 覆盖，两者等价。生产环境处理大图时，优先使用 `-tags libvips` 构建（内存与 CPU 都优于纯 Go 处理器）。
 

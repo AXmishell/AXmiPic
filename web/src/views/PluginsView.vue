@@ -4,12 +4,14 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, type UploadFile } from 'element-plus'
 
 import {
+  getActivePlugin,
   installPlugin,
   installPluginArchive,
   listInstalledPlugins,
   listPluginRegistry,
   reloadPlugin,
   removePlugin,
+  setActivePlugin,
   setPluginEnabled,
   type PluginMarketEntry,
   type PluginStatus,
@@ -20,6 +22,8 @@ import PluginConfigForm from '@/components/PluginConfigForm.vue'
 
 const installed = ref<PluginStatus[]>([])
 const installedLoading = ref(false)
+const activeSMS = ref('')
+const activeEmail = ref('')
 const registry = ref<PluginMarketEntry[]>([])
 const registryConfigured = ref(true)
 const marketLoading = ref(false)
@@ -51,6 +55,43 @@ async function loadInstalled(): Promise<void> {
     ElMessage.error(toApiError(error).message)
   } finally {
     installedLoading.value = false
+  }
+}
+
+/** 载入短信/邮件当前使用的插件。 */
+async function loadActive(): Promise<void> {
+  try {
+    const [sms, email] = await Promise.all([
+      getActivePlugin('notify.sms'),
+      getActivePlugin('notify.email'),
+    ])
+    activeSMS.value = sms.name
+    activeEmail.value = email.name
+  } catch {
+    // 当前渠道读取失败不阻塞插件列表。
+  }
+}
+
+/** 判断插件是否为该类别当前渠道。 */
+function isActive(row: PluginStatus): boolean {
+  if (row.category === 'notify.sms') return activeSMS.value === row.name
+  if (row.category === 'notify.email') return activeEmail.value === row.name
+  return false
+}
+
+/** 判断插件是否属于可选择当前渠道的通知类别。 */
+function isNotifyPlugin(row: PluginStatus): boolean {
+  return row.category === 'notify.sms' || row.category === 'notify.email'
+}
+
+/** 把插件设为该类别当前使用的通知渠道。 */
+async function setActive(row: PluginStatus): Promise<void> {
+  try {
+    await setActivePlugin(row.category, row.name)
+    ElMessage.success(`已将 ${row.name} 设为当前渠道`)
+    await loadActive()
+  } catch (error) {
+    ElMessage.error(toApiError(error).message)
   }
 }
 
@@ -203,7 +244,7 @@ function clearConfigQuery(): void {
 }
 
 onMounted(async () => {
-  await loadInstalled()
+  await Promise.all([loadInstalled(), loadActive()])
   // 支持从其它页面深链打开某个插件的配置弹窗（?config=<name>）。
   const target = String(route.query.config ?? '').trim()
   if (target) {
@@ -243,46 +284,66 @@ onMounted(async () => {
       </header>
       <div class="ax-card__body">
         <el-table v-loading="installedLoading" :data="installed" size="small" empty-text="暂无已安装插件">
-          <el-table-column label="名称" min-width="180">
+          <el-table-column label="名称" min-width="200">
             <template #default="{ row }">
               <span>{{ row.title || row.name }}</span>
               <span class="plugin-key">{{ row.name }}</span>
+              <el-tag v-if="row.builtin" size="small" type="success" effect="plain" class="plugin-tag">
+                内置
+              </el-tag>
+              <el-tag v-else size="small" type="info" effect="plain" class="plugin-tag">
+                沙箱
+              </el-tag>
             </template>
           </el-table-column>
           <el-table-column prop="category" label="类别" width="130" />
           <el-table-column label="运行时" width="90">
             <template #default="{ row }">{{ row.runtime }}</template>
           </el-table-column>
-          <el-table-column label="状态" width="120">
+          <el-table-column label="状态" width="150">
             <template #default="{ row }">
               <el-tag size="small" :type="row.enabled ? 'success' : 'info'" effect="plain">
                 {{ row.enabled ? '已启用' : '已暂停' }}
               </el-tag>
-              <el-tag v-if="row.configured" size="small" type="warning" effect="plain" class="plugin-tag">
+              <el-tag v-if="isActive(row)" size="small" type="primary" effect="plain" class="plugin-tag">
+                当前渠道
+              </el-tag>
+              <el-tag v-else-if="row.configured" size="small" type="warning" effect="plain" class="plugin-tag">
                 已配置
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="330">
+          <el-table-column label="操作" width="390">
             <template #default="{ row }">
               <el-button
+                v-if="isNotifyPlugin(row) && !isActive(row)"
                 size="small"
-                :type="row.enabled ? 'warning' : 'success'"
-                :loading="toggling === row.name"
-                @click="toggleEnabled(row)"
+                type="primary"
+                @click="setActive(row)"
               >
-                {{ row.enabled ? '暂停' : '启用' }}
+                设为当前
               </el-button>
               <el-button size="small" @click="openConfig(row)">配置</el-button>
-              <el-button size="small" @click="reloadByName(row.name)">重新加载</el-button>
-              <el-button
-                size="small"
-                type="danger"
-                :loading="removing === row.name"
-                @click="removeByName(row.name)"
-              >
-                卸载
-              </el-button>
+              <template v-if="!row.builtin">
+                <el-button
+                  size="small"
+                  :type="row.enabled ? 'warning' : 'success'"
+                  :loading="toggling === row.name"
+                  @click="toggleEnabled(row)"
+                >
+                  {{ row.enabled ? '暂停' : '启用' }}
+                </el-button>
+                <el-button size="small" @click="reloadByName(row.name)">重新加载</el-button>
+                <el-button
+                  size="small"
+                  type="danger"
+                  :loading="removing === row.name"
+                  @click="removeByName(row.name)"
+                >
+                  卸载
+                </el-button>
+              </template>
+              <el-tag v-else size="small" type="info" effect="plain">编译内置</el-tag>
             </template>
           </el-table-column>
         </el-table>

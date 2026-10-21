@@ -26,8 +26,12 @@ const (
 // PluginStatus 是插件安装与启用状态的对外表示。
 type PluginStatus struct {
 	plugin.Descriptor
-	// Runtime 为运行时（wasm / process）。
+	// Runtime 为运行时（wasm / builtin）。
 	Runtime string `json:"runtime"`
+	// Builtin 表示内置插件（默认信任、进程内运行、无沙箱）。
+	Builtin bool `json:"builtin"`
+	// Sandboxed 表示运行在 WASM 沙箱中；内置插件为 false。
+	Sandboxed bool `json:"sandboxed"`
 	// State 为三态：disabled（暂停）/ standby（已启用待激活）/ active（已加载）。
 	State string `json:"state"`
 	// Enabled 为是否已启用（state != disabled）。
@@ -169,6 +173,8 @@ func (s *PluginService) Installed(ctx context.Context) []PluginStatus {
 		out = append(out, PluginStatus{
 			Descriptor:  info.Descriptor,
 			Runtime:     info.Manifest.Runtime,
+			Builtin:     info.Builtin,
+			Sandboxed:   info.Sandboxed,
 			State:       pluginState(info.Enabled, info.Loaded),
 			Enabled:     info.Enabled,
 			Loaded:      info.Loaded,
@@ -182,9 +188,13 @@ func (s *PluginService) Installed(ctx context.Context) []PluginStatus {
 }
 
 // SetEnabled 启用或暂停一个插件，并持久化状态。启用会按需实例化（若尚未加载）。
+// 内置插件始终启用，不能在此暂停。
 func (s *PluginService) SetEnabled(ctx context.Context, name string, enable bool) error {
 	if s.manager == nil {
 		return fmt.Errorf("%w: plugins are unavailable", plugin.ErrNotFound)
+	}
+	if s.manager.Builtin(name) {
+		return fmt.Errorf("%w: built-in plugins cannot be enabled or disabled", plugin.ErrNotFound)
 	}
 	if enable {
 		// 仅标记为启用（standby），不立即加载：首次使用时按需激活。
@@ -193,6 +203,10 @@ func (s *PluginService) SetEnabled(ctx context.Context, name string, enable bool
 		}
 		if desc, ok := s.manager.Describe(name); ok {
 			s.cacheDescriptor(ctx, name, desc)
+			// 重新启用当前渠道时重建 Sender（之前可能回退到了日志渠道）。
+			if s.Active(ctx, desc.Category) == name {
+				s.applyNotify(ctx, desc.Category)
+			}
 		}
 	} else {
 		if err := s.manager.Disable(ctx, name); err != nil {
@@ -206,6 +220,14 @@ func (s *PluginService) SetEnabled(ctx context.Context, name string, enable bool
 		}
 		if err := s.repo.SetSetting(ctx, pluginStatePrefix+name, value); err != nil {
 			return fmt.Errorf("plugin %q: persist state: %w", name, err)
+		}
+	}
+	// 若暂停的是当前通知渠道，回退到该类别的内置日志渠道。
+	if !enable {
+		for _, category := range []string{plugin.CategoryNotifySMS, plugin.CategoryNotifyEmail} {
+			if s.Active(ctx, category) == name {
+				s.applyNotify(ctx, category)
+			}
 		}
 	}
 	return nil
@@ -260,26 +282,50 @@ func (s *PluginService) markInstalled(ctx context.Context, name string) {
 	}
 }
 
-// Remove 卸载并删除插件，同时清理其启用状态。
+// Remove 卸载并删除插件，同时清理其启用状态、描述缓存与配置。
 func (s *PluginService) Remove(ctx context.Context, name string) error {
 	if s.manager == nil {
 		return fmt.Errorf("%w: plugins are unavailable", plugin.ErrNotFound)
+	}
+	if s.manager.Builtin(name) {
+		return fmt.Errorf("%w: built-in plugins cannot be removed", plugin.ErrNotFound)
 	}
 	if err := s.manager.Remove(ctx, name); err != nil {
 		return err
 	}
 	if s.repo != nil {
-		if err := s.repo.SetSetting(ctx, pluginStatePrefix+name, pluginStateEnabled); err != nil {
-			s.logger.Warn("failed to clear plugin state", slog.String("plugin", name), slog.Any("error", err))
+		for _, key := range []string{
+			pluginStatePrefix + name,
+			pluginDescriptorPrefix + name,
+			pluginConfigPrefix + name,
+		} {
+			if err := s.repo.DeleteSetting(ctx, key); err != nil {
+				s.logger.Warn("failed to clear plugin setting",
+					slog.String("plugin", name), slog.String("key", key), slog.Any("error", err))
+			}
+		}
+	}
+	for _, category := range []string{plugin.CategoryNotifySMS, plugin.CategoryNotifyEmail} {
+		if s.Active(ctx, category) == name {
+			if s.repo != nil {
+				if err := s.repo.DeleteSetting(ctx, ActiveKey(category)); err != nil {
+					s.logger.Warn("failed to clear active plugin",
+						slog.String("category", category), slog.Any("error", err))
+				}
+			}
+			s.applyNotify(ctx, category)
 		}
 	}
 	return nil
 }
 
-// Reload 重新加载指定插件（保持其启用状态）。
+// Reload 重新加载指定插件（保持其启用状态）。内置插件无需重载。
 func (s *PluginService) Reload(ctx context.Context, name string) error {
 	if s.manager == nil {
 		return fmt.Errorf("%w: plugins are unavailable", plugin.ErrNotFound)
+	}
+	if s.manager.Builtin(name) {
+		return fmt.Errorf("%w: built-in plugins are compiled into the host and cannot be reloaded", plugin.ErrNotFound)
 	}
 	if err := s.manager.Reload(ctx, name); err != nil {
 		return err

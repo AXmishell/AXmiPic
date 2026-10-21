@@ -20,13 +20,16 @@ import (
 	"testing"
 )
 
-const processManifestArchive = `
-name: process-webhook
+const sampleManifestArchive = `
+name: smsbao
 version: 0.1.0
 category: notify.sms
-runtime: process
-entry: plugin-bin
+runtime: wasm
+entry: plugin.wasm
 abi: 1
+capabilities:
+  http:
+    hosts: ["api.smsbao.com"]
 `
 
 // makeZip 构造一个内存 zip。
@@ -51,21 +54,21 @@ func makeZip(t *testing.T, files map[string][]byte) []byte {
 	return buf.Bytes()
 }
 
-// processArchive 用已编译的示例进程插件与清单构造归档。
-func processArchive(t *testing.T) []byte {
+// sampleArchive 用已编译的示例 WASM 插件与清单构造归档。
+func sampleArchive(t *testing.T) []byte {
 	t.Helper()
-	requireBinary(t, "process-webhook")
-	bin, err := os.ReadFile(exampleBin["process-webhook"])
+	requireModule(t, "smsbao")
+	wasm, err := os.ReadFile(exampleWasm["smsbao"])
 	if err != nil {
-		t.Fatalf("read binary: %v", err)
+		t.Fatalf("read wasm: %v", err)
 	}
 	return makeZip(t, map[string][]byte{
-		ManifestFileName: []byte(processManifestArchive),
-		"plugin-bin":     bin,
+		ManifestFileName: []byte(sampleManifestArchive),
+		"plugin.wasm":    wasm,
 	})
 }
 
-// signArtifact 生成 sha256 与 Ed25519 签名，返回归档、公钥、签名、sha256。
+// signArtifact 生成 sha256 与 Ed25519 签名，返回公钥、签名、sha256。
 func signArtifact(t *testing.T, data []byte) (pubB64, sigB64, shaHex string) {
 	t.Helper()
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
@@ -94,15 +97,8 @@ func newInstallManager(t *testing.T, dir string, mutate func(*Options)) *Manager
 }
 
 func TestInstallFromArchiveWithSignature(t *testing.T) {
-	archive := processArchive(t)
+	archive := sampleArchive(t)
 	pubB64, sigB64, shaHex := signArtifact(t, archive)
-
-	var webhookHit bool
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		webhookHit = true
-		_, _ = w.Write([]byte(`{"ok":true}`))
-	}))
-	defer srv.Close()
 
 	dir := t.TempDir()
 	mgr := newInstallManager(t, dir, func(o *Options) {
@@ -115,31 +111,23 @@ func TestInstallFromArchiveWithSignature(t *testing.T) {
 	if err != nil {
 		t.Fatalf("install: %v", err)
 	}
-	if man.Name != "process-webhook" || man.Runtime != RuntimeProcess {
+	if man.Name != "smsbao" || man.Runtime != RuntimeWASM {
 		t.Fatalf("unexpected manifest: %+v", man)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "process-webhook", "plugin-bin")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, "smsbao", "plugin.wasm")); err != nil {
 		t.Fatalf("installed entry missing: %v", err)
 	}
-	if _, ok := mgr.Registry().Lookup(CategoryNotifySMS, "process-webhook"); !ok {
+	if _, ok := mgr.Registry().Lookup(CategoryNotifySMS, "smsbao"); !ok {
 		t.Fatal("plugin not registered after install")
 	}
-
-	// 已安装的进程插件应可正常调用。
-	if err := mgr.Configure(ctx, "process-webhook", map[string]string{"url": srv.URL}); err != nil {
-		t.Fatalf("configure: %v", err)
-	}
-	input, _ := json.Marshal(map[string]string{"to": "13800000000", "body": "hi"})
-	if _, err := mgr.Invoke(ctx, CategoryNotifySMS, "process-webhook", "send", input); err != nil {
-		t.Fatalf("invoke: %v", err)
-	}
-	if !webhookHit {
-		t.Fatal("installed plugin did not call the webhook")
+	info := mgr.Installed()[0]
+	if info.Builtin || !info.Sandboxed {
+		t.Fatalf("external plugin should be sandboxed: %+v", info)
 	}
 }
 
 func TestInstallChecksumMismatch(t *testing.T) {
-	archive := processArchive(t)
+	archive := sampleArchive(t)
 	_, _, shaHex := signArtifact(t, archive)
 	dir := t.TempDir()
 	mgr := newInstallManager(t, dir, nil)
@@ -151,9 +139,8 @@ func TestInstallChecksumMismatch(t *testing.T) {
 }
 
 func TestInstallSignatureInvalid(t *testing.T) {
-	archive := processArchive(t)
+	archive := sampleArchive(t)
 	pubB64, _, shaHex := signArtifact(t, archive)
-	// 用另一个密钥签名。
 	_, otherPriv, _ := ed25519.GenerateKey(rand.Reader)
 	badSig := base64.StdEncoding.EncodeToString(ed25519.Sign(otherPriv, archive))
 
@@ -165,7 +152,7 @@ func TestInstallSignatureInvalid(t *testing.T) {
 }
 
 func TestInstallRequireSignatureWithoutKeys(t *testing.T) {
-	archive := processArchive(t)
+	archive := sampleArchive(t)
 	dir := t.TempDir()
 	mgr := newInstallManager(t, dir, func(o *Options) { o.RequireSignature = true })
 	if _, err := mgr.InstallFromArchive(context.Background(), archive, "", ""); !errors.Is(err, ErrSignatureRequired) {
@@ -174,11 +161,11 @@ func TestInstallRequireSignatureWithoutKeys(t *testing.T) {
 }
 
 func TestInstallRejectsZipSlip(t *testing.T) {
-	requireBinary(t, "process-webhook")
-	bin, _ := os.ReadFile(exampleBin["process-webhook"])
+	requireModule(t, "smsbao")
+	wasm, _ := os.ReadFile(exampleWasm["smsbao"])
 	evil := makeZip(t, map[string][]byte{
-		ManifestFileName:    []byte(processManifestArchive),
-		"plugin-bin":        bin,
+		ManifestFileName:    []byte(sampleManifestArchive),
+		"plugin.wasm":       wasm,
 		"../escaped-plugin": []byte("pwned"),
 	})
 	dir := t.TempDir()
@@ -192,7 +179,7 @@ func TestInstallRejectsZipSlip(t *testing.T) {
 }
 
 func TestInstallFromRegistry(t *testing.T) {
-	archive := processArchive(t)
+	archive := sampleArchive(t)
 	pubB64, sigB64, shaHex := signArtifact(t, archive)
 
 	var base string
@@ -202,10 +189,10 @@ func TestInstallFromRegistry(t *testing.T) {
 	})
 	mux.HandleFunc("/index.json", func(w http.ResponseWriter, r *http.Request) {
 		index := map[string]any{"plugins": []map[string]any{{
-			"name":      "process-webhook",
+			"name":      "smsbao",
 			"version":   "0.1.0",
 			"category":  CategoryNotifySMS,
-			"runtime":   RuntimeProcess,
+			"runtime":   RuntimeWASM,
 			"url":       base + "/sms.zip",
 			"sha256":    shaHex,
 			"signature": sigB64,
@@ -227,15 +214,15 @@ func TestInstallFromRegistry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("registry: %v", err)
 	}
-	if len(entries) != 1 || entries[0].Name != "process-webhook" {
+	if len(entries) != 1 || entries[0].Name != "smsbao" {
 		t.Fatalf("unexpected registry: %+v", entries)
 	}
 
-	man, err := mgr.InstallFromURL(ctx, InstallSpec{Name: "process-webhook"})
+	man, err := mgr.InstallFromURL(ctx, InstallSpec{Name: "smsbao"})
 	if err != nil {
 		t.Fatalf("install from registry: %v", err)
 	}
-	if man.Name != "process-webhook" {
+	if man.Name != "smsbao" {
 		t.Fatalf("unexpected manifest: %+v", man)
 	}
 }
@@ -255,7 +242,7 @@ func TestFetchRegistryNotConfigured(t *testing.T) {
 }
 
 func TestRemovePlugin(t *testing.T) {
-	archive := processArchive(t)
+	archive := sampleArchive(t)
 	pubB64, sigB64, shaHex := signArtifact(t, archive)
 	dir := t.TempDir()
 	mgr := newInstallManager(t, dir, func(o *Options) { o.TrustedKeys = []string{pubB64} })
@@ -264,13 +251,41 @@ func TestRemovePlugin(t *testing.T) {
 	if _, err := mgr.InstallFromArchive(ctx, archive, shaHex, sigB64); err != nil {
 		t.Fatalf("install: %v", err)
 	}
-	if err := mgr.Remove(ctx, "process-webhook"); err != nil {
+	if err := mgr.Remove(ctx, "smsbao"); err != nil {
 		t.Fatalf("remove: %v", err)
 	}
-	if _, ok := mgr.Registry().Lookup(CategoryNotifySMS, "process-webhook"); ok {
+	if _, ok := mgr.Registry().Lookup(CategoryNotifySMS, "smsbao"); ok {
 		t.Fatal("plugin still registered after remove")
 	}
-	if _, err := os.Stat(filepath.Join(dir, "process-webhook")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(dir, "smsbao")); !os.IsNotExist(err) {
 		t.Fatalf("plugin dir should be removed, stat err = %v", err)
+	}
+}
+
+func TestManifestRejectsUnsafeNames(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{".", "..", "../evil", "builtin-sms-log", "a b", "/abs"} {
+		body := strings.Replace(sampleManifestArchive, "name: smsbao", "name: "+name, 1)
+		if err := os.WriteFile(filepath.Join(dir, ManifestFileName), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		_ = os.WriteFile(filepath.Join(dir, "plugin.wasm"), []byte("not-wasm"), 0o600)
+		if _, _, err := loadManifest(dir); err == nil {
+			t.Fatalf("name %q should be rejected", name)
+		}
+	}
+}
+
+func TestManifestRejectsProcessRuntime(t *testing.T) {
+	dir := t.TempDir()
+	body := strings.Replace(sampleManifestArchive, "runtime: wasm", "runtime: process", 1)
+	if err := os.WriteFile(filepath.Join(dir, ManifestFileName), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "plugin.wasm"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := loadManifest(dir); err == nil {
+		t.Fatal("process runtime must be rejected for external plugins")
 	}
 }

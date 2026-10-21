@@ -52,11 +52,6 @@ plugin-example:
 		  cp plugin.yaml $(CURDIR)/plugins/$$name/plugin.yaml ) && \
 		echo "built plugins/$$name"; \
 	done
-	@mkdir -p plugins/process-webhook; \
-	( cd sdk/plugin-go/examples/process-webhook && \
-	  go build -o $(CURDIR)/plugins/process-webhook/plugin-bin . && \
-	  cp plugin.yaml $(CURDIR)/plugins/process-webhook/plugin.yaml ) && \
-	echo "built plugins/process-webhook"
 
 # 构建文档站（产物位于 docs/.vitepress/dist）。
 docs:

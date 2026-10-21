@@ -118,6 +118,9 @@ func (m *Manager) Remove(ctx context.Context, name string) error {
 	m.mu.RUnlock()
 	dir := ""
 	if ok {
+		if lp.builtin {
+			return fmt.Errorf("plugin %q: built-in plugins cannot be removed", name)
+		}
 		dir = lp.dir
 	}
 	if err := m.Disable(ctx, name); err != nil {
@@ -273,15 +276,9 @@ func (m *Manager) installArchive(ctx context.Context, data []byte) (Manifest, er
 		return Manifest{}, err
 	}
 
-	man, entry, err := loadManifest(tmp)
+	man, _, err := loadManifest(tmp)
 	if err != nil {
 		return Manifest{}, err
-	}
-	// 进程插件需要可执行位（zip 通常不保留 Unix 权限）。
-	if man.Runtime == RuntimeProcess {
-		if err := os.Chmod(entry, 0o755); err != nil {
-			return Manifest{}, fmt.Errorf("plugin %q: chmod entry: %w", man.Name, err)
-		}
 	}
 
 	final := filepath.Join(m.opts.Dir, man.Name)

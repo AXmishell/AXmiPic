@@ -231,39 +231,12 @@ func run() error {
 		// none：不安装扫描器，直接放行。
 	}
 
-	// 通知渠道：短信与邮件。短信的实际渠道在设置域引导时按 channel 构建（支持
-	// 插件）；此处仅给出配置兜底的初始渠道，失败时回退日志渠道而非中止启动。
-	var smsSender notify.Sender = notify.NewLogSender("sms", logger)
-	if cfg.SMS.Enabled && (cfg.SMS.Channel == "" || cfg.SMS.Channel == "http") && strings.TrimSpace(cfg.SMS.Endpoint) != "" {
-		httpSender, err := notify.NewHTTPSSender(notify.HTTPOptions{
-			Name:     cfg.SMS.Provider,
-			Endpoint: cfg.SMS.Endpoint,
-			Method:   cfg.SMS.Method,
-		})
-		if err != nil {
-			logger.Warn("failed to initialize http sms channel", slog.Any("error", err))
-		} else {
-			smsSender = httpSender
-			logger.Info("sms notification channel enabled")
-		}
-	}
-	var emailSender notify.Sender = notify.NewLogSender("email", logger)
-	if cfg.Email.Enabled {
-		smtpSender, err := notify.NewSMTPSender(notify.SMTPOptions{
-			Host:     cfg.Email.Host,
-			Port:     cfg.Email.Port,
-			Username: cfg.Email.Username,
-			Password: cfg.Email.Password,
-			From:     cfg.Email.From,
-			UseTLS:   cfg.Email.UseTLS,
-		})
-		if err != nil {
-			return fmt.Errorf("main: email sender: %w", err)
-		}
-		emailSender = smtpSender
-		logger.Info("email notification channel enabled")
-	}
-	notifySvc := service.NewNotifyService(smsSender, emailSender)
+	// 通知渠道：短信与邮件的实际发送由内置/外置插件提供。启动初期先使用
+	// 日志渠道兜底，插件系统就绪并完成迁移后再切换为当前选中的插件。
+	notifySvc := service.NewNotifyService(
+		notify.NewLogSender("sms", logger),
+		notify.NewLogSender("email", logger),
+	)
 	notifySvc.SetRepository(repo)
 	accounts.SetNotifyService(notifySvc)
 	settingsSvc := service.NewSettingsService(repo, cipher, notifySvc, logger, service.SMTPConfig{
@@ -280,27 +253,44 @@ func run() error {
 	// 服务启动；持久化的「暂停」状态在此应用。
 	var pluginMgr *plugin.Manager
 	var pluginSvc *service.PluginService
-	if cfg.Plugins.Enabled {
-		pluginMgr = plugin.NewManager(plugin.Options{
-			Dir:              cfg.Plugins.Dir,
-			Logger:           logger,
-			HTTPTimeout:      time.Duration(cfg.Plugins.HTTPTimeoutSec) * time.Second,
-			MaxHTTPBody:      int64(cfg.Plugins.MaxHTTPBodyKB) << 10,
-			MemoryLimitPages: pluginMemoryLimitPages(cfg.Plugins.MemoryLimitMB),
-			TrustedKeys:      cfg.Plugins.TrustedKeys,
-			RequireSignature: cfg.Plugins.RequireSignature,
-			IndexURL:         cfg.Plugins.IndexURL,
-			MaxArchiveBytes:  int64(cfg.Plugins.MaxArchiveMB) << 20,
-		})
-		defer func() {
-			closeCtx, cancelClose := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancelClose()
-			if err := pluginMgr.Close(closeCtx); err != nil {
-				logger.Warn("failed to close plugins", slog.Any("error", err))
-			}
-		}()
+	opts := plugin.Options{
+		Dir:              cfg.Plugins.Dir,
+		Logger:           logger,
+		HTTPTimeout:      time.Duration(cfg.Plugins.HTTPTimeoutSec) * time.Second,
+		MaxHTTPBody:      int64(cfg.Plugins.MaxHTTPBodyKB) << 10,
+		MemoryLimitPages: pluginMemoryLimitPages(cfg.Plugins.MemoryLimitMB),
+		TrustedKeys:      cfg.Plugins.TrustedKeys,
+		RequireSignature: cfg.Plugins.RequireSignature,
+		IndexURL:         cfg.Plugins.IndexURL,
+		MaxArchiveBytes:  int64(cfg.Plugins.MaxArchiveMB) << 20,
 	}
+	if !cfg.Plugins.Enabled {
+		// 内置插件（通知渠道）必须始终可用；此开关只关闭外置插件的扫描/安装。
+		opts.Dir = ""
+		opts.IndexURL = ""
+		logger.Info("external plugins are disabled; built-in notification plugins remain available")
+	}
+	pluginMgr = plugin.NewManager(opts)
+	defer func() {
+		closeCtx, cancelClose := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancelClose()
+		if err := pluginMgr.Close(closeCtx); err != nil {
+			logger.Warn("failed to close plugins", slog.Any("error", err))
+		}
+	}()
 	pluginSvc = service.NewPluginService(pluginMgr, repo, cipher, logger)
+	// 内置通知插件（短信日志/HTTP、邮件日志/SMTP）随宿主注册：默认受信、
+	// 进程内运行、无需沙箱，也不占用 WASM 运行时内存。
+	pluginSvc.RegisterBuiltinNotify(logger)
+	// 当前通知渠道变化时重建 NotifyService 的短信/邮件 Sender。
+	pluginSvc.SetNotifyApplier(func(ctx context.Context, category string) {
+		switch category {
+		case plugin.CategoryNotifySMS:
+			notifySvc.SetSMS(pluginSvc.NotifySender(ctx, category))
+		case plugin.CategoryNotifyEmail:
+			notifySvc.SetEmail(pluginSvc.NotifySender(ctx, category))
+		}
+	})
 	bootCtx, cancelBoot := context.WithTimeout(context.Background(), 30*time.Second)
 	if err := pluginSvc.Bootstrap(bootCtx, cfg.Plugins.Startup, cfg.Plugins.Preload); err != nil {
 		logger.Warn("failed to bootstrap plugins", slog.Any("error", err))
@@ -339,17 +329,22 @@ func run() error {
 		return nil
 	})
 	settingsCtx, cancelSettings := context.WithTimeout(context.Background(), 10*time.Second)
-	err = settingsSvc.Bootstrap(settingsCtx)
-	if err == nil {
-		err = settingsSvc.BootstrapModeration(settingsCtx)
-	}
+	// 旧版 SMTP 设置不再直接应用，而是由 MigrateLegacyNotify 迁移为内置
+	// 邮件插件的配置；数据库中的其它设置域照常引导。
+	err = settingsSvc.BootstrapModeration(settingsCtx)
 	if err == nil {
 		err = settingsSvc.BootstrapDomains(settingsCtx)
+	}
+	if err == nil {
+		pluginSvc.MigrateLegacyNotify(settingsCtx, settingsSvc, cfg, logger)
 	}
 	cancelSettings()
 	if err != nil {
 		return err
 	}
+	// 迁移完成后按当前选择的插件重建通知渠道。
+	notifySvc.SetSMS(pluginSvc.NotifySender(context.Background(), plugin.CategoryNotifySMS))
+	notifySvc.SetEmail(pluginSvc.NotifySender(context.Background(), plugin.CategoryNotifyEmail))
 	shareSvc := service.NewShareService(repo, cfg.Server.BaseURL)
 	siteSvc := service.NewSiteService(repo)
 
@@ -440,6 +435,18 @@ func run() error {
 
 	// 运行时插件已在设置引导前加载（见上），此处直接注入路由。
 
+	// 前端资源：默认使用编译时内嵌的产物；开启 web.hot_reload 后改为反向代理
+	// 到 Vite 开发服务器（含 HMR WebSocket），从而在开发时获得热更新。
+	staticHandler := webui.Handler()
+	if cfg.Web.HotReload.Enabled {
+		staticHandler, err = webui.NewDevProxy(cfg.Web.HotReload.Target)
+		if err != nil {
+			return err
+		}
+		logger.Warn("web hot reload mode enabled; start the Vite dev server (pnpm dev)",
+			slog.String("target", cfg.Web.HotReload.Target))
+	}
+
 	router := api.NewRouter(api.Deps{
 		Upload:        uploadSvc,
 		Imaging:       imagingSvc,
@@ -466,7 +473,7 @@ func run() error {
 		ClientIPResolver: clientIPResolver,
 		MaxUploadMB:      cfg.Upload.MaxSizeMB,
 		Pprof:            cfg.Server.PprofEnabled,
-		Static:           webui.Handler(),
+		Static:           staticHandler,
 		Database:         repo,
 		Logger:           logger,
 	})
@@ -919,16 +926,6 @@ func registerSettingDomains(
 			default:
 				uploadSvc.SetScanner(nil)
 			}
-		},
-	))
-
-	settingsSvc.RegisterDomain(service.NewSettingDomain(repo, "sms",
-		service.SMSSettings{Enabled: cfg.SMS.Enabled, Channel: cfg.SMS.Channel, Provider: cfg.SMS.Provider, Endpoint: cfg.SMS.Endpoint, Method: cfg.SMS.Method},
-		func(v service.SMSSettings) error {
-			return service.ValidateSMSSettingsWithPlugins(v, pluginSvc)
-		},
-		func(v service.SMSSettings) {
-			notifySvc.SetSMS(service.BuildSMSSender(context.Background(), v, pluginSvc, logger))
 		},
 	))
 

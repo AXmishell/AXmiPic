@@ -4,6 +4,7 @@ package config
 import (
 	"fmt"
 	"net"
+	"net/url"
 	"strings"
 
 	"github.com/go-viper/mapstructure/v2"
@@ -33,6 +34,8 @@ var envPaths = map[string]string{
 	"server_write_timeout_sec":           "server.write_timeout_sec",
 	"server_shutdown_timeout_sec":        "server.shutdown_timeout_sec",
 	"server_pprof_enabled":               "server.pprof_enabled",
+	"web_hot_reload_enabled":             "web.hot_reload.enabled",
+	"web_hot_reload_target":              "web.hot_reload.target",
 	"database_driver":                    "database.driver",
 	"database_dsn":                       "database.dsn",
 	"database_max_open_conns":            "database.max_open_conns",
@@ -151,6 +154,7 @@ var envPaths = map[string]string{
 // Config 是顶层应用配置。
 type Config struct {
 	Server      ServerConfig      `koanf:"server"`
+	Web         WebConfig         `koanf:"web"`
 	Database    DatabaseConfig    `koanf:"database"`
 	Storage     StorageConfig     `koanf:"storage"`
 	Upload      UploadConfig      `koanf:"upload"`
@@ -183,6 +187,21 @@ type ServerConfig struct {
 	PprofEnabled bool `koanf:"pprof_enabled"`
 	// ClientIP 控制如何解析客户端真实 IP（用于限流、访客配额与日志）。
 	ClientIP ClientIPConfig `koanf:"client_ip"`
+}
+
+// WebConfig 配置前端资源的服务方式。
+type WebConfig struct {
+	// HotReload 控制 HMR 热更新模式。开启后，未匹配的前端请求（包括 HMR
+	// WebSocket）会反向代理到 Vite 开发服务器；默认关闭，使用编译时内嵌的
+	// 前端产物。仅用于本地开发，请勿在生产环境开启。
+	HotReload HotReloadConfig `koanf:"hot_reload"`
+}
+
+// HotReloadConfig 配置 Vite 开发服务器反向代理。
+type HotReloadConfig struct {
+	Enabled bool `koanf:"enabled"`
+	// Target 是 Vite 开发服务器的地址，默认 http://127.0.0.1:5173。
+	Target string `koanf:"target"`
 }
 
 // ClientIPConfig 控制客户端真实 IP 的来源与可信代理。
@@ -409,7 +428,8 @@ type ModerationConfig struct {
 	MaxImageMB int `koanf:"max_image_mb"`
 }
 
-// SMSConfig 配置短信渠道。
+// SMSConfig 配置短信渠道。该配置仅作为首次启动迁移到内置短信插件
+// （builtin-sms-http / builtin-sms-log）的种子，之后以插件配置为准。
 type SMSConfig struct {
 	Enabled bool `koanf:"enabled"`
 	// Channel 指定渠道类型："" 或 "http" 使用通用 HTTP 网关；"log" 使用日志
@@ -422,7 +442,8 @@ type SMSConfig struct {
 	Method string `koanf:"method"`
 }
 
-// EmailConfig 配置邮件渠道。
+// EmailConfig 配置邮件渠道。该配置仅作为首次启动迁移到内置 SMTP 插件
+// （builtin-email-smtp）的种子，之后以插件配置为准。
 type EmailConfig struct {
 	Enabled  bool   `koanf:"enabled"`
 	Host     string `koanf:"host"`
@@ -435,7 +456,7 @@ type EmailConfig struct {
 
 // PluginsConfig 配置运行时插件系统。
 type PluginsConfig struct {
-	// Enabled 为 true 时扫描并加载插件目录。
+	// Enabled 为 true 时扫描并加载外置插件目录；内置插件始终注册。
 	Enabled bool `koanf:"enabled"`
 	// Dir 为插件根目录，每个子目录为一个插件。
 	Dir string `koanf:"dir"`
@@ -547,6 +568,12 @@ func defaultConfig() Config {
 			WriteTimeoutSec:    30,
 			ShutdownTimeoutSec: 10,
 			ClientIP:           ClientIPConfig{Source: "remote"},
+		},
+		Web: WebConfig{
+			HotReload: HotReloadConfig{
+				Enabled: false,
+				Target:  "http://127.0.0.1:5173",
+			},
 		},
 		Database: DatabaseConfig{
 			Driver:                 "sqlite",
@@ -683,6 +710,16 @@ func (c Config) validate() error {
 	for _, cidr := range c.Server.ClientIP.TrustedProxies {
 		if _, _, err := net.ParseCIDR(strings.TrimSpace(cidr)); err != nil {
 			return fmt.Errorf("config: server.client_ip.trusted_proxies contains invalid CIDR %q", cidr)
+		}
+	}
+	if c.Web.HotReload.Enabled {
+		target := strings.TrimSpace(c.Web.HotReload.Target)
+		if target == "" {
+			return fmt.Errorf("config: web.hot_reload.target must not be empty when hot reload is enabled")
+		}
+		u, err := url.Parse(target)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return fmt.Errorf("config: web.hot_reload.target %q must be an http(s) URL with a host", target)
 		}
 	}
 	switch strings.ToLower(strings.TrimSpace(c.Database.Driver)) {

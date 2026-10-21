@@ -35,6 +35,9 @@ type Manifest struct {
 	Capabilities Capabilities `yaml:"capabilities,omitempty" json:"capabilities,omitempty"`
 	// Checksum 为入口文件的 sha256 校验值，形如 "sha256:<hex>"，可选。
 	Checksum string `yaml:"checksum,omitempty" json:"checksum,omitempty"`
+	// Builtin 标识内置插件。该字段不从 plugin.yaml 读取，仅由宿主在注册
+	// 内置 Provider 时设置，外置清单无法伪造。
+	Builtin bool `yaml:"-" json:"-"`
 }
 
 // ManifestFileName 是插件清单的约定文件名。
@@ -82,23 +85,23 @@ func (m Manifest) resolveEntry(dir string) (string, error) {
 	return entry, nil
 }
 
-// validate 检查清单的基本字段。
+// validate 检查清单的基本字段。外置插件只允许 WASM 沙箱运行时；内置插件
+// 由宿主直接注册，不经过此路径。
 func (m Manifest) validate() error {
 	if strings.TrimSpace(m.Name) == "" {
 		return fmt.Errorf("plugin: manifest name is required")
 	}
-	if strings.ContainsAny(m.Name, "/\\ \t") {
-		return fmt.Errorf("plugin %q: name must not contain separators or spaces", m.Name)
+	if !validPluginName(m.Name) {
+		return fmt.Errorf("plugin %q: name must match [a-z0-9][a-z0-9._-]* and must not be . or ..", m.Name)
+	}
+	if strings.HasPrefix(m.Name, "builtin-") {
+		return fmt.Errorf("plugin %q: the builtin- prefix is reserved for built-in plugins", m.Name)
 	}
 	if strings.TrimSpace(m.Category) == "" {
 		return fmt.Errorf("plugin %q: category is required", m.Name)
 	}
-	switch m.Runtime {
-	case RuntimeWASM, RuntimeProcess:
-	case "":
-		return fmt.Errorf("plugin %q: runtime is required", m.Name)
-	default:
-		return fmt.Errorf("plugin %q: unknown runtime %q", m.Name, m.Runtime)
+	if m.Runtime != RuntimeWASM {
+		return fmt.Errorf("plugin %q: external plugins must use the wasm sandbox runtime (got %q)", m.Name, m.Runtime)
 	}
 	if strings.TrimSpace(m.Entry) == "" {
 		return fmt.Errorf("plugin %q: entry is required", m.Name)
@@ -112,6 +115,25 @@ func (m Manifest) validate() error {
 		}
 	}
 	return nil
+}
+
+// validPluginName 只允许安全的目录名，避免 . / .. 或路径分隔符进入安装路径。
+func validPluginName(name string) bool {
+	if name == "" || name == "." || name == ".." {
+		return false
+	}
+	for i, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+		case r == '.', r == '_', r == '-':
+			if i == 0 {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // httpHosts 返回声明的主机白名单（可能为空）。

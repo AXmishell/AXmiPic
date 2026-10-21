@@ -46,6 +46,7 @@ type installedPlugin struct {
 	descriptor Descriptor
 	enabled    bool
 	loaded     bool
+	builtin    bool
 	lastUsed   time.Time
 	lastError  string
 }
@@ -54,6 +55,10 @@ type installedPlugin struct {
 type InstalledInfo struct {
 	Manifest   Manifest
 	Descriptor Descriptor
+	// Builtin 表示内置插件：随宿主编译发布、默认信任、进程内运行。
+	Builtin bool
+	// Sandboxed 表示插件运行在 WASM 沙箱中；内置插件为 false。
+	Sandboxed bool
 	// Enabled 为逻辑启用（未被暂停）。
 	Enabled bool
 	// Loaded 为当前是否已实例化（占用内存）。
@@ -242,6 +247,8 @@ func (m *Manager) loadResolved(ctx context.Context, man Manifest, dir, entry str
 	}
 
 	desc := descriptorFromManifest(man, provider.Descriptor())
+	desc.Origin = OriginExternal
+	desc.Sandboxed = man.Runtime == RuntimeWASM
 	m.mu.Lock()
 	m.installed[man.Name] = &installedPlugin{
 		manifest:   man,
@@ -306,6 +313,8 @@ func (m *Manager) activate(ctx context.Context, name string) (Provider, error) {
 		return nil, err
 	}
 	desc := descriptorFromManifest(man, provider.Descriptor())
+	desc.Origin = OriginExternal
+	desc.Sandboxed = man.Runtime == RuntimeWASM
 
 	m.mu.Lock()
 	lp, ok = m.installed[name]
@@ -353,12 +362,8 @@ func (m *Manager) newProvider(ctx context.Context, man Manifest, entry string) (
 			MaxHTTPBody:      m.opts.MaxHTTPBody,
 			MemoryLimitPages: m.opts.MemoryLimitPages,
 		})
-	case RuntimeProcess:
-		return loadProcess(ctx, man, entry, RuntimeOptions{
-			Logger:      m.opts.Logger,
-			HTTPTimeout: m.opts.HTTPTimeout,
-			MaxHTTPBody: m.opts.MaxHTTPBody,
-		})
+	case RuntimeBuiltin:
+		return nil, fmt.Errorf("plugin %q: built-in providers are registered in-process and cannot be loaded from disk", man.Name)
 	default:
 		return nil, fmt.Errorf("plugin %q: runtime %q is not supported", man.Name, man.Runtime)
 	}
@@ -396,6 +401,10 @@ func (m *Manager) Disable(ctx context.Context, name string) error {
 	if !ok || !lp.enabled {
 		m.mu.Unlock()
 		return nil
+	}
+	if lp.builtin {
+		m.mu.Unlock()
+		return fmt.Errorf("plugin %q: built-in plugins cannot be disabled", name)
 	}
 	lp.enabled = false
 	man := lp.manifest
@@ -496,7 +505,7 @@ func (m *Manager) Reload(ctx context.Context, name string) error {
 	}
 	wasEnabled := lp.enabled
 	if lp.dir == "" {
-		return nil // 进程内注册的 Provider 无需重新加载。
+		return nil // 内置 Provider 无需重新加载。
 	}
 	if err := m.Disable(ctx, name); err != nil {
 		return err
@@ -612,7 +621,14 @@ func (m *Manager) Describe(name string) (Descriptor, bool) {
 
 // manifestDescriptor 返回仅依据清单的描述（不含插件自报字段）。
 func (m *Manager) manifestDescriptor(man Manifest) Descriptor {
-	return Descriptor{Name: man.Name, Category: man.Category, Version: man.Version}
+	d := Descriptor{Name: man.Name, Category: man.Category, Version: man.Version}
+	if man.Builtin {
+		d.Origin = OriginBuiltin
+	} else {
+		d.Origin = OriginExternal
+		d.Sandboxed = man.Runtime == RuntimeWASM
+	}
+	return d
 }
 
 // descriptorFromManifest 以清单信息补全插件自描述。
@@ -657,6 +673,8 @@ func (m *Manager) Installed() []InstalledInfo {
 		out = append(out, InstalledInfo{
 			Manifest:    lp.manifest,
 			Descriptor:  d,
+			Builtin:     lp.builtin,
+			Sandboxed:   !lp.builtin,
 			Enabled:     lp.enabled,
 			Loaded:      lp.loaded,
 			MemoryBytes: providerMemory(lp.provider),
@@ -683,10 +701,12 @@ func (m *Manager) Loaded() []Manifest {
 	return out
 }
 
-// RegisterProvider 直接注册一个进程内 Provider（供内嵌插件与测试使用）。
-// 进程内 Provider 常驻内存，不会因空闲或暂停而卸载。
+// RegisterProvider 直接注册一个进程内 Provider（供测试与特殊内嵌场景使用）。
+// 它不标记为内置插件；生产环境的内置插件应使用 RegisterBuiltin。
 func (m *Manager) RegisterProvider(man Manifest, provider Provider) {
 	desc := descriptorFromManifest(man, provider.Descriptor())
+	desc.Origin = OriginExternal
+	desc.Sandboxed = man.Runtime == RuntimeWASM
 	m.mu.Lock()
 	m.installed[man.Name] = &installedPlugin{
 		manifest:   man,
@@ -698,6 +718,36 @@ func (m *Manager) RegisterProvider(man Manifest, provider Provider) {
 	}
 	m.mu.Unlock()
 	m.registry.Register(Entry{Manifest: man, Descriptor: desc, Provider: provider})
+}
+
+// RegisterBuiltin 注册一个随宿主编译发布的内置 Provider：默认受信、常驻内存、
+// 不经过沙箱，且不能被暂停、卸载或替换。
+func (m *Manager) RegisterBuiltin(man Manifest, provider Provider) {
+	man.Builtin = true
+	man.Runtime = RuntimeBuiltin
+	desc := descriptorFromManifest(man, provider.Descriptor())
+	desc.Origin = OriginBuiltin
+	desc.Sandboxed = false
+	m.mu.Lock()
+	m.installed[man.Name] = &installedPlugin{
+		manifest:   man,
+		provider:   provider,
+		descriptor: desc,
+		enabled:    true,
+		loaded:     true,
+		builtin:    true,
+		lastUsed:   time.Now(),
+	}
+	m.mu.Unlock()
+	m.registry.Register(Entry{Manifest: man, Descriptor: desc, Provider: provider})
+}
+
+// Builtin 报告指定插件是否为内置插件。
+func (m *Manager) Builtin(name string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	lp, ok := m.installed[name]
+	return ok && lp.builtin
 }
 
 // removeEntry 从安装表与注册表中删除一个插件（不关闭实例）；供 Remove 使用。

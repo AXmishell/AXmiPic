@@ -206,6 +206,42 @@ func (h *Handler) adminInstalledPlugins(w http.ResponseWriter, r *http.Request) 
 	writeOK(w, map[string]any{"items": items})
 }
 
+// adminGetActivePlugin 返回某通知类别当前使用的插件。
+func (h *Handler) adminGetActivePlugin(w http.ResponseWriter, r *http.Request) {
+	if h.plugins == nil {
+		writeError(w, http.StatusNotFound, http.StatusNotFound, "plugins unavailable")
+		return
+	}
+	category := r.URL.Query().Get("category")
+	writeOK(w, map[string]string{
+		"category": category,
+		"name":     h.plugins.Active(r.Context(), category),
+	})
+}
+
+type pluginActiveRequest struct {
+	Category string `json:"category"`
+	Name     string `json:"name"`
+}
+
+// adminSetActivePlugin 切换短信/邮件当前使用的插件渠道。
+func (h *Handler) adminSetActivePlugin(w http.ResponseWriter, r *http.Request) {
+	if h.plugins == nil {
+		writeError(w, http.StatusNotFound, http.StatusNotFound, "plugins unavailable")
+		return
+	}
+	var body pluginActiveRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxJSONBody)).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if err := h.plugins.SetActive(r.Context(), body.Category, body.Name); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeOK(w, map[string]string{"category": body.Category, "name": body.Name})
+}
+
 type pluginEnabledRequest struct {
 	Enabled bool `json:"enabled"`
 }

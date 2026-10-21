@@ -31,6 +31,8 @@ type PluginService struct {
 
 	// applyMu 串行化 Apply，避免并发 Configure 与 Invoke 竞争同一插件实例。
 	applyMu sync.Mutex
+	// notifyApplier 在通知渠道选择变化后重建对应的 notify.Sender。
+	notifyApplier func(context.Context, string)
 }
 
 // NewPluginService 构造插件服务。manager 与 cipher 可为 nil（此时相关操作报错）。
@@ -43,6 +45,22 @@ func NewPluginService(manager *plugin.Manager, repo *store.Repository, cipher *s
 
 // Manager 返回底层插件管理器（可能为 nil）。
 func (s *PluginService) Manager() *plugin.Manager { return s.manager }
+
+// SetNotifyApplier 设置通知渠道变更回调。切换当前渠道或暂停插件时，用它
+// 重建 NotifyService 的短信/邮件 Sender。
+func (s *PluginService) SetNotifyApplier(fn func(context.Context, string)) {
+	s.notifyApplier = fn
+}
+
+// applyNotify 在通知类别的当前渠道可能变化后通知宿主重建 Sender。
+func (s *PluginService) applyNotify(ctx context.Context, category string) {
+	if s.notifyApplier == nil {
+		return
+	}
+	if category == plugin.CategoryNotifySMS || category == plugin.CategoryNotifyEmail {
+		s.notifyApplier(ctx, category)
+	}
+}
 
 // Descriptors 返回指定类别的插件自描述；category 为空返回全部。
 func (s *PluginService) Descriptors(category string) []plugin.Descriptor {
@@ -163,6 +181,8 @@ func (s *PluginService) SaveConfig(ctx context.Context, name string, values map[
 				out[f.Key] = enc
 			case prev[f.Key] != "":
 				out[f.Key] = prev[f.Key]
+			default:
+				out[f.Key] = ""
 			}
 			continue
 		}
@@ -174,11 +194,53 @@ func (s *PluginService) SaveConfig(ctx context.Context, name string, values map[
 			out[f.Key] = old
 		}
 	}
+	if err := validatePluginValues(desc, out); err != nil {
+		return fmt.Errorf("%w: plugin %q: %v", ErrSettingsConfig, name, err)
+	}
 	encoded, err := json.Marshal(out)
 	if err != nil {
 		return fmt.Errorf("plugin %q: encode config: %w", name, err)
 	}
 	return s.repo.SetSetting(ctx, pluginConfigPrefix+name, string(encoded))
+}
+
+// validatePluginValues 校验必填、整数与下拉选项。密文字段此处是密文，仅检查
+// 是否已填写，不做明文格式校验。
+func validatePluginValues(desc plugin.Descriptor, values map[string]string) error {
+	for _, f := range desc.Fields {
+		v := strings.TrimSpace(values[f.Key])
+		if f.Required && v == "" {
+			return fmt.Errorf("field %q is required", f.Key)
+		}
+		switch f.Type {
+		case plugin.FieldInt:
+			if v != "" {
+				var n int
+				if _, err := fmt.Sscanf(v, "%d", &n); err != nil {
+					return fmt.Errorf("field %q must be an integer", f.Key)
+				}
+			}
+		case plugin.FieldBool:
+			if v != "" && v != "true" && v != "false" {
+				return fmt.Errorf("field %q must be true or false", f.Key)
+			}
+		case plugin.FieldSelect:
+			if v == "" || len(f.Options) == 0 {
+				continue
+			}
+			ok := false
+			for _, opt := range f.Options {
+				if v == opt {
+					ok = true
+					break
+				}
+			}
+			if !ok {
+				return fmt.Errorf("field %q has an unsupported value %q", f.Key, v)
+			}
+		}
+	}
+	return nil
 }
 
 // resolve 返回解密后的完整配置（含秘钥明文），仅供内部注入插件使用。
@@ -230,7 +292,13 @@ func (s *PluginService) Apply(ctx context.Context, name string) error {
 	if !ok {
 		return nil // standby：延迟到首次激活时应用。
 	}
-	return s.configure(ctx, name, p)
+	if err := s.configure(ctx, name, p); err != nil {
+		return err
+	}
+	if desc, ok := s.descriptor(name); ok {
+		s.applyNotify(ctx, desc.Category)
+	}
+	return nil
 }
 
 // activateAndApply 确保插件已加载，并用已保存配置 Configure 它。它用于真正
@@ -243,7 +311,14 @@ func (s *PluginService) activateAndApply(ctx context.Context, name string) error
 	if err != nil {
 		return err
 	}
-	return s.configure(ctx, name, p)
+	if err := s.configure(ctx, name, p); err != nil {
+		return err
+	}
+	// 按需加载后刷新并缓存完整描述，避免重启后后台表单缺少字段。
+	if desc, ok := s.manager.Describe(name); ok {
+		s.cacheDescriptor(ctx, name, desc)
+	}
+	return nil
 }
 
 // configure 解析已保存配置并注入给定实例。
@@ -260,10 +335,16 @@ func (s *PluginService) configure(ctx context.Context, name string, p plugin.Pro
 	return nil
 }
 
-// Invoke 调用插件执行一次操作。已启用但空闲卸载的插件会按需重新加载。
+// Invoke 调用插件执行一次操作。已启用但空闲卸载的插件会按需重新加载，并
+// 在重新加载后自动重放已保存的配置（避免空闲卸载后凭据丢失）。
 func (s *PluginService) Invoke(ctx context.Context, category, name, op string, payload []byte) ([]byte, error) {
 	if s.manager == nil {
 		return nil, fmt.Errorf("%w: plugins are unavailable", plugin.ErrNotFound)
+	}
+	if _, loaded := s.manager.Provider(name); !loaded {
+		if err := s.activateAndApply(ctx, name); err != nil {
+			return nil, err
+		}
 	}
 	return s.manager.Invoke(ctx, category, name, op, payload)
 }
@@ -280,18 +361,78 @@ type smsPayload struct {
 
 // Sender 用插件构造一个短信渠道。调用前会用已保存配置配置该插件。
 func (s *PluginService) Sender(ctx context.Context, name string) (notify.Sender, error) {
+	return s.SenderFor(ctx, plugin.CategoryNotifySMS, name)
+}
+
+// SenderFor 用指定类别的插件构造通知渠道。调用前会用已保存配置配置该插件。
+func (s *PluginService) SenderFor(ctx context.Context, category, name string) (notify.Sender, error) {
 	if s.manager == nil {
 		return nil, fmt.Errorf("%w: plugins are unavailable", plugin.ErrNotFound)
 	}
-	if !s.manager.Has(plugin.CategoryNotifySMS, name) {
-		return nil, fmt.Errorf("%w: sms plugin %q", plugin.ErrNotFound, name)
+	if !s.manager.Has(category, name) {
+		return nil, fmt.Errorf("%w: %s plugin %q", plugin.ErrNotFound, category, name)
 	}
 	applyCtx, cancel := context.WithTimeout(ctx, pluginApplyTimeout)
 	defer cancel()
 	if err := s.activateAndApply(applyCtx, name); err != nil {
 		return nil, err
 	}
-	return NewPluginSender(s, plugin.CategoryNotifySMS, name), nil
+	return NewPluginSender(s, category, name), nil
+}
+
+// ActiveKey 返回某通知类别「当前渠道」在 settings 表中的键。
+func ActiveKey(category string) string { return "plugin.active." + category }
+
+// Active 返回某通知类别当前选择的插件名；未显式选择时回退到内置日志渠道。
+func (s *PluginService) Active(ctx context.Context, category string) string {
+	if s.repo != nil {
+		if raw, err := s.repo.GetSetting(ctx, ActiveKey(category)); err == nil {
+			if name := strings.TrimSpace(raw); name != "" {
+				return name
+			}
+		}
+	}
+	return builtinLogPlugin(category)
+}
+
+// SetActive 设置某通知类别当前使用的插件，并通知宿主重建渠道。
+func (s *PluginService) SetActive(ctx context.Context, category, name string) error {
+	if category != plugin.CategoryNotifySMS && category != plugin.CategoryNotifyEmail {
+		return fmt.Errorf("%w: unsupported notify category %q", ErrInvalidInput, category)
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name = builtinLogPlugin(category)
+	}
+	if s.manager == nil || !s.manager.Has(category, name) {
+		return fmt.Errorf("%w: %s plugin %q is not installed or not enabled", plugin.ErrNotFound, category, name)
+	}
+	if s.repo != nil {
+		if err := s.repo.SetSetting(ctx, ActiveKey(category), name); err != nil {
+			return fmt.Errorf("plugin %q: persist active channel: %w", name, err)
+		}
+	}
+	s.applyNotify(ctx, category)
+	return nil
+}
+
+// NotifySender 依据当前选择的插件构造通知渠道；插件缺失或未启用时回退到
+// 内置日志渠道，保证发送路径始终可用。
+func (s *PluginService) NotifySender(ctx context.Context, category string) notify.Sender {
+	name := s.Active(ctx, category)
+	if s.manager != nil && s.manager.Has(category, name) {
+		if sender, err := s.SenderFor(ctx, category, name); err == nil {
+			return sender
+		} else {
+			s.logger.Warn("failed to initialize notify plugin, falling back to log channel",
+				slog.String("category", category), slog.String("plugin", name), slog.Any("error", err))
+		}
+	}
+	kind := "sms"
+	if category == plugin.CategoryNotifyEmail {
+		kind = "email"
+	}
+	return notify.NewLogSender(kind, s.logger)
 }
 
 // Test 用当前已保存的配置向插件发送一条测试通知，返回插件的结果载荷。

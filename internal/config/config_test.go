@@ -38,6 +38,27 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.Auth.RequireAuth != true || cfg.Auth.SessionTTLHours != 24 {
 		t.Fatalf("unexpected auth defaults: %+v", cfg.Auth)
 	}
+	if cfg.Web.HotReload.Enabled {
+		t.Fatal("web hot reload must be disabled by default")
+	}
+	if cfg.Web.HotReload.Target == "" {
+		t.Fatal("web hot reload target should have a default")
+	}
+}
+
+func TestLoadWebHotReload(t *testing.T) {
+	cfg, err := config.Load(writeConfig(t, `
+web:
+  hot_reload:
+    enabled: true
+    target: "http://127.0.0.1:6000"
+`))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.Web.HotReload.Enabled || cfg.Web.HotReload.Target != "http://127.0.0.1:6000" {
+		t.Fatalf("web hot reload not overridden: %+v", cfg.Web.HotReload)
+	}
 }
 
 func TestLoadFileOverrides(t *testing.T) {
@@ -71,6 +92,8 @@ func TestEnvironmentOverrides(t *testing.T) {
 	t.Setenv("AXMIPIC_SERVER_PORT", "9100")
 	t.Setenv("AXMIPIC_AUTH_ENCRYPTION_KEY", "env-key")
 	t.Setenv("AXMIPIC_UPLOAD_MAX_SIZE_MB", "42")
+	t.Setenv("AXMIPIC_WEB_HOT_RELOAD_ENABLED", "true")
+	t.Setenv("AXMIPIC_WEB_HOT_RELOAD_TARGET", "http://127.0.0.1:6001")
 
 	cfg, err := config.Load(writeConfig(t, "{}"))
 	if err != nil {
@@ -84,6 +107,9 @@ func TestEnvironmentOverrides(t *testing.T) {
 	}
 	if cfg.Upload.MaxSizeMB != 42 {
 		t.Fatalf("max size = %d, want 42", cfg.Upload.MaxSizeMB)
+	}
+	if !cfg.Web.HotReload.Enabled || cfg.Web.HotReload.Target != "http://127.0.0.1:6001" {
+		t.Fatalf("web hot reload not overridden: %+v", cfg.Web.HotReload)
 	}
 }
 
@@ -109,6 +135,8 @@ func TestValidateRejectsInvalidValues(t *testing.T) {
 		{"zero session ttl", "auth:\n  session_ttl_hours: 0\n"},
 		{"negative quota", "auth:\n  default_quota_mb: -1\n"},
 		{"negative limit", "limits:\n  upload_burst: -1\n"},
+		{"empty hot reload target", "web:\n  hot_reload:\n    enabled: true\n    target: \"\"\n"},
+		{"invalid hot reload target", "web:\n  hot_reload:\n    enabled: true\n    target: \"ftp://127.0.0.1:5173\"\n"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
