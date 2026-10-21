@@ -14,6 +14,15 @@ volumes:
   axmipic-data:
   axmipic-config:
 
+# 若坚持把配置放在宿主机目录（例如 ./config:/app/configs），请先准备并授权，
+# 否则空目录会覆盖镜像内预置的 config.yaml；新版虽会以默认配置启动，
+# 但 /install 写入配置时仍需要目录对容器用户（uid 65532）可写：
+#   mkdir -p ./config
+#   cp configs/config.example.yaml ./config/config.yaml
+#   chown -R 65532:65532 ./config ./data
+# 使用具名卷时，Docker 会在首次挂载时自动把镜像内的 config.yaml 复制进去。
+# 注意：空目录绑定挂载不会自动复制镜像内容。
+
 #1panel网络支持，如果你在1panel中使用axmipic，请确保1panel-network网络存在。
 #需要和数据库容器在同一网络中才能使用数据库容器名连接到数据库容器
 
