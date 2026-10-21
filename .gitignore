@@ -24,4 +24,10 @@ internal/webui/dist/*
 .axmipic-key
 **/.axmipic-key
 
+# 本地运行产生的日志与 PID 文件（后端与 Vite 开发服务器）。
+/axmipic.log
+/axmipic.pid
+/web-dev.log
+/web-dev.pid
+
 .codegraph/
