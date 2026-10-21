@@ -345,8 +345,10 @@ async function patch(
 }
 
 function onDisabledChange(target: UserModel, value: unknown, isAdmin: boolean): void {
-  const disabled = value === true
-  void applyDisabled(target, disabled, isAdmin)
+  // el-switch 的 model-value 是「账号启用」状态：true=正常，false=禁用。
+  // 账户字段 disabled 与它相反，必须取反，否则关闭开关会发出 disabled=false。
+  const enabled = value === true
+  void applyDisabled(target, !enabled, isAdmin)
 }
 
 async function applyDisabled(target: UserModel, disabled: boolean, isAdmin: boolean): Promise<void> {
