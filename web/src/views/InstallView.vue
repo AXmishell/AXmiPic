@@ -84,6 +84,15 @@ const pg = reactive({
   sslmode: 'disable',
 })
 
+// ---- MySQL 简化配置：由字段拼装 go-sql-driver 连接串 ----
+const my = reactive({
+  host: '127.0.0.1',
+  port: 3306,
+  database: 'axmipic',
+  user: 'axmipic',
+  password: '',
+})
+
 const useAdvancedDsn = ref(false)
 
 const sslModes = [
@@ -118,8 +127,23 @@ function buildPgDsn(): string {
   ].join(' ')
 }
 
+/** 由简化字段生成 go-sql-driver 连接串（服务端会再补齐 parseTime/charset/loc）。 */
+function buildMySQLDsn(): string {
+  const user = my.user.trim() || 'root'
+  const auth = my.password ? `${user}:${my.password}` : user
+  const host = my.host.trim() || '127.0.0.1'
+  const port = my.port || 3306
+  const database = my.database.trim() || 'axmipic'
+  return `${auth}@tcp(${host}:${port})/${database}?charset=utf8mb4&parseTime=true&loc=Local`
+}
+
 const isPostgres = computed(() => form.database_driver === 'postgres')
+const isMySQL = computed(() => form.database_driver === 'mysql')
+/** PostgreSQL / MySQL 都使用连接串，SQLite 使用文件路径。 */
+const isNetworkDB = computed(() => isPostgres.value || isMySQL.value)
 const pgDsnPreview = computed(() => buildPgDsn())
+const mysqlDsnPreview = computed(() => buildMySQLDsn())
+const dsnPreview = computed(() => (isMySQL.value ? mysqlDsnPreview.value : pgDsnPreview.value))
 
 watch(
   pg,
@@ -132,12 +156,24 @@ watch(
 )
 
 watch(
+  my,
+  () => {
+    if (isMySQL.value && !useAdvancedDsn.value) {
+      form.database_dsn = buildMySQLDsn()
+    }
+  },
+  { deep: true },
+)
+
+watch(
   () => form.database_driver,
   (driver) => {
+    // 切换类型后旧连接串不再适用，统一回到简化模式。
+    useAdvancedDsn.value = false
     if (driver === 'postgres') {
-      if (!useAdvancedDsn.value) {
-        form.database_dsn = buildPgDsn()
-      }
+      form.database_dsn = buildPgDsn()
+    } else if (driver === 'mysql') {
+      form.database_dsn = buildMySQLDsn()
     } else {
       form.database_dsn = './data/axmipic.db'
     }
@@ -145,8 +181,11 @@ watch(
 )
 
 watch(useAdvancedDsn, (advanced) => {
-  if (!advanced && isPostgres.value) {
+  if (advanced) return
+  if (isPostgres.value) {
     form.database_dsn = buildPgDsn()
+  } else if (isMySQL.value) {
+    form.database_dsn = buildMySQLDsn()
   }
 })
 
@@ -171,8 +210,13 @@ async function next(): Promise<void> {
         ElMessage.warning('请填写 PostgreSQL 主机、数据库名与用户名')
         return
       }
+    } else if (isMySQL.value && !useAdvancedDsn.value) {
+      if (!my.host.trim() || !my.database.trim() || !my.user.trim()) {
+        ElMessage.warning('请填写 MySQL 主机、数据库名与用户名')
+        return
+      }
     } else if (!form.database_dsn.trim()) {
-      ElMessage.warning(isPostgres.value ? '请填写数据库连接串' : '请填写数据库文件路径')
+      ElMessage.warning(isNetworkDB.value ? '请填写数据库连接串' : '请填写数据库文件路径')
       return
     }
   }
@@ -266,11 +310,12 @@ onMounted(async () => {
               <el-radio-group v-model="form.database_driver">
                 <el-radio-button value="sqlite">SQLite</el-radio-button>
                 <el-radio-button value="postgres">PostgreSQL</el-radio-button>
+                <el-radio-button value="mysql">MySQL</el-radio-button>
               </el-radio-group>
             </el-form-item>
 
-            <template v-if="isPostgres">
-              <div v-if="!useAdvancedDsn" class="install__grid">
+            <template v-if="isNetworkDB">
+              <div v-if="!useAdvancedDsn && isPostgres" class="install__grid">
                 <el-form-item label="主机">
                   <el-input v-model="pg.host" placeholder="127.0.0.1" />
                 </el-form-item>
@@ -292,18 +337,38 @@ onMounted(async () => {
                   </el-select>
                 </el-form-item>
               </div>
-              <div v-else class="install__grid install__grid--single">
+              <div v-if="!useAdvancedDsn && isMySQL" class="install__grid">
+                <el-form-item label="主机">
+                  <el-input v-model="my.host" placeholder="127.0.0.1" />
+                </el-form-item>
+                <el-form-item label="端口">
+                  <el-input-number v-model="my.port" :min="1" :max="65535" controls-position="right" class="install__number" />
+                </el-form-item>
+                <el-form-item label="数据库名">
+                  <el-input v-model="my.database" placeholder="axmipic" />
+                </el-form-item>
+                <el-form-item label="用户名">
+                  <el-input v-model="my.user" placeholder="axmipic" />
+                </el-form-item>
+                <el-form-item label="密码">
+                  <el-input v-model="my.password" type="password" show-password autocomplete="new-password" placeholder="数据库密码" />
+                </el-form-item>
+              </div>
+              <div v-if="useAdvancedDsn" class="install__grid install__grid--single">
                 <el-form-item label="连接串" prop="database_dsn">
                   <el-input v-model="form.database_dsn" type="textarea" :rows="3" />
                 </el-form-item>
               </div>
               <div v-if="!useAdvancedDsn" class="install__dsn">
                 <span class="install__dsn-label">连接串</span>
-                <code class="install__dsn-value">{{ pgDsnPreview }}</code>
+                <code class="install__dsn-value">{{ dsnPreview }}</code>
               </div>
               <el-checkbox v-model="useAdvancedDsn" class="install__advanced">高级：直接填写连接串</el-checkbox>
-              <div class="install__hint">
+              <div v-if="isPostgres" class="install__hint">
                 需先在数据库中创建对应的库与用户；容器部署时主机请填写宿主地址（如 <code>host.docker.internal</code> 或宿主机 IP）。
+              </div>
+              <div v-else class="install__hint">
+                需先在 MySQL 5.7+ 中创建数据库（建议 <code>CHARACTER SET utf8mb4</code>）与账号，程序会自动建表；容器部署时主机请填写宿主地址（如 <code>host.docker.internal</code> 或宿主机 IP）。
               </div>
             </template>
 
