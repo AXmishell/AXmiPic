@@ -9,6 +9,8 @@ import type {
   RoleGroupInput,
   StorageBackend,
   StorageBackendInput,
+  StoragePool,
+  StoragePoolInput,
   User,
   UserUpdate,
 } from './types'
@@ -77,6 +79,27 @@ export function deleteStorage(id: string): Promise<void> {
 
 export function activateStorage(id: string): Promise<void> {
   return request<void>({ method: 'POST', url: `/admin/storage/${id}/activate` })
+}
+
+/** 存储池。 */
+export function listStoragePools(): Promise<StoragePool[]> {
+  return request<StoragePool[]>({ method: 'GET', url: '/admin/storage/pools' })
+}
+
+export function createStoragePool(payload: StoragePoolInput): Promise<StoragePool> {
+  return request<StoragePool>({ method: 'POST', url: '/admin/storage/pools', data: payload })
+}
+
+export function updateStoragePool(id: string, payload: StoragePoolInput): Promise<StoragePool> {
+  return request<StoragePool>({ method: 'PUT', url: `/admin/storage/pools/${id}`, data: payload })
+}
+
+export function deleteStoragePool(id: string): Promise<void> {
+  return request<void>({ method: 'DELETE', url: `/admin/storage/pools/${id}` })
+}
+
+export function activateStoragePool(id: string): Promise<void> {
+  return request<void>({ method: 'POST', url: `/admin/storage/pools/${id}/activate` })
 }
 
 /** 角色组。 */

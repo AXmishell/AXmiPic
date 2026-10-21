@@ -6,19 +6,32 @@ import { Delete, EditPen, FolderOpened, Plus, Refresh, Star } from '@element-plu
 
 import {
   activateStorage,
+  activateStoragePool,
   createStorage,
+  createStoragePool,
   deleteStorage,
+  deleteStoragePool,
   listStorage,
+  listStoragePools,
   updateStorage,
+  updateStoragePool,
 } from '@/api/admin'
 import { toApiError } from '@/api/client'
-import type { StorageBackend, StorageBackendInput, StorageDriver } from '@/api/types'
+import type {
+  StorageBackend,
+  StorageBackendInput,
+  StorageDriver,
+  StoragePool,
+  StoragePoolInput,
+  StoragePoolPolicy,
+} from '@/api/types'
 import EmptyState from '@/components/EmptyState.vue'
 import ErrorState from '@/components/ErrorState.vue'
 import PageHeader from '@/components/PageHeader.vue'
-import { formatDateTime, formatNumber } from '@/utils/format'
+import { formatBytes, formatDateTime, formatNumber } from '@/utils/format'
 
 const backends = ref<StorageBackend[]>([])
+const pools = ref<StoragePool[]>([])
 const loading = ref(false)
 const errorMessage = ref('')
 const pendingId = ref<string | null>(null)
@@ -109,7 +122,12 @@ async function load(): Promise<void> {
   loading.value = true
   errorMessage.value = ''
   try {
-    backends.value = (await listStorage()) ?? []
+    const [backendList, poolList] = await Promise.all([
+      listStorage(),
+      listStoragePools().catch(() => []),
+    ])
+    backends.value = backendList ?? []
+    pools.value = poolList ?? []
   } catch (error) {
     errorMessage.value = toApiError(error).message
   } finally {
@@ -291,6 +309,169 @@ async function remove(item: StorageBackend): Promise<void> {
   }
 }
 
+// ---- 存储池 ----
+const poolDialogOpen = ref(false)
+const poolEditingId = ref<string | null>(null)
+const poolSubmitting = ref(false)
+const poolPendingId = ref<string | null>(null)
+const poolFormRef = ref<FormInstance>()
+
+interface PoolMemberForm {
+  backend_id: string
+  weight: number
+  priority: number
+  enabled: boolean
+}
+
+interface PoolForm {
+  name: string
+  policy: StoragePoolPolicy
+  members: PoolMemberForm[]
+}
+
+const poolForm = reactive<PoolForm>({ name: '', policy: 'weighted_rr', members: [] })
+
+const poolPolicyLabel: Record<StoragePoolPolicy, string> = {
+  weighted_rr: '加权轮询',
+  priority: '优先级',
+}
+
+const poolRules: FormRules = {
+  name: [{ required: true, message: '请输入存储池名称', trigger: 'blur' }],
+}
+
+function emptyPoolForm(): PoolForm {
+  return {
+    name: '',
+    policy: 'weighted_rr',
+    members: [{ backend_id: '', weight: 100, priority: 0, enabled: true }],
+  }
+}
+
+function openPoolCreate(): void {
+  if (backends.value.length === 0) {
+    ElMessage.warning('请先创建至少一个存储后端')
+    return
+  }
+  poolEditingId.value = null
+  Object.assign(poolForm, emptyPoolForm())
+  poolDialogOpen.value = true
+}
+
+function openPoolEdit(pool: StoragePool): void {
+  poolEditingId.value = pool.id
+  poolForm.name = pool.name
+  poolForm.policy = pool.policy
+  poolForm.members = pool.members.map((m) => ({
+    backend_id: m.backend_id,
+    weight: m.weight,
+    priority: m.priority,
+    enabled: m.enabled,
+  }))
+  if (poolForm.members.length === 0) {
+    poolForm.members.push({ backend_id: '', weight: 100, priority: 0, enabled: true })
+  }
+  poolDialogOpen.value = true
+}
+
+function addPoolMember(): void {
+  poolForm.members.push({ backend_id: '', weight: 100, priority: 0, enabled: true })
+}
+
+function removePoolMember(index: number): void {
+  poolForm.members.splice(index, 1)
+}
+
+async function submitPool(): Promise<void> {
+  const instance = poolFormRef.value
+  if (!instance || poolSubmitting.value) return
+  const valid = await instance.validate().catch(() => false)
+  if (!valid) return
+  if (poolForm.members.some((m) => !m.backend_id)) {
+    ElMessage.warning('请为每个成员选择存储后端')
+    return
+  }
+  if (!poolForm.members.some((m) => m.enabled)) {
+    ElMessage.warning('至少需要一个启用的成员')
+    return
+  }
+  const payload: StoragePoolInput = {
+    name: poolForm.name.trim(),
+    policy: poolForm.policy,
+    members: poolForm.members.map((m) => ({
+      backend_id: m.backend_id,
+      weight: Number(m.weight) || 100,
+      priority: Number(m.priority) || 0,
+      enabled: m.enabled,
+    })),
+  }
+  poolSubmitting.value = true
+  try {
+    if (poolEditingId.value) {
+      await updateStoragePool(poolEditingId.value, payload)
+      ElMessage.success('存储池已更新')
+    } else {
+      await createStoragePool(payload)
+      ElMessage.success('存储池已创建')
+    }
+    poolDialogOpen.value = false
+    await load()
+  } catch (error) {
+    ElMessage.error(toApiError(error).message)
+  } finally {
+    poolSubmitting.value = false
+  }
+}
+
+async function activatePool(pool: StoragePool): Promise<void> {
+  try {
+    await ElMessageBox.confirm(
+      `启用后新上传的图片将按「${poolPolicyLabel[pool.policy]}」策略写入池内后端，已有图片仍从原存储读取。`,
+      '启用存储池',
+      { confirmButtonText: '启用', cancelButtonText: '取消', type: 'warning' },
+    )
+  } catch {
+    return
+  }
+  poolPendingId.value = pool.id
+  try {
+    await activateStoragePool(pool.id)
+    ElMessage.success('已启用存储池')
+    await load()
+  } catch (error) {
+    ElMessage.error(toApiError(error).message)
+  } finally {
+    poolPendingId.value = null
+  }
+}
+
+async function removePool(pool: StoragePool): Promise<void> {
+  try {
+    await ElMessageBox.confirm(
+      `确定删除存储池「${pool.name}」吗？底层存储后端和已有图片不会被删除。`,
+      '删除存储池',
+      {
+        confirmButtonText: '删除',
+        cancelButtonText: '取消',
+        type: 'warning',
+        confirmButtonClass: 'el-button--danger',
+      },
+    )
+  } catch {
+    return
+  }
+  poolPendingId.value = pool.id
+  try {
+    await deleteStoragePool(pool.id)
+    ElMessage.success('存储池已删除')
+    await load()
+  } catch (error) {
+    ElMessage.error(toApiError(error).message)
+  } finally {
+    poolPendingId.value = null
+  }
+}
+
 onMounted(load)
 </script>
 
@@ -303,6 +484,7 @@ onMounted(load)
       <template #actions>
         <el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button>
         <el-button type="primary" :icon="Plus" @click="openCreate">新建存储</el-button>
+        <el-button :icon="Plus" @click="openPoolCreate">新建存储池</el-button>
       </template>
     </PageHeader>
 
@@ -373,6 +555,123 @@ onMounted(load)
         </el-table>
       </div>
     </div>
+
+    <div class="ax-card table-card pool-card">
+      <div class="ax-card__head">
+        <h2 class="ax-card__title">存储池</h2>
+        <el-tag size="small" type="info" effect="plain">{{ pools.length }} 个</el-tag>
+      </div>
+      <div class="ax-table-scroll">
+        <el-table :data="pools" style="width: 100%" empty-text="暂无存储池">
+          <el-table-column label="名称" min-width="180">
+            <template #default="{ row }">
+              <span class="storage-name">
+                <el-icon :size="14"><FolderOpened /></el-icon>
+                {{ row.name }}
+                <el-tag v-if="row.is_current" size="small" type="success" effect="plain">
+                  当前写入池
+                </el-tag>
+              </span>
+            </template>
+          </el-table-column>
+          <el-table-column label="策略" width="120">
+            <template #default="{ row }">{{ poolPolicyLabel[row.policy as StoragePoolPolicy] }}</template>
+          </el-table-column>
+          <el-table-column label="成员" width="90">
+            <template #default="{ row }">{{ row.members.length }}</template>
+          </el-table-column>
+          <el-table-column label="图片数" width="110">
+            <template #default="{ row }">{{ formatNumber(row.image_count) }}</template>
+          </el-table-column>
+          <el-table-column label="占用" width="120">
+            <template #default="{ row }">{{ formatBytes(row.size_bytes) }}</template>
+          </el-table-column>
+          <el-table-column label="操作" width="250" align="right">
+            <template #default="{ row }">
+              <div class="ax-row-actions">
+                <el-button
+                  link
+                  type="primary"
+                  :icon="Star"
+                  :disabled="row.is_current"
+                  :loading="poolPendingId === row.id"
+                  @click="activatePool(row)"
+                >
+                  启用
+                </el-button>
+                <el-button link type="primary" :icon="EditPen" @click="openPoolEdit(row)">编辑</el-button>
+                <el-button
+                  link
+                  type="danger"
+                  :icon="Delete"
+                  :disabled="row.is_current"
+                  :loading="poolPendingId === row.id"
+                  @click="removePool(row)"
+                >
+                  删除
+                </el-button>
+              </div>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+    </div>
+
+    <el-dialog
+      v-model="poolDialogOpen"
+      :title="poolEditingId ? '编辑存储池' : '新建存储池'"
+      width="min(680px, 94vw)"
+      append-to-body
+      :close-on-click-modal="false"
+      @closed="poolFormRef?.clearValidate()"
+    >
+      <el-form ref="poolFormRef" :model="poolForm" :rules="poolRules" label-position="top">
+        <el-form-item label="名称" prop="name">
+          <el-input v-model="poolForm.name" placeholder="例如：主存储池" maxlength="60" />
+        </el-form-item>
+        <el-form-item label="放置策略">
+          <el-radio-group v-model="poolForm.policy">
+            <el-radio-button value="weighted_rr">加权轮询</el-radio-button>
+            <el-radio-button value="priority">优先级</el-radio-button>
+          </el-radio-group>
+          <p class="storage-hint">
+            加权轮询按 Weight 分配新对象；优先级先使用 Priority 数值更小的成员，同级内加权轮询。
+          </p>
+        </el-form-item>
+
+        <el-divider content-position="left">成员</el-divider>
+        <div v-for="(member, index) in poolForm.members" :key="index" class="pool-member-row">
+          <el-select v-model="member.backend_id" placeholder="选择存储后端" style="min-width: 180px">
+            <el-option
+              v-for="backend in backends"
+              :key="backend.id"
+              :label="`${backend.name}（${driverLabel[backend.driver]}）`"
+              :value="backend.id"
+            />
+          </el-select>
+          <el-input-number v-model="member.weight" :min="1" :max="10000" controls-position="right" />
+          <span class="pool-member-label">权重</span>
+          <el-input-number v-model="member.priority" :min="0" :max="1000" controls-position="right" />
+          <span class="pool-member-label">优先级</span>
+          <el-switch v-model="member.enabled" active-text="启用" />
+          <el-button
+            link
+            type="danger"
+            :disabled="poolForm.members.length <= 1"
+            @click="removePoolMember(index)"
+          >
+            移除
+          </el-button>
+        </div>
+        <el-button link type="primary" :icon="Plus" @click="addPoolMember">添加成员</el-button>
+      </el-form>
+      <template #footer>
+        <el-button @click="poolDialogOpen = false">取消</el-button>
+        <el-button type="primary" :loading="poolSubmitting" @click="submitPool">
+          {{ poolEditingId ? '保存' : '创建' }}
+        </el-button>
+      </template>
+    </el-dialog>
 
     <el-dialog
       v-model="dialogOpen"
@@ -578,5 +877,22 @@ onMounted(load)
   display: flex;
   gap: var(--ax-space-5);
   margin-bottom: var(--ax-space-4);
+}
+
+.pool-card {
+  margin-top: var(--ax-space-4);
+}
+
+.pool-member-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--ax-space-2);
+  margin-bottom: var(--ax-space-3);
+}
+
+.pool-member-label {
+  color: var(--ax-text-4);
+  font-size: var(--ax-text-xs);
 }
 </style>

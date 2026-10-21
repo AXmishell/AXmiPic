@@ -430,11 +430,10 @@ func (s *UploadService) Upload(ctx context.Context, principal *auth.Principal, i
 		}
 	}()
 
-	backend := s.manager.Current()
-	if backend == nil {
+	backend, backendID, _, pickErr := s.manager.Pick(ctx)
+	if pickErr != nil || backend == nil {
 		return nil, fmt.Errorf("%w: no storage backend configured", ErrStorageConfig)
 	}
-	currentID := s.manager.CurrentID()
 	key := randomKey(in.MimeType)
 	if err := backend.Put(ctx, key, bytes.NewReader(in.Data), size, in.MimeType); err != nil {
 		return nil, fmt.Errorf("upload: store object: %w", err)
@@ -445,7 +444,7 @@ func (s *UploadService) Upload(ctx context.Context, principal *auth.Principal, i
 		ID:           uuid.NewString(),
 		Key:          key,
 		UserID:       ownerID,
-		StorageID:    storageIDPtr(currentID),
+		StorageID:    storageIDPtr(backendID),
 		OriginalName: sanitizeOriginalName(in.OriginalName),
 		Filename:     path.Base(key),
 		Hash:         hash,
@@ -529,11 +528,10 @@ func (s *UploadService) UploadStream(ctx context.Context, principal *auth.Princi
 		}
 	}()
 
-	backend := s.manager.Current()
-	if backend == nil {
+	backend, backendID, _, pickErr := s.manager.Pick(ctx)
+	if pickErr != nil || backend == nil {
 		return nil, fmt.Errorf("%w: no storage backend configured", ErrStorageConfig)
 	}
-	currentID := s.manager.CurrentID()
 	key := randomKey(mimeType)
 
 	// 边写入存储边计算哈希；prefix 已读取，需拼回数据流。
@@ -566,7 +564,7 @@ func (s *UploadService) UploadStream(ctx context.Context, principal *auth.Princi
 		ID:           uuid.NewString(),
 		Key:          key,
 		UserID:       ownerID,
-		StorageID:    storageIDPtr(currentID),
+		StorageID:    storageIDPtr(backendID),
 		OriginalName: sanitizeOriginalName(originalName),
 		Filename:     path.Base(key),
 		Hash:         hash,
@@ -606,8 +604,8 @@ func (c *countingReader) Read(p []byte) (int, error) {
 // Presign 校验直传请求，从存储后端签发一个预签名请求，并记录一条待确认的
 // 上传供后续确认。
 func (s *UploadService) Presign(ctx context.Context, principal *auth.Principal, in PresignInput) (*PresignResult, error) {
-	presigner := s.manager.PresignerFor("")
-	if presigner == nil {
+	presigner, backend, backendID, _, pickErr := s.manager.PickPresigner(ctx)
+	if pickErr != nil || presigner == nil {
 		return nil, ErrPresignUnsupported
 	}
 	policy, allowed, err := s.policyFor(ctx, principal)
@@ -624,7 +622,6 @@ func (s *UploadService) Presign(ctx context.Context, principal *auth.Principal, 
 		return nil, fmt.Errorf("%w: %d bytes exceeds %d bytes", ErrFileTooLarge, in.Size, policy.MaxSizeBytes)
 	}
 
-	backend := s.manager.Current()
 	key := randomKey(in.MimeType)
 	req, err := presigner.PresignPut(ctx, key, storage.PresignOptions{
 		ContentType:         in.MimeType,
@@ -639,7 +636,7 @@ func (s *UploadService) Presign(ctx context.Context, principal *auth.Principal, 
 	pending := &store.PendingUpload{
 		Key:       key,
 		UserID:    ownerIDOf(principal),
-		StorageID: storageIDPtr(s.manager.CurrentID()),
+		StorageID: storageIDPtr(backendID),
 		MimeType:  in.MimeType,
 		MaxSize:   policy.MaxSizeBytes,
 		ExpiresAt: req.ExpiresAt,

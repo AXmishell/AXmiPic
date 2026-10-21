@@ -25,7 +25,7 @@ var ErrNotFound = errors.New("store: record not found")
 // migrationModels 是需要由 AutoMigrate 维护的模型集合。
 var migrationModels = []any{
 	&Image{}, &PendingUpload{}, &Admin{}, &Customer{}, &APIToken{},
-	&StorageBackend{}, &Album{}, &RoleGroup{}, &Policy{}, &RoleGroupPolicy{},
+	&StorageBackend{}, &StoragePool{}, &StoragePoolMember{}, &Album{}, &RoleGroup{}, &Policy{}, &RoleGroupPolicy{},
 	&Share{}, &Announcement{}, &Report{}, &Page{}, &Setting{},
 	&Plan{}, &Order{}, &Coupon{}, &CouponRedemption{}, &Ticket{}, &TicketMessage{},
 	&EmailCode{}, &EmailCodeStat{}, &NotifyLog{}, &GuestIPUsage{},

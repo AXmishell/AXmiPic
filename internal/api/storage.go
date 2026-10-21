@@ -103,3 +103,80 @@ func (h *Handler) storageActivate(w http.ResponseWriter, r *http.Request) {
 	}
 	writeOK(w, map[string]string{"id": id})
 }
+
+// storagePoolList 返回全部存储池。
+func (h *Handler) storagePoolList(w http.ResponseWriter, r *http.Request) {
+	items, err := h.storageSvc.ListPools(r.Context())
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeOK(w, items)
+}
+
+// storagePoolGet 返回单个存储池。
+func (h *Handler) storagePoolGet(w http.ResponseWriter, r *http.Request) {
+	items, err := h.storageSvc.ListPools(r.Context())
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	id := chi.URLParam(r, "id")
+	for i := range items {
+		if items[i].ID == id {
+			writeOK(w, items[i])
+			return
+		}
+	}
+	h.fail(w, r, service.ErrStorageNotFound)
+}
+
+// storagePoolCreate 创建存储池。
+func (h *Handler) storagePoolCreate(w http.ResponseWriter, r *http.Request) {
+	var body service.StoragePoolInput
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxJSONBody)).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	dto, err := h.storageSvc.CreatePool(r.Context(), body)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeCreated(w, dto)
+}
+
+// storagePoolUpdate 更新存储池。
+func (h *Handler) storagePoolUpdate(w http.ResponseWriter, r *http.Request) {
+	var body service.StoragePoolInput
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxJSONBody)).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	dto, err := h.storageSvc.UpdatePool(r.Context(), chi.URLParam(r, "id"), body)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeOK(w, dto)
+}
+
+// storagePoolDelete 删除存储池（不会删除底层后端或对象）。
+func (h *Handler) storagePoolDelete(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := h.storageSvc.DeletePool(r.Context(), id); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeOK(w, map[string]string{"id": id})
+}
+
+// storagePoolActivate 将存储池设为当前写入目标。
+func (h *Handler) storagePoolActivate(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := h.storageSvc.SetCurrentPool(r.Context(), id); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	writeOK(w, map[string]string{"id": id})
+}

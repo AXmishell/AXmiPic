@@ -230,6 +230,42 @@ export interface StorageBackendInput {
   activate?: boolean
 }
 
+/** 存储池放置策略。 */
+export type StoragePoolPolicy = 'weighted_rr' | 'priority'
+
+export interface StoragePoolMember {
+  backend_id: string
+  backend: string
+  driver: StorageDriver
+  weight: number
+  priority: number
+  enabled: boolean
+  image_count: number
+  size_bytes: number
+}
+
+export interface StoragePool {
+  id: string
+  name: string
+  policy: StoragePoolPolicy
+  is_current: boolean
+  members: StoragePoolMember[]
+  image_count: number
+  size_bytes: number
+  created_at: string
+}
+
+export interface StoragePoolInput {
+  name: string
+  policy: StoragePoolPolicy
+  members: Array<{
+    backend_id: string
+    weight: number
+    priority: number
+    enabled: boolean
+  }>
+}
+
 /** 分享目标类型。 */
 export type ShareTargetType = 'image' | 'album'
 

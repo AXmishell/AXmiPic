@@ -187,6 +187,39 @@ func (StorageBackend) TableName() string {
 	return "storage_backends"
 }
 
+// StoragePool 是一组可参与写入放置的存储后端。池只影响新对象写入哪个后端，
+// 已写入对象仍通过 images.storage_id 读取。
+type StoragePool struct {
+	ID        string `gorm:"primaryKey;size:36"`
+	Name      string `gorm:"size:100;not null"`
+	// Policy 为放置策略：weighted_rr（默认）或 priority。
+	Policy    string `gorm:"size:32;not null;default:'weighted_rr'"`
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+// TableName 返回存储 StoragePool 的表名。
+func (StoragePool) TableName() string {
+	return "storage_pools"
+}
+
+// StoragePoolMember 是存储池中的一个后端成员。
+type StoragePoolMember struct {
+	PoolID    string `gorm:"primaryKey;size:36"`
+	BackendID string `gorm:"primaryKey;size:36"`
+	// Weight 为加权轮询权重，必须大于 0。
+	Weight int `gorm:"not null;default:100"`
+	// Priority 为优先级，数值越小越优先；用于 priority 策略。
+	Priority int `gorm:"not null;default:0"`
+	// Enabled 为 false 时该成员暂不参与新写入。
+	Enabled bool `gorm:"not null;default:true"`
+}
+
+// TableName 返回存储 StoragePoolMember 的表名。
+func (StoragePoolMember) TableName() string {
+	return "storage_pool_members"
+}
+
 // Setting 是一条运行时可修改的键值设置。敏感值（如 SMTP 密码）在写入前
 // 由服务层加密，数据库只保存密文。
 type Setting struct {

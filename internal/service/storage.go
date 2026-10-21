@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/google/uuid"
@@ -84,8 +85,17 @@ func NewStorageService(
 	}
 }
 
-// Bootstrap 在启动时加载数据库中的存储后端并激活当前默认项；若数据库尚无
-// 记录，则把配置文件中的存储作为兜底并直接激活。
+// storageCurrentKey 保存当前写入目标（单后端或存储池）。
+const storageCurrentKey = "storage.current"
+
+// storageCurrentTarget 是 storage.current 的落库结构。
+type storageCurrentTarget struct {
+	Kind string `json:"kind"` // backend | pool
+	ID   string `json:"id"`
+}
+
+// Bootstrap 在启动时加载数据库中的存储后端与存储池，并激活当前写入目标；
+// 若数据库尚无记录，则把配置文件中的存储作为兜底。
 func (s *StorageService) Bootstrap(ctx context.Context) error {
 	// 配置文件中的存储总是作为兜底，保证旧图片在配置被删除后仍可读取。
 	if fallback, err := buildStorage(s.baseURL, s.fileConfig); err == nil {
@@ -96,7 +106,7 @@ func (s *StorageService) Bootstrap(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	var currentID string
+	var legacyCurrentID string
 	for i := range backends {
 		b := &backends[i]
 		cfg, err := s.toConfig(b)
@@ -108,13 +118,96 @@ func (s *StorageService) Bootstrap(ctx context.Context) error {
 			continue
 		}
 		if b.IsCurrent {
-			currentID = b.ID
+			legacyCurrentID = b.ID
 		}
 	}
-	if currentID != "" {
-		_ = s.manager.SetCurrent(currentID)
+	// 当前目标以 settings 为准；没有记录时兼容旧版 is_current 标记。
+	target, hasTarget := s.loadCurrentTarget(ctx)
+	backfillID := legacyCurrentID
+	if hasTarget && target.Kind == "backend" {
+		backfillID = target.ID
+	}
+
+	// 历史图片可能没有 storage_id。升级到存储池之前，把它们归入旧当前后端，
+	// 否则池激活后无法确定旧对象的位置。
+	if backfillID != "" {
+		if count, countErr := s.repo.CountImagesWithoutStorage(ctx); countErr == nil && count > 0 {
+			if moved, backfillErr := s.repo.BackfillImageStorage(ctx, backfillID); backfillErr != nil {
+				slog.Default().Warn("failed to backfill image storage ids",
+					slog.String("storage_id", backfillID), slog.Any("error", backfillErr))
+			} else {
+				slog.Default().Info("backfilled legacy image storage ids",
+					slog.String("storage_id", backfillID), slog.Int64("images", moved))
+			}
+		}
+	}
+
+	// 加载存储池及其成员。
+	pools, err := s.repo.ListStoragePools(ctx)
+	if err != nil {
+		return err
+	}
+	for i := range pools {
+		p := &pools[i]
+		members, memberErr := s.repo.ListStoragePoolMembers(ctx, p.ID)
+		if memberErr != nil {
+			slog.Default().Warn("failed to load storage pool members",
+				slog.String("pool", p.ID), slog.Any("error", memberErr))
+			continue
+		}
+		if err := s.manager.RegisterPool(p.ID, p.Name, p.Policy, poolMemberConfigs(members)); err != nil {
+			slog.Default().Warn("failed to register storage pool",
+				slog.String("pool", p.ID), slog.Any("error", err))
+		}
+	}
+
+	switch {
+	case hasTarget && target.Kind == "pool":
+		if count, countErr := s.repo.CountImagesWithoutStorage(ctx); countErr == nil && count > 0 {
+			slog.Default().Warn("refusing to activate storage pool with unassigned images",
+				slog.String("pool", target.ID), slog.Int64("images", count))
+			break
+		}
+		if err := s.manager.SetCurrentPool(target.ID); err != nil {
+			slog.Default().Warn("failed to activate storage pool",
+				slog.String("pool", target.ID), slog.Any("error", err))
+		} else if err := s.repo.ClearCurrentStorageBackend(ctx); err != nil {
+			slog.Default().Warn("failed to clear current storage backend flag", slog.Any("error", err))
+		}
+	case hasTarget && target.Kind == "backend":
+		_ = s.manager.SetCurrent(target.ID)
+	case legacyCurrentID != "":
+		_ = s.manager.SetCurrent(legacyCurrentID)
 	}
 	return nil
+}
+
+// loadCurrentTarget 读取当前写入目标；记录缺失或损坏时返回 false。
+func (s *StorageService) loadCurrentTarget(ctx context.Context) (storageCurrentTarget, bool) {
+	raw, err := s.repo.GetSetting(ctx, storageCurrentKey)
+	if err != nil || strings.TrimSpace(raw) == "" {
+		return storageCurrentTarget{}, false
+	}
+	var target storageCurrentTarget
+	if err := json.Unmarshal([]byte(raw), &target); err != nil {
+		return storageCurrentTarget{}, false
+	}
+	if target.Kind != "pool" && target.Kind != "backend" {
+		return storageCurrentTarget{}, false
+	}
+	if strings.TrimSpace(target.ID) == "" {
+		return storageCurrentTarget{}, false
+	}
+	return target, true
+}
+
+// saveCurrentTarget 持久化当前写入目标。
+func (s *StorageService) saveCurrentTarget(ctx context.Context, target storageCurrentTarget) error {
+	encoded, err := json.Marshal(target)
+	if err != nil {
+		return fmt.Errorf("storage: encode current target: %w", err)
+	}
+	return s.repo.SetSetting(ctx, storageCurrentKey, string(encoded))
 }
 
 // List 返回所有存储后端（含图片数量），供后台展示。
@@ -173,10 +266,9 @@ func (s *StorageService) Create(ctx context.Context, in StorageInput, makeCurren
 		return nil, fmt.Errorf("%w: %v", ErrStorageConfig, err)
 	}
 	if makeCurrent {
-		if err := s.repo.SetCurrentStorageBackend(ctx, b.ID); err != nil {
+		if err := s.SetCurrent(ctx, b.ID); err != nil {
 			return nil, err
 		}
-		_ = s.manager.SetCurrent(b.ID)
 	}
 	return s.toDTO(ctx, b)
 }
@@ -244,6 +336,9 @@ func (s *StorageService) SetCurrent(ctx context.Context, id string) error {
 		}
 		return err
 	}
+	if err := s.saveCurrentTarget(ctx, storageCurrentTarget{Kind: "backend", ID: id}); err != nil {
+		return err
+	}
 	return s.manager.SetCurrent(id)
 }
 
@@ -254,6 +349,13 @@ func (s *StorageService) Delete(ctx context.Context, id string) error {
 			return ErrStorageNotFound
 		}
 		return err
+	}
+	memberships, err := s.repo.CountPoolMemberships(ctx, id)
+	if err != nil {
+		return err
+	}
+	if memberships > 0 {
+		return fmt.Errorf("%w: backend belongs to %d storage pool(s)", ErrStorageInUse, memberships)
 	}
 	count, err := s.repo.CountImagesOnStorage(ctx, id)
 	if err != nil {

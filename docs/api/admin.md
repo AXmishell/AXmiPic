@@ -9,9 +9,14 @@
 | PATCH/DELETE | `/admin/admins/{id}` | 启用/禁用、删除管理员 |
 | GET/POST | `/admin/storage` | 存储后端列表 / 新建 |
 | GET/PUT/DELETE | `/admin/storage/{id}` | 存储后端详情 / 修改 / 删除 |
-| POST | `/admin/storage/{id}/activate` | 切换默认存储（热切换） |
+| POST | `/admin/storage/{id}/activate` | 切换默认存储后端（热切换） |
+| GET/POST | `/admin/storage/pools` | 存储池列表 / 新建 |
+| GET/PUT/DELETE | `/admin/storage/pools/{id}` | 存储池详情 / 修改 / 删除 |
+| POST | `/admin/storage/pools/{id}/activate` | 将存储池设为当前写入目标 |
 
 存储后端的密钥（S3/七牛的 Secret）以密文入库，接口仅返回「是否已设置」，不回传明文。
+
+存储池只决定**新对象写入哪个后端**，已有图片仍按 `images.storage_id` 从原后端读取。`policy` 支持 `weighted_rr`（加权轮询，默认）与 `priority`（数值越小越优先）。启用存储池前会检查历史图片是否都已记录 `storage_id`；未记录时会拒绝并要求先回填，避免旧图片读取错位。
 
 ## 普通用户列表分页与筛选
 

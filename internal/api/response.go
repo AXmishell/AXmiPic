@@ -92,7 +92,7 @@ func (h *Handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, http.StatusTooManyRequests, http.StatusTooManyRequests, err.Error())
 	case errors.Is(err, service.ErrStorageNotFound):
 		writeError(w, http.StatusNotFound, http.StatusNotFound, "storage backend not found")
-	case errors.Is(err, service.ErrStorageInUse):
+	case errors.Is(err, service.ErrStorageInUse), errors.Is(err, service.ErrStorageUnassigned):
 		writeError(w, http.StatusConflict, http.StatusConflict, err.Error())
 	case errors.Is(err, service.ErrStorageConfig):
 		writeError(w, http.StatusBadRequest, http.StatusBadRequest, err.Error())
