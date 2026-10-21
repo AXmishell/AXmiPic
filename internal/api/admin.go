@@ -111,6 +111,9 @@ func (h *Handler) adminCreateAdmin(w http.ResponseWriter, r *http.Request) {
 type updateUserRequest struct {
 	Disabled    *bool   `json:"disabled"`
 	RoleGroupID *string `json:"role_group_id"`
+	Username    *string `json:"username"`
+	Email       *string `json:"email"`
+	Password    *string `json:"password"`
 }
 
 // updateFunc 对指定角色的账户应用禁用/启用更改。
@@ -135,6 +138,9 @@ func (h *Handler) adminUpdateAccount(w http.ResponseWriter, r *http.Request, upd
 	user, err := update(r.Context(), principalOf(r).UserID, chi.URLParam(r, "id"), service.UpdateUserInput{
 		Disabled:    body.Disabled,
 		RoleGroupID: body.RoleGroupID,
+		Username:    body.Username,
+		Email:       body.Email,
+		Password:    body.Password,
 	})
 	if err != nil {
 		h.fail(w, r, err)

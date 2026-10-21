@@ -5,8 +5,68 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 )
+
+func TestAdminUpdateAdminProfile(t *testing.T) {
+	env := newTestEnv(t, true, 1<<20)
+	adminToken, adminID := env.adminToken(t, "root")
+	ctx := context.Background()
+
+	body := `{"username":"RootRenamed","email":"root@example.com"}`
+	status, resp := do(t, env.router, http.MethodPatch,
+		"/api/v1/admin/admins/"+adminID, body, adminToken)
+	if status != http.StatusOK {
+		t.Fatalf("update admin status = %d (%s)", status, resp)
+	}
+	if !strings.Contains(string(resp), `"username":"RootRenamed"`) {
+		t.Fatalf("unexpected response: %s", resp)
+	}
+	if _, err := env.accounts.LoginAdmin(ctx, "rootrenamed", "password123"); err != nil {
+		t.Fatalf("login with updated admin username: %v", err)
+	}
+}
+
+func TestAdminUpdateCustomerProfile(t *testing.T) {
+	env := newTestEnv(t, true, 1<<20)
+	adminToken, _ := env.adminToken(t, "root")
+	ctx := context.Background()
+
+	user, err := env.accounts.RegisterCustomer(ctx, "original", "password123")
+	if err != nil {
+		t.Fatalf("RegisterCustomer: %v", err)
+	}
+	other, err := env.accounts.RegisterCustomer(ctx, "Taken", "password123")
+	if err != nil {
+		t.Fatalf("RegisterCustomer other: %v", err)
+	}
+	if other.ID == user.ID {
+		t.Fatal("unexpected duplicate id")
+	}
+
+	body := `{"username":"RenamedUser","email":"renamed@example.com","password":"newpassword123"}`
+	status, resp := do(t, env.router, http.MethodPatch,
+		"/api/v1/admin/customers/"+user.ID, body, adminToken)
+	if status != http.StatusOK {
+		t.Fatalf("update status = %d (%s)", status, resp)
+	}
+	if !strings.Contains(string(resp), `"username":"RenamedUser"`) ||
+		!strings.Contains(string(resp), `"email":"renamed@example.com"`) {
+		t.Fatalf("unexpected response: %s", resp)
+	}
+	if _, err := env.accounts.LoginCustomer(ctx, "renameduser", "newpassword123"); err != nil {
+		t.Fatalf("login with updated profile: %v", err)
+	}
+
+	// 同角色用户名唯一（大小写不敏感）。
+	body = `{"username":"taken"}`
+	status, resp = do(t, env.router, http.MethodPatch,
+		"/api/v1/admin/customers/"+user.ID, body, adminToken)
+	if status != http.StatusConflict {
+		t.Fatalf("duplicate username status = %d (%s)", status, resp)
+	}
+}
 
 // TestAdminCustomersPaginationAndFilters 验证普通用户列表的分页响应、关键字
 // 过滤与排序；不带分页参数时仍返回旧数组形状以兼容 SDK。

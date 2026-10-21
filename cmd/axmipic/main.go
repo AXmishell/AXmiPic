@@ -205,6 +205,7 @@ func run() error {
 	accounts.SetCipher(cipher)
 	adminSvc := service.NewAdminService(repo, cfg.Storage.Driver, processor)
 	adminSvc.SetImagePurger(uploadSvc)
+	adminSvc.SetAccountService(accounts)
 	albumSvc := service.NewAlbumService(repo)
 
 	policies := service.NewPolicyService(repo, service.PolicyDefaults{

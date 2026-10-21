@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
-import { Delete, Plus, Refresh, Search } from '@element-plus/icons-vue'
+import { Delete, EditPen, Plus, Refresh, Search } from '@element-plus/icons-vue'
 
 import {
   createAdmin,
@@ -24,7 +24,7 @@ import UserAvatar from '@/components/UserAvatar.vue'
 import { useAuthStore } from '@/stores/auth'
 import { formatBytes, formatDateTime, usagePercent } from '@/utils/format'
 import { useTabQuery } from '@/utils/useTabQuery'
-import { usernameRules } from '@/utils/validate'
+import { USERNAME_PATTERN, USERNAME_RULE_MESSAGE, usernameRules } from '@/utils/validate'
 
 const auth = useAuthStore()
 
@@ -71,6 +71,13 @@ const sortLabels: Record<'newest' | 'oldest' | 'username' | 'usage', string> = {
   usage: '用量（高→低）',
 }
 const sortLabel = computed(() => sortLabels[sort.value])
+
+// 编辑用户资料
+const editOpen = ref(false)
+const editing = ref(false)
+const editTarget = ref<UserModel | null>(null)
+const editIsAdmin = ref(false)
+const editForm = reactive({ username: '', email: '', password: '' })
 
 // 新建管理员对话框
 const createOpen = ref(false)
@@ -248,6 +255,50 @@ async function clearFilters(): Promise<void> {
 function openCreate(): void {
   createForm.value = { username: '', password: '', confirmPassword: '' }
   createOpen.value = true
+}
+
+function openEdit(user: UserModel, isAdmin: boolean): void {
+  editTarget.value = user
+  editIsAdmin.value = isAdmin
+  editForm.username = user.username
+  editForm.email = user.email ?? ''
+  editForm.password = ''
+  editOpen.value = true
+}
+
+async function submitEdit(): Promise<void> {
+  const target = editTarget.value
+  if (!target || editing.value) return
+  const username = editForm.username.trim()
+  if (!USERNAME_PATTERN.test(username)) {
+    ElMessage.warning(USERNAME_RULE_MESSAGE)
+    return
+  }
+  if (editForm.password && editForm.password.length < 8) {
+    ElMessage.warning('新密码至少 8 位')
+    return
+  }
+  const payload: UserUpdate = {
+    username,
+    email: editForm.email.trim().toLowerCase(),
+  }
+  if (editForm.password) payload.password = editForm.password
+
+  editing.value = true
+  try {
+    const updated = editIsAdmin.value
+      ? await updateAdmin(target.id, payload)
+      : await updateCustomer(target.id, payload)
+    const list = editIsAdmin.value ? admins : customers
+    list.value = list.value.map((user) => (user.id === updated.id ? updated : user))
+    if (isSelf(target)) await auth.refreshUser()
+    editOpen.value = false
+    ElMessage.success('用户信息已更新')
+  } catch (error) {
+    ElMessage.error(toApiError(error).message)
+  } finally {
+    editing.value = false
+  }
 }
 
 async function submitCreate(): Promise<void> {
@@ -641,9 +692,12 @@ onMounted(load)
               <el-table-column prop="created_at" label="注册时间" min-width="170" sortable="custom">
                 <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
               </el-table-column>
-              <el-table-column label="操作" fixed="right" width="170" align="right">
+              <el-table-column label="操作" fixed="right" width="230" align="right">
                 <template #default="{ row }">
                   <div class="ax-row-actions">
+                    <el-button link type="primary" :icon="EditPen" @click="openEdit(row, false)">
+                      编辑
+                    </el-button>
                     <el-button link type="primary" @click="openDetail(row)">详情</el-button>
                     <el-button
                       link
@@ -725,9 +779,12 @@ onMounted(load)
               <el-table-column label="创建时间" min-width="170">
                 <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
               </el-table-column>
-              <el-table-column label="操作" fixed="right" width="120" align="right">
+              <el-table-column label="操作" fixed="right" width="200" align="right">
                 <template #default="{ row }">
                   <div class="ax-row-actions">
+                    <el-button link type="primary" :icon="EditPen" @click="openEdit(row, true)">
+                      编辑
+                    </el-button>
                     <el-button
                       link
                       type="danger"
@@ -746,6 +803,39 @@ onMounted(load)
         </div>
       </el-tab-pane>
     </el-tabs>
+
+    <el-dialog
+      v-model="editOpen"
+      :title="editIsAdmin ? '编辑管理员' : '编辑用户'"
+      width="min(440px, 92vw)"
+      append-to-body
+      :close-on-click-modal="false"
+    >
+      <el-form label-position="top" @submit.prevent="submitEdit">
+        <el-form-item label="用户名">
+          <el-input v-model="editForm.username" maxlength="64" placeholder="用户名" />
+        </el-form-item>
+        <el-form-item label="邮箱">
+          <el-input v-model="editForm.email" placeholder="留空表示未绑定" autocomplete="email" />
+          <p class="user-edit__hint">修改邮箱后验证状态会重置，需要用户重新验证。</p>
+        </el-form-item>
+        <el-form-item label="新密码">
+          <el-input
+            v-model="editForm.password"
+            type="password"
+            show-password
+            maxlength="72"
+            placeholder="留空则不修改"
+            autocomplete="new-password"
+          />
+          <p class="user-edit__hint">重置密码不会使当前已登录会话立即失效。</p>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="editOpen = false">取消</el-button>
+        <el-button type="primary" :loading="editing" @click="submitEdit">保存</el-button>
+      </template>
+    </el-dialog>
 
     <el-dialog
       v-model="createOpen"
@@ -862,6 +952,12 @@ onMounted(load)
 
 .user-search {
   width: 220px;
+}
+
+.user-edit__hint {
+  margin: 6px 0 0;
+  color: var(--ax-text-4);
+  font-size: var(--ax-text-xs);
 }
 
 .user-toolbar {

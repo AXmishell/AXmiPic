@@ -42,6 +42,10 @@ type UpdateUserInput struct {
 	Disabled *bool
 	// RoleGroupID 非 nil 时把客户转移到该角色组；空字符串表示回退默认组。
 	RoleGroupID *string
+	// Username/Email/Password 用于管理员编辑账户资料；为空表示不修改。
+	Username *string
+	Email    *string
+	Password *string
 }
 
 // AdminService 针对两张账户表提供管理操作。
@@ -50,6 +54,7 @@ type AdminService struct {
 	storageDriver string
 	processor     imaging.Processor
 	policies      *PolicyService
+	accounts      *AccountService
 
 	// purger 在删除客户时清理其图片与存储对象；未安装时仅删除账户记录。
 	purger ImagePurger
@@ -72,6 +77,11 @@ func NewAdminService(repo *store.Repository, storageDriver string, processor ima
 // SetPolicyService 安装角色组/策略服务，使管理员能为客户分配角色组。
 func (s *AdminService) SetPolicyService(policies *PolicyService) {
 	s.policies = policies
+}
+
+// SetAccountService 安装账户服务，使用户管理可以修改用户名、邮箱与密码。
+func (s *AdminService) SetAccountService(accounts *AccountService) {
+	s.accounts = accounts
 }
 
 // SetImagePurger 安装图片清理器，使删除客户时能级联清理其图片与存储对象。
@@ -243,6 +253,16 @@ func (s *AdminService) UpdateCustomer(ctx context.Context, id string, in UpdateU
 			update.QuotaBytes = &effective.QuotaBytes
 		}
 	}
+	if s.hasProfileUpdate(in) {
+		if s.accounts == nil {
+			return nil, fmt.Errorf("%w: account editing is not available", ErrInvalidInput)
+		}
+		if _, err := s.accounts.AdminUpdateAccount(ctx, store.RoleCustomer, id, AdminAccountUpdate{
+			Username: in.Username, Email: in.Email, Password: in.Password,
+		}); err != nil {
+			return nil, err
+		}
+	}
 	account, err := s.repo.UpdateCustomer(ctx, id, update)
 	if err != nil {
 		return nil, fmt.Errorf("update customer: %w", err)
@@ -270,11 +290,33 @@ func (s *AdminService) UpdateAdmin(ctx context.Context, actorID, id string, in U
 			return nil, fmt.Errorf("%w: cannot disable the last enabled admin", ErrInvalidInput)
 		}
 	}
-	account, err := s.repo.UpdateAdmin(ctx, id, store.UserUpdate{Disabled: in.Disabled})
-	if err != nil {
-		return nil, fmt.Errorf("update admin: %w", err)
+	if s.hasProfileUpdate(in) {
+		if s.accounts == nil {
+			return nil, fmt.Errorf("%w: account editing is not available", ErrInvalidInput)
+		}
+		if _, err := s.accounts.AdminUpdateAccount(ctx, store.RoleAdmin, id, AdminAccountUpdate{
+			Username: in.Username, Email: in.Email, Password: in.Password,
+		}); err != nil {
+			return nil, err
+		}
+	}
+	var account *store.Account
+	if in.Disabled != nil {
+		account, err = s.repo.UpdateAdmin(ctx, id, store.UserUpdate{Disabled: in.Disabled})
+		if err != nil {
+			return nil, fmt.Errorf("update admin: %w", err)
+		}
+	} else {
+		account, err = s.repo.GetAccountByID(ctx, store.RoleAdmin, id)
+		if err != nil {
+			return nil, fmt.Errorf("update admin: %w", err)
+		}
 	}
 	return toUserDTO(account), nil
+}
+
+func (s *AdminService) hasProfileUpdate(in UpdateUserInput) bool {
+	return in.Username != nil || in.Email != nil || (in.Password != nil && *in.Password != "")
 }
 
 // DeleteCustomer 移除某个客户账户。

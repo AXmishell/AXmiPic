@@ -9,6 +9,9 @@ import (
 type UserUpdate struct {
 	Disabled    *bool   `json:"disabled,omitempty"`
 	RoleGroupID *string `json:"role_group_id,omitempty"`
+	Username    *string `json:"username,omitempty"`
+	Email       *string `json:"email,omitempty"`
+	Password    *string `json:"password,omitempty"`
 }
 
 // RoleGroupInput 是创建或更新角色组的输入。

@@ -721,6 +721,9 @@ export interface TicketInput {
 export interface UserUpdate {
   disabled?: boolean
   role_group_id?: string
+  username?: string
+  email?: string
+  password?: string
 }
 
 export interface StorageInput {

@@ -160,6 +160,12 @@ export interface UserUpdate {
   disabled?: boolean
   /** 客户所属角色组；空字符串表示回退默认组。 */
   role_group_id?: string
+  /** 用户名；保留大小写，登录不区分大小写。 */
+  username?: string
+  /** 邮箱；空字符串表示解绑，修改后验证状态会重置。 */
+  email?: string
+  /** 新密码；留空表示不修改。 */
+  password?: string
 }
 
 /** 策略类型：分别控制配额、上传、速率、图片处理与功能开关。 */

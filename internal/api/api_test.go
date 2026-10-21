@@ -81,11 +81,13 @@ func newTestEnv(t *testing.T, requireAuth bool, quotaBytes int64) *testEnv {
 	settingsSvc := service.NewSettingsService(repo, cipher, notifySvc, logger, service.SMTPConfig{})
 	settingsSvc.SetAuthDefaults(service.AuthConfig{AllowRegistration: true, RequireAuth: requireAuth})
 	settingsSvc.SetAuthApplier(func(cfg service.AuthConfig) { accounts.SetAllowRegistration(cfg.AllowRegistration) })
+	adminSvc := service.NewAdminService(repo, "local", imaging.Default())
+	adminSvc.SetAccountService(accounts)
 	router := api.NewRouter(api.Deps{
 		Upload:        uploadSvc,
 		Imaging:       imagingSvc,
 		Accounts:      accounts,
-		Admin:         service.NewAdminService(repo, "local", imaging.Default()),
+		Admin:         adminSvc,
 		Albums:        service.NewAlbumService(repo),
 		Storage:       storageSvc,
 		Notify:        notifySvc,

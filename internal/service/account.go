@@ -815,6 +815,79 @@ func (s *AccountService) ChangeUsername(ctx context.Context, principal *auth.Pri
 	return toUserDTO(updated), nil
 }
 
+// AdminAccountUpdate 是管理员在用户管理中修改账户资料的可选字段。
+type AdminAccountUpdate struct {
+	Username *string
+	Email    *string
+	// Password 非空时重置为该密码；空字符串表示不修改。
+	Password *string
+}
+
+// AdminUpdateAccount 由管理员修改任意账户的用户名、邮箱或密码。用户名/邮箱
+// 仍需满足与注册一致的格式与唯一性规则；管理员修改邮箱后验证状态会被重置。
+func (s *AccountService) AdminUpdateAccount(ctx context.Context, role store.AccountRole, id string, in AdminAccountUpdate) (*UserDTO, error) {
+	account, err := s.repo.GetAccountByID(ctx, role, id)
+	if err != nil {
+		return nil, fmt.Errorf("admin update account: %w", err)
+	}
+	fields := map[string]any{}
+
+	if in.Username != nil {
+		username := strings.TrimSpace(*in.Username)
+		if err := validateUsername(username); err != nil {
+			return nil, err
+		}
+		if username != account.Username {
+			if err := s.ensureLoginIdentifiersFree(ctx, role, username, "", id); err != nil {
+				return nil, err
+			}
+			fields["username"] = username
+		}
+	}
+
+	if in.Email != nil {
+		email := strings.ToLower(strings.TrimSpace(*in.Email))
+		if email != "" {
+			if _, err := mail.ParseAddress(email); err != nil {
+				return nil, fmt.Errorf("%w: %s", ErrInvalidEmail, email)
+			}
+		}
+		if !strings.EqualFold(email, account.Email) || (email == "" && account.Email != "") {
+			if err := s.ensureLoginIdentifiersFree(ctx, role, "", email, id); err != nil {
+				return nil, err
+			}
+			fields["email"] = email
+			fields["email_verified"] = false
+		}
+	}
+
+	if in.Password != nil && strings.TrimSpace(*in.Password) != "" {
+		if err := validateNewPassword(*in.Password); err != nil {
+			return nil, err
+		}
+		hash, err := auth.HashPassword(*in.Password)
+		if err != nil {
+			return nil, err
+		}
+		fields["password_hash"] = hash
+	}
+
+	if len(fields) == 0 {
+		return toUserDTO(account), nil
+	}
+	updated, err := s.repo.UpdateAccountSecurity(ctx, role, id, fields)
+	if err != nil {
+		if isUniqueViolation(err) {
+			if _, ok := fields["email"]; ok {
+				return nil, ErrEmailInUse
+			}
+			return nil, ErrUserExists
+		}
+		return nil, fmt.Errorf("admin update account: %w", err)
+	}
+	return toUserDTO(updated), nil
+}
+
 // VerifySensitiveAction 校验当前密码；账户启用 TOTP 时还必须提供有效的动态码。
 // 用于修改用户名、开启/关闭安全入口等敏感操作。
 func (s *AccountService) VerifySensitiveAction(ctx context.Context, principal *auth.Principal, password, totpCode string) error {
