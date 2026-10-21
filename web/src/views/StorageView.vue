@@ -53,6 +53,12 @@ interface StorageForm {
   use_https: boolean
   qiniu_access_key: string
   qiniu_secret_key: string
+  // oss
+  oss_access_key_id: string
+  oss_access_key_secret: string
+  // cos
+  cos_secret_id: string
+  cos_secret_key: string
 }
 
 function emptyForm(): StorageForm {
@@ -77,6 +83,10 @@ function emptyForm(): StorageForm {
     use_https: true,
     qiniu_access_key: '',
     qiniu_secret_key: '',
+    oss_access_key_id: '',
+    oss_access_key_secret: '',
+    cos_secret_id: '',
+    cos_secret_key: '',
   }
 }
 
@@ -87,6 +97,8 @@ const driverLabel: Record<StorageDriver, string> = {
   local: '本地存储',
   s3: '对象存储 (S3 兼容)',
   qiniu: '七牛云 Kodo',
+  oss: '阿里云 OSS',
+  cos: '腾讯云 COS',
 }
 
 const rules: FormRules = {
@@ -127,6 +139,19 @@ function openEdit(item: StorageBackend): void {
     form.use_path_style = Boolean(s.use_path_style)
     form.public_base_url = String(s.public_base_url ?? '')
     form.presign_expiry_sec = Number(s.presign_expiry_sec ?? 900)
+  } else if (item.driver === 'oss') {
+    form.endpoint = String(s.endpoint ?? '')
+    form.region = String(s.region ?? '')
+    form.bucket = String(s.bucket ?? '')
+    form.domain = String(s.domain ?? '')
+    form.private = Boolean(s.private)
+    form.use_https = s.use_https === undefined ? true : Boolean(s.use_https)
+  } else if (item.driver === 'cos') {
+    form.region = String(s.region ?? '')
+    form.bucket = String(s.bucket ?? '')
+    form.domain = String(s.domain ?? '')
+    form.private = Boolean(s.private)
+    form.use_https = s.use_https === undefined ? true : Boolean(s.use_https)
   } else {
     form.bucket = String(s.bucket ?? '')
     form.domain = String(s.domain ?? '')
@@ -154,6 +179,25 @@ function buildPayload(): StorageBackendInput {
     settings.presign_expiry_sec = Number(form.presign_expiry_sec) || 900
     secrets.access_key_id = form.access_key_id.trim()
     secrets.secret_access_key = form.secret_access_key.trim()
+  } else if (form.driver === 'oss') {
+    settings.endpoint = form.endpoint.trim()
+    settings.region = form.region.trim()
+    settings.bucket = form.bucket.trim()
+    settings.domain = form.domain.trim()
+    settings.private = form.private
+    settings.use_https = form.use_https
+    settings.presign_expiry_sec = 900
+    secrets.access_key_id = form.oss_access_key_id.trim()
+    secrets.access_key_secret = form.oss_access_key_secret.trim()
+  } else if (form.driver === 'cos') {
+    settings.region = form.region.trim()
+    settings.bucket = form.bucket.trim()
+    settings.domain = form.domain.trim()
+    settings.private = form.private
+    settings.use_https = form.use_https
+    settings.presign_expiry_sec = 900
+    secrets.secret_id = form.cos_secret_id.trim()
+    secrets.secret_key = form.cos_secret_key.trim()
   } else {
     settings.bucket = form.bucket.trim()
     settings.domain = form.domain.trim()
@@ -254,7 +298,7 @@ onMounted(load)
   <div class="ax-page">
     <PageHeader
       title="存储配置"
-      description="配置并切换图片存储后端：本地文件系统、S3 兼容对象存储或七牛云。切换即时生效，无需重启。"
+      description="配置并切换图片存储后端：本地文件系统、S3 兼容对象存储、阿里云 OSS、腾讯云 COS 或七牛云。切换即时生效，无需重启。"
     >
       <template #actions>
         <el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button>
@@ -347,6 +391,8 @@ onMounted(load)
           <el-radio-group v-model="form.driver" :disabled="isEdit">
             <el-radio-button value="local">本地</el-radio-button>
             <el-radio-button value="s3">对象存储 (S3)</el-radio-button>
+            <el-radio-button value="oss">阿里云 OSS</el-radio-button>
+            <el-radio-button value="cos">腾讯云 COS</el-radio-button>
             <el-radio-button value="qiniu">七牛云</el-radio-button>
           </el-radio-group>
         </el-form-item>
@@ -396,7 +442,7 @@ onMounted(load)
         </template>
 
         <!-- 七牛 -->
-        <template v-else>
+        <template v-else-if="form.driver === 'qiniu'">
           <el-form-item label="Bucket">
             <el-input v-model="form.bucket" placeholder="axmipic" />
           </el-form-item>
@@ -423,6 +469,75 @@ onMounted(load)
           <div class="storage-switches">
             <el-checkbox v-model="form.use_https">使用 HTTPS</el-checkbox>
             <el-checkbox v-model="form.private">私有空间</el-checkbox>
+          </div>
+        </template>
+
+        <!-- 阿里云 OSS -->
+        <template v-else-if="form.driver === 'oss'">
+          <el-form-item label="Region">
+            <el-input v-model="form.region" placeholder="cn-hangzhou" />
+          </el-form-item>
+          <el-form-item label="Endpoint（可选）">
+            <el-input
+              v-model="form.endpoint"
+              placeholder="留空则由 Region 推导，如 https://oss-cn-hangzhou.aliyuncs.com"
+            />
+          </el-form-item>
+          <el-form-item label="Bucket">
+            <el-input v-model="form.bucket" placeholder="axmipic" />
+          </el-form-item>
+          <el-form-item label="AccessKey ID">
+            <el-input
+              v-model="form.oss_access_key_id"
+              :placeholder="isEdit ? '留空表示保持不变' : ''"
+            />
+          </el-form-item>
+          <el-form-item label="AccessKey Secret">
+            <el-input
+              v-model="form.oss_access_key_secret"
+              type="password"
+              show-password
+              :placeholder="isEdit ? '留空表示保持不变' : ''"
+            />
+          </el-form-item>
+          <el-form-item label="访问域名（可选）">
+            <el-input v-model="form.domain" placeholder="https://cdn.example.com" />
+          </el-form-item>
+          <div class="storage-switches">
+            <el-checkbox v-model="form.use_https">使用 HTTPS</el-checkbox>
+            <el-checkbox v-model="form.private">私有 Bucket</el-checkbox>
+          </div>
+        </template>
+
+        <!-- 腾讯云 COS -->
+        <template v-else-if="form.driver === 'cos'">
+          <el-form-item label="Region">
+            <el-input v-model="form.region" placeholder="ap-guangzhou" />
+          </el-form-item>
+          <el-form-item label="Bucket">
+            <el-input v-model="form.bucket" placeholder="axmipic-1250000000" />
+            <p class="storage-hint">格式为「存储桶名称-APPID」，例如 axmipic-1250000000。</p>
+          </el-form-item>
+          <el-form-item label="SecretId">
+            <el-input
+              v-model="form.cos_secret_id"
+              :placeholder="isEdit ? '留空表示保持不变' : ''"
+            />
+          </el-form-item>
+          <el-form-item label="SecretKey">
+            <el-input
+              v-model="form.cos_secret_key"
+              type="password"
+              show-password
+              :placeholder="isEdit ? '留空表示保持不变' : ''"
+            />
+          </el-form-item>
+          <el-form-item label="访问域名（可选）">
+            <el-input v-model="form.domain" placeholder="https://cdn.example.com" />
+          </el-form-item>
+          <div class="storage-switches">
+            <el-checkbox v-model="form.use_https">使用 HTTPS</el-checkbox>
+            <el-checkbox v-model="form.private">私有存储桶</el-checkbox>
           </div>
         </template>
 

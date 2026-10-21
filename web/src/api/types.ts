@@ -208,7 +208,7 @@ export interface UserPreferences {
   images_layout?: 'grid' | 'masonry'
 }
 
-export type StorageDriver = 'local' | 's3' | 'qiniu'
+export type StorageDriver = 'local' | 's3' | 'qiniu' | 'oss' | 'cos'
 
 export interface StorageBackend {
   id: string

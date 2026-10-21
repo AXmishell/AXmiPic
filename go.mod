@@ -3,6 +3,7 @@ module github.com/AXmishell/axmipic
 go 1.26.0
 
 require (
+	github.com/aliyun/aliyun-oss-go-sdk v3.0.2+incompatible
 	github.com/disintegration/imaging v1.6.2
 	github.com/glebarez/sqlite v1.11.0
 	github.com/go-chi/chi/v5 v5.3.2
@@ -16,6 +17,7 @@ require (
 	github.com/knadh/koanf/v2 v2.3.7
 	github.com/minio/minio-go/v7 v7.3.0
 	github.com/qiniu/go-sdk/v7 v7.29.0
+	github.com/tencentyun/cos-go-sdk-v5 v0.7.75
 	github.com/tetratelabs/wazero v1.12.0
 	github.com/wechatpay-apiv3/wechatpay-go v0.2.21
 	go.yaml.in/yaml/v3 v3.0.5
@@ -33,11 +35,13 @@ require (
 	github.com/BurntSushi/toml v1.6.0 // indirect
 	github.com/alex-ant/gomath v0.0.0-20160516115720-89013a210a82 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/clbanning/mxj v1.8.4 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/glebarez/go-sqlite v1.21.2 // indirect
 	github.com/go-sql-driver/mysql v1.8.1 // indirect
 	github.com/gofrs/flock v0.13.0 // indirect
+	github.com/google/go-querystring v1.0.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/pgx/v5 v5.10.0 // indirect
@@ -52,7 +56,9 @@ require (
 	github.com/minio/crc64nvme v1.1.1 // indirect
 	github.com/minio/md5-simd v1.1.2 // indirect
 	github.com/mitchellh/copystructure v1.2.0 // indirect
+	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect
+	github.com/mozillazg/go-httpheader v0.2.1 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rs/xid v1.6.0 // indirect

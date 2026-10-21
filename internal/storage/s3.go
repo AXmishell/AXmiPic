@@ -14,7 +14,7 @@ import (
 )
 
 // S3 将对象存储在任何兼容 S3 的服务中（AWS S3、MinIO、Cloudflare
-// R2、阿里云 OSS、腾讯云 COS 等）。
+// R2 等）。阿里云 OSS 与腾讯云 COS 另有原生 SDK 驱动。
 type S3 struct {
 	client        *minio.Client
 	bucket        string

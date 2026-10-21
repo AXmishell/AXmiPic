@@ -72,7 +72,7 @@ ALTER TABLE `images` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci
 
 ```yaml
 storage:
-  driver: "local"                       # local | s3 | qiniu
+  driver: "local"                       # local | s3 | qiniu | oss | cos
   local:
     root: "./data/uploads"              # 本地文件存放目录
   s3:
@@ -95,6 +95,25 @@ storage:
     private: false
     use_https: true
     presign_expiry_sec: 3600
+  oss:                                  # 阿里云 OSS
+    endpoint: ""                        # 可选，留空由 region 推导
+    region: "cn-hangzhou"               # 也接受 oss-cn-hangzhou
+    bucket: "axmipic"
+    access_key_id: ""
+    access_key_secret: ""
+    domain: ""                          # 可选，自定义/CDN 域名
+    private: false
+    use_https: true
+    presign_expiry_sec: 900
+  cos:                                  # 腾讯云 COS
+    bucket: "axmipic-1250000000"        # 名称-APPID
+    region: "ap-guangzhou"
+    secret_id: ""
+    secret_key: ""
+    domain: ""                          # 可选，自定义/CDN 域名
+    private: false
+    use_https: true
+    presign_expiry_sec: 900
 ```
 
 配置文件中的存储始终作为兜底后端。更多后端可在后台「存储配置」中动态添加并在运行中切换。

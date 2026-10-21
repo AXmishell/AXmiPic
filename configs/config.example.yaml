@@ -45,11 +45,11 @@ database:
   conn_max_lifetime_minutes: 30
 
 storage:
-  # driver: local | s3 | qiniu
+  # driver: local | s3 | qiniu | oss | cos
   driver: "local"
   local:
     root: "./data/uploads"
-  # S3-compatible backend (AWS S3 / MinIO / Cloudflare R2 / Aliyun OSS / Tencent COS)
+  # S3-compatible backend (AWS S3 / MinIO / Cloudflare R2)
   s3:
     endpoint: "https://s3.amazonaws.com"
     region: "us-east-1"
@@ -71,6 +71,28 @@ storage:
     private: false
     use_https: true
     presign_expiry_sec: 3600
+  # Aliyun OSS backend
+  oss:
+    # 可选；留空时由 region 推导为 https://oss-<region>.aliyuncs.com
+    endpoint: ""
+    region: "cn-hangzhou"
+    bucket: "axmipic"
+    access_key_id: ""
+    access_key_secret: ""
+    domain: ""
+    private: false
+    use_https: true
+    presign_expiry_sec: 900
+  # Tencent Cloud COS backend（bucket 需为「名称-APPID」）
+  cos:
+    bucket: "axmipic-1250000000"
+    region: "ap-guangzhou"
+    secret_id: ""
+    secret_key: ""
+    domain: ""
+    private: false
+    use_https: true
+    presign_expiry_sec: 900
 
 upload:
   max_size_mb: 20

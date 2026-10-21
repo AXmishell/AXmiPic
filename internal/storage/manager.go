@@ -40,6 +40,10 @@ func newBackend(baseURL string, cfg config.StorageConfig) (Storage, error) {
 		return NewS3(cfg.S3)
 	case "qiniu":
 		return NewQiniu(cfg.Qiniu)
+	case "oss":
+		return NewOSS(cfg.OSS)
+	case "cos":
+		return NewCOS(cfg.COS)
 	default:
 		return nil, fmt.Errorf("storage: unknown driver %q", cfg.Driver)
 	}

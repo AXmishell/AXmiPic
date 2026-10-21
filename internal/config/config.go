@@ -220,6 +220,8 @@ type StorageConfig struct {
 	Local  LocalStorageConfig `koanf:"local"`
 	S3     S3Config           `koanf:"s3"`
 	Qiniu  QiniuConfig        `koanf:"qiniu"`
+	OSS    OSSConfig          `koanf:"oss"`
+	COS    COSConfig          `koanf:"cos"`
 }
 
 // LocalStorageConfig 配置本地文件系统后端。
@@ -248,6 +250,32 @@ type QiniuConfig struct {
 	Domain           string `koanf:"domain"`
 	UploadHost       string `koanf:"upload_host"`
 	Zone             string `koanf:"zone"`
+	Private          bool   `koanf:"private"`
+	UseHTTPS         bool   `koanf:"use_https"`
+	PresignExpirySec int    `koanf:"presign_expiry_sec"`
+}
+
+// OSSConfig 配置阿里云对象存储 OSS 后端。
+type OSSConfig struct {
+	// Endpoint 可选；留空时由 Region 推导为 https://oss-<region>.aliyuncs.com。
+	Endpoint         string `koanf:"endpoint"`
+	Region           string `koanf:"region"`
+	Bucket           string `koanf:"bucket"`
+	AccessKeyID      string `koanf:"access_key_id"`
+	AccessKeySecret  string `koanf:"access_key_secret"`
+	Domain           string `koanf:"domain"`
+	Private          bool   `koanf:"private"`
+	UseHTTPS         bool   `koanf:"use_https"`
+	PresignExpirySec int    `koanf:"presign_expiry_sec"`
+}
+
+// COSConfig 配置腾讯云对象存储 COS 后端。Bucket 需为「名称-APPID」形式。
+type COSConfig struct {
+	Bucket           string `koanf:"bucket"`
+	Region           string `koanf:"region"`
+	SecretID         string `koanf:"secret_id"`
+	SecretKey        string `koanf:"secret_key"`
+	Domain           string `koanf:"domain"`
 	Private          bool   `koanf:"private"`
 	UseHTTPS         bool   `koanf:"use_https"`
 	PresignExpirySec int    `koanf:"presign_expiry_sec"`
@@ -532,6 +560,8 @@ func defaultConfig() Config {
 			Local:  LocalStorageConfig{Root: "./data/uploads"},
 			S3:     S3Config{Region: "us-east-1", Secure: true, PresignExpirySec: 900},
 			Qiniu:  QiniuConfig{UseHTTPS: true, PresignExpirySec: 3600},
+			OSS:    OSSConfig{UseHTTPS: true, PresignExpirySec: 900},
+			COS:    COSConfig{UseHTTPS: true, PresignExpirySec: 900},
 		},
 		Upload: UploadConfig{
 			MaxSizeMB:        20,
@@ -699,6 +729,32 @@ func (c Config) validate() error {
 		}
 		if c.Storage.Qiniu.PresignExpirySec < 1 {
 			return fmt.Errorf("config: storage.qiniu.presign_expiry_sec must be at least 1")
+		}
+	case "oss":
+		if strings.TrimSpace(c.Storage.OSS.Bucket) == "" {
+			return fmt.Errorf("config: storage.oss.bucket must not be empty")
+		}
+		if strings.TrimSpace(c.Storage.OSS.AccessKeyID) == "" || strings.TrimSpace(c.Storage.OSS.AccessKeySecret) == "" {
+			return fmt.Errorf("config: storage.oss.access_key_id and access_key_secret must not be empty")
+		}
+		if strings.TrimSpace(c.Storage.OSS.Endpoint) == "" && strings.TrimSpace(c.Storage.OSS.Region) == "" {
+			return fmt.Errorf("config: storage.oss.region or endpoint must not be empty")
+		}
+		if c.Storage.OSS.PresignExpirySec < 1 {
+			return fmt.Errorf("config: storage.oss.presign_expiry_sec must be at least 1")
+		}
+	case "cos":
+		if strings.TrimSpace(c.Storage.COS.Bucket) == "" {
+			return fmt.Errorf("config: storage.cos.bucket must not be empty")
+		}
+		if strings.TrimSpace(c.Storage.COS.Region) == "" {
+			return fmt.Errorf("config: storage.cos.region must not be empty")
+		}
+		if strings.TrimSpace(c.Storage.COS.SecretID) == "" || strings.TrimSpace(c.Storage.COS.SecretKey) == "" {
+			return fmt.Errorf("config: storage.cos.secret_id and secret_key must not be empty")
+		}
+		if c.Storage.COS.PresignExpirySec < 1 {
+			return fmt.Errorf("config: storage.cos.presign_expiry_sec must be at least 1")
 		}
 	default:
 		return fmt.Errorf("config: storage.driver %q is not supported", c.Storage.Driver)

@@ -54,6 +54,8 @@ type StorageInput struct {
 var storageSecretKeys = map[string][]string{
 	"s3":    {"access_key_id", "secret_access_key"},
 	"qiniu": {"access_key", "secret_key"},
+	"oss":   {"access_key_id", "access_key_secret"},
+	"cos":   {"secret_id", "secret_key"},
 }
 
 // StorageService 管理可命名的存储后端，并在运行中热切换默认后端。
@@ -350,6 +352,35 @@ func (s *StorageService) parseInput(in StorageInput, existing *store.StorageBack
 		if cfg.Qiniu.PresignExpirySec <= 0 {
 			cfg.Qiniu.PresignExpirySec = 3600
 		}
+	case "oss":
+		cfg.OSS = config.OSSConfig{
+			Endpoint:         get("endpoint"),
+			Region:           get("region"),
+			Bucket:           get("bucket"),
+			AccessKeyID:      in.Secrets["access_key_id"],
+			AccessKeySecret:  in.Secrets["access_key_secret"],
+			Domain:           get("domain"),
+			Private:          getBool("private"),
+			UseHTTPS:         getBool("use_https"),
+			PresignExpirySec: getInt("presign_expiry_sec"),
+		}
+		if cfg.OSS.PresignExpirySec <= 0 {
+			cfg.OSS.PresignExpirySec = 900
+		}
+	case "cos":
+		cfg.COS = config.COSConfig{
+			Bucket:           get("bucket"),
+			Region:           get("region"),
+			SecretID:         in.Secrets["secret_id"],
+			SecretKey:        in.Secrets["secret_key"],
+			Domain:           get("domain"),
+			Private:          getBool("private"),
+			UseHTTPS:         getBool("use_https"),
+			PresignExpirySec: getInt("presign_expiry_sec"),
+		}
+		if cfg.COS.PresignExpirySec <= 0 {
+			cfg.COS.PresignExpirySec = 900
+		}
 	default:
 		return cfg, nil, nil, fmt.Errorf("%w: unknown driver %q", ErrStorageConfig, driver)
 	}
@@ -380,6 +411,25 @@ func (s *StorageService) parseInput(in StorageInput, existing *store.StorageBack
 		settings["presign_expiry_sec"] = cfg.Qiniu.PresignExpirySec
 		secrets["access_key"] = cfg.Qiniu.AccessKey
 		secrets["secret_key"] = cfg.Qiniu.SecretKey
+	case "oss":
+		settings["endpoint"] = cfg.OSS.Endpoint
+		settings["region"] = cfg.OSS.Region
+		settings["bucket"] = cfg.OSS.Bucket
+		settings["domain"] = cfg.OSS.Domain
+		settings["private"] = cfg.OSS.Private
+		settings["use_https"] = cfg.OSS.UseHTTPS
+		settings["presign_expiry_sec"] = cfg.OSS.PresignExpirySec
+		secrets["access_key_id"] = cfg.OSS.AccessKeyID
+		secrets["access_key_secret"] = cfg.OSS.AccessKeySecret
+	case "cos":
+		settings["bucket"] = cfg.COS.Bucket
+		settings["region"] = cfg.COS.Region
+		settings["domain"] = cfg.COS.Domain
+		settings["private"] = cfg.COS.Private
+		settings["use_https"] = cfg.COS.UseHTTPS
+		settings["presign_expiry_sec"] = cfg.COS.PresignExpirySec
+		secrets["secret_id"] = cfg.COS.SecretID
+		secrets["secret_key"] = cfg.COS.SecretKey
 	}
 	return cfg, settings, secrets, nil
 }
@@ -432,6 +482,10 @@ func buildStorage(baseURL string, cfg config.StorageConfig) (storage.Storage, er
 		return storage.NewS3(cfg.S3)
 	case "qiniu":
 		return storage.NewQiniu(cfg.Qiniu)
+	case "oss":
+		return storage.NewOSS(cfg.OSS)
+	case "cos":
+		return storage.NewCOS(cfg.COS)
 	default:
 		return nil, fmt.Errorf("%w: unknown driver %q", ErrStorageConfig, cfg.Driver)
 	}
