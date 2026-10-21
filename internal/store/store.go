@@ -175,8 +175,40 @@ func warnNonUTF8MB4Tables(db *gorm.DB) {
 	)
 }
 
+// Adopt 让 r 改用 next 已打开的数据库连接，并关闭 r 原有的连接。
+//
+// 它只在初始化期间使用：初始化向导可能把实例切换到另一个数据库，通过接管
+// 新建连接，当前进程无需重启即可用新库完成管理员登录。next 在成功后即失效
+// （其 Close/Ping 变为空操作），不得再用于查询。
+func (r *Repository) Adopt(next *Repository) error {
+	if r == nil || r.db == nil {
+		return errors.New("store: repository is not open")
+	}
+	if next == nil || next.db == nil {
+		return errors.New("store: target repository is not open")
+	}
+	// 先取出旧连接，再替换 Config；替换后 r.db.DB() 会指向新连接。
+	oldSQL, oldErr := r.db.DB()
+	r.db.Config = next.db.Config
+	// 基础 DB 的 Statement 缓存了旧的 ConnPool；GORM 克隆会话时会继承它，
+	// 因此必须一并替换，否则后续查询仍会走到已关闭的旧连接。
+	if r.db.Statement != nil {
+		r.db.Statement.ConnPool = r.db.Config.ConnPool
+	}
+	next.db = nil
+	if oldErr == nil && oldSQL != nil {
+		// 旧连接上的在途请求可能在关闭时失败；初始化阶段流量很低，且新连接已
+		// 生效，因此这里不把关闭错误返回给调用方。
+		_ = oldSQL.Close()
+	}
+	return nil
+}
+
 // Close 释放底层数据库连接。
 func (r *Repository) Close() error {
+	if r == nil || r.db == nil {
+		return nil
+	}
 	sqlDB, err := r.db.DB()
 	if err != nil {
 		return fmt.Errorf("store: connection: %w", err)

@@ -52,11 +52,20 @@ type InstallService struct {
 	lockFile   string
 	configPath string
 	disabled   bool
+	// activate 在初始化成功后接管新打开的仓库，使运行中的进程立即改用新库。
+	// 未设置时新仓库只用于本次初始化，随后关闭（需重启进程才能使用新库）。
+	activate func(*store.Repository) error
 }
 
 // NewInstallService 构造一个 InstallService。
 func NewInstallService(lockFile, configPath string, disabled bool) *InstallService {
 	return &InstallService{lockFile: lockFile, configPath: configPath, disabled: disabled}
+}
+
+// SetActivator 设置初始化成功后的仓库接管回调。回调应把 target 的连接切换给
+// 进程当前使用的仓库；返回 nil 表示 target 的所有权已转移，Install 不再关闭它。
+func (s *InstallService) SetActivator(fn func(*store.Repository) error) {
+	s.activate = fn
 }
 
 // LockFile 返回锁文件路径。
@@ -126,7 +135,13 @@ func (s *InstallService) Install(ctx context.Context, in InstallInput, repoOpene
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrInstallDatabase, err)
 	}
-	defer func() { _ = repo.Close() }()
+	// 接管成功后新连接归运行中的仓库所有，不能在这里关闭。
+	activated := false
+	defer func() {
+		if !activated {
+			_ = repo.Close()
+		}
+	}()
 
 	if beforeCreateAdmin != nil {
 		if err := beforeCreateAdmin(ctx, repo, in); err != nil {
@@ -139,13 +154,17 @@ func (s *InstallService) Install(ctx context.Context, in InstallInput, repoOpene
 		return err
 	}
 
-	// 写入配置文件（尽力而为；失败不阻断，但会体现在错误里）。
+	// 写入配置文件。
 	if err := s.writeConfig(in); err != nil {
 		return err
 	}
 	// 创建锁文件。
 	if err := s.writeLock(in); err != nil {
 		return err
+	}
+	// 初始化已完成，把新连接交给运行中的仓库；失败时仍可重启进程使用新库。
+	if s.activate != nil && s.activate(repo) == nil {
+		activated = true
 	}
 	return nil
 }

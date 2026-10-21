@@ -93,6 +93,48 @@ func TestInstallWritesConfigAndLock(t *testing.T) {
 	}
 }
 
+func TestInstallActivatesOpenedRepository(t *testing.T) {
+	dir := t.TempDir()
+	live, err := store.Open("sqlite", filepath.Join(dir, "live.db"))
+	if err != nil {
+		t.Fatalf("open live db: %v", err)
+	}
+	t.Cleanup(func() { _ = live.Close() })
+
+	svc := service.NewInstallService(filepath.Join(dir, "install.lock"), "", false)
+	svc.SetActivator(live.Adopt)
+	opener := func(_, _ string) (*store.Repository, error) {
+		return store.Open("sqlite", filepath.Join(dir, "target.db"))
+	}
+	seed := func(ctx context.Context, repo *store.Repository, in service.InstallInput) error {
+		return repo.CreateAdmin(ctx, &store.Admin{
+			ID:           "admin-1",
+			Username:     in.AdminUsername,
+			PasswordHash: "hash",
+		})
+	}
+
+	err = svc.Install(context.Background(), service.InstallInput{
+		BaseURL:        "http://example.test",
+		DatabaseDriver: "sqlite",
+		DatabaseDSN:    filepath.Join(dir, "target.db"),
+		AdminUsername:  "admin",
+		AdminPassword:  "password123",
+	}, opener, seed)
+	if err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+
+	// 初始化完成后，运行中的仓库应已切换到目标库并读到新建管理员。
+	account, err := live.GetAccountByUsername(context.Background(), store.RoleAdmin, "admin")
+	if err != nil {
+		t.Fatalf("read admin from activated repository: %v", err)
+	}
+	if account.ID != "admin-1" {
+		t.Fatalf("admin id = %q, want admin-1", account.ID)
+	}
+}
+
 func TestInstallConfigIsBootstrapOnly(t *testing.T) {
 	dir := t.TempDir()
 	lock := filepath.Join(dir, "install.lock")

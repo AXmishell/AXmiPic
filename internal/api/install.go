@@ -67,8 +67,8 @@ func (h *Handler) runInstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// 初始化会把权限开关写入目标数据库；立即重新加载一次，使同一进程无需重启
-	// 即可应用「允许注册 / 允许访客上传」等运行设置。若初始化切换到了另一个
-	// 数据库，仍需重启服务后才会使用新连接。
+	// 即可应用「允许注册 / 允许访客上传」等运行设置。安装服务已把新数据库连接
+	// 接管给运行中的仓库，因此管理员登录也从目标库读取。
 	if h.settings != nil {
 		if err := h.settings.BootstrapAuth(r.Context()); err != nil {
 			h.logger.WarnContext(r.Context(), "reload auth settings after initialization", slog.Any("error", err))

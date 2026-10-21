@@ -248,7 +248,9 @@ async function submit(): Promise<void> {
 }
 
 async function goLogin(): Promise<void> {
-  await router.replace('/login')
+  // 初始化只创建管理员账户（admins 表），必须走独立的管理员登录入口；
+  // 普通 /login 校验的是 customers 表，会提示账号或密码错误。
+  await router.replace('/admin/login')
 }
 
 onMounted(async () => {
@@ -257,7 +259,7 @@ onMounted(async () => {
     const status = await fetchInstallStatus()
     if (status.installed) {
       app.markInstalled()
-      await router.replace(auth.isAuthenticated ? '/admin' : '/login')
+      await router.replace(auth.isAuthenticated ? (auth.isAdmin ? '/admin' : '/user') : '/admin/login')
     }
   } catch {
     // 无法读取状态时允许继续尝试初始化。

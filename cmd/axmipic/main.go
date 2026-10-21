@@ -83,6 +83,17 @@ func run() error {
 		time.Duration(cfg.Database.ConnMaxLifetimeMinutes)*time.Minute); err != nil {
 		logger.Warn("failed to configure database connection pool", slog.Any("error", err))
 	}
+	// 初始化可能把实例切换到另一个数据库；成功后直接接管新连接，避免必须
+	// 重启进程才能使用向导中创建的管理员账户。
+	installSvc.SetActivator(func(target *store.Repository) error {
+		if err := repo.Adopt(target); err != nil {
+			logger.Warn("failed to switch to the database configured by the installer; restart the service to use it",
+				slog.Any("error", err))
+			return err
+		}
+		logger.Info("switched to the database configured by the installer")
+		return nil
+	})
 	defer func() {
 		if closeErr := repo.Close(); closeErr != nil {
 			logger.Error("failed to close database", slog.Any("error", closeErr))
@@ -405,27 +416,39 @@ func run() error {
 	guestSigner := auth.NewGuestSigner(jwtKey)
 	// 内置 Guest 主体：初始化完成后解析一次；是否附加由「允许访客上传」开关在
 	// 运行时决定，可在后台热切换。
+	resolveGuestPrincipal := func() *auth.Principal {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		guestID := accounts.GuestID(ctx)
+		if guestID == "" {
+			return nil
+		}
+		return &auth.Principal{
+			UserID:   guestID,
+			Username: service.GuestUsername,
+			Role:     auth.RoleUser,
+			Guest:    true,
+		}
+	}
 	var guestPrincipal *auth.Principal
 	if installed {
-		if guestID := accounts.GuestID(context.Background()); guestID != "" {
-			guestPrincipal = &auth.Principal{
-				UserID:   guestID,
-				Username: service.GuestUsername,
-				Role:     auth.RoleUser,
-				Guest:    true,
-			}
-		}
+		guestPrincipal = resolveGuestPrincipal()
 	}
 	if cfg.Auth.AllowGuestUpload && guestPrincipal == nil {
 		logger.Warn("allow_guest_upload is enabled but the guest account is missing; guest uploads will be unowned")
 	}
 	settingsSvc.SetAuthApplier(func(authCfg service.AuthConfig) {
 		accounts.SetAllowRegistration(authCfg.AllowRegistration)
-		if authCfg.AllowGuestUpload {
-			authenticator.SetGuestPrincipal(guestPrincipal)
-		} else {
+		if !authCfg.AllowGuestUpload {
 			authenticator.SetGuestPrincipal(nil)
+			return
 		}
+		principal := guestPrincipal
+		if principal == nil {
+			// 初始化模式启动时账户尚不存在；初始化完成后按需解析，免去重启。
+			principal = resolveGuestPrincipal()
+		}
+		authenticator.SetGuestPrincipal(principal)
 	})
 	// 应用数据库中的权限设置（无记录时用配置兜底写库），使运行值与后台一致。
 	authSettingsCtx, cancelAuthSettings := context.WithTimeout(context.Background(), 10*time.Second)
