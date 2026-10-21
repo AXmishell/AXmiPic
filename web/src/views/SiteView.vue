@@ -12,7 +12,7 @@ import {
   deletePage,
   listAllAnnouncements,
   listPages,
-  listReports,
+  listReportsPaged,
   updateAnnouncement,
   updatePage,
   updateReport,
@@ -29,10 +29,13 @@ import type {
 import EmptyState from '@/components/EmptyState.vue'
 import ErrorState from '@/components/ErrorState.vue'
 import PageHeader from '@/components/PageHeader.vue'
+import TableSkeleton from '@/components/TableSkeleton.vue'
 import { formatDateTime } from '@/utils/format'
+import { useTabQuery } from '@/utils/useTabQuery'
 
 type Tab = 'announcements' | 'reports' | 'pages'
-const activeTab = ref<Tab>('announcements')
+const SITE_TABS: readonly Tab[] = ['announcements', 'reports', 'pages']
+const activeTab = useTabQuery<Tab>('tab', 'announcements', SITE_TABS)
 
 const announcements = ref<Announcement[]>([])
 const reports = ref<Report[]>([])
@@ -54,18 +57,40 @@ const reportStatusOptions: { value: ReportStatus; label: string; tag: string }[]
 ]
 
 const reportFilter = ref<'' | ReportStatus>('')
+const reportPage = ref(1)
+const reportPageSize = ref(20)
+const reportTotal = ref(0)
+const reportsLoading = ref(false)
+
+async function fetchReports(): Promise<void> {
+  reportsLoading.value = true
+  try {
+    const data = await listReportsPaged({
+      page: reportPage.value,
+      page_size: reportPageSize.value,
+      status: reportFilter.value || undefined,
+    })
+    reports.value = data.items ?? []
+    reportTotal.value = data.total ?? 0
+    if (reports.value.length === 0 && reportPage.value > 1 && reportTotal.value > 0) {
+      reportPage.value -= 1
+      await fetchReports()
+    }
+  } finally {
+    reportsLoading.value = false
+  }
+}
 
 async function load(): Promise<void> {
   loading.value = true
   errorMessage.value = ''
   try {
-    const [annList, reportList, pageList] = await Promise.all([
+    const [annList, , pageList] = await Promise.all([
       listAllAnnouncements(),
-      listReports(reportFilter.value || undefined),
+      fetchReports(),
       listPages(),
     ])
     announcements.value = annList ?? []
-    reports.value = reportList ?? []
     pages.value = pageList ?? []
   } catch (error) {
     errorMessage.value = toApiError(error).message
@@ -76,10 +101,33 @@ async function load(): Promise<void> {
 
 async function loadReports(): Promise<void> {
   try {
-    reports.value = (await listReports(reportFilter.value || undefined)) ?? []
+    await fetchReports()
   } catch (error) {
     ElMessage.error(toApiError(error).message)
   }
+}
+
+function onReportFilterChange(value: '' | ReportStatus): void {
+  reportFilter.value = value
+  reportPage.value = 1
+  void loadReports()
+}
+
+function onReportPageChange(page: number): void {
+  reportPage.value = page
+  void loadReports()
+}
+
+function onReportSizeChange(size: number): void {
+  reportPageSize.value = size
+  reportPage.value = 1
+  void loadReports()
+}
+
+function clearReportFilter(): void {
+  reportFilter.value = ''
+  reportPage.value = 1
+  void loadReports()
 }
 
 // ---- 公告 ----
@@ -94,10 +142,35 @@ const annRules: FormRules = {
     { max: 200, message: '标题最多 200 个字符', trigger: 'blur' },
   ],
 }
+const annSnapshot = ref('')
+
+function annState(): string {
+  return JSON.stringify(annForm)
+}
+
+async function closeAnnDialog(done: () => void): Promise<void> {
+  if (annSaving.value) return
+  if (annState() === annSnapshot.value) {
+    done()
+    return
+  }
+  try {
+    await ElMessageBox.confirm('关闭后未保存的修改将丢失。', '放弃修改？', {
+      confirmButtonText: '放弃修改',
+      cancelButtonText: '继续编辑',
+      type: 'warning',
+      confirmButtonClass: 'el-button--danger',
+    })
+    done()
+  } catch {
+    // 用户选择继续编辑。
+  }
+}
 
 function openCreateAnnouncement(): void {
   editingAnnId.value = ''
   Object.assign(annForm, { title: '', content: '', level: 'info', pinned: false, published: true })
+  annSnapshot.value = annState()
   annOpen.value = true
 }
 
@@ -110,6 +183,7 @@ function openEditAnnouncement(item: Announcement): void {
     pinned: item.pinned,
     published: item.published,
   })
+  annSnapshot.value = annState()
   annOpen.value = true
 }
 
@@ -134,6 +208,7 @@ async function submitAnnouncement(): Promise<void> {
       await createAnnouncement(payload)
       ElMessage.success('公告已创建')
     }
+    annSnapshot.value = annState()
     annOpen.value = false
     await load()
   } catch (error) {
@@ -176,16 +251,42 @@ const pageRules: FormRules = {
   ],
   title: [{ required: true, message: '请输入标题', trigger: 'blur' }],
 }
+const pageSnapshot = ref('')
+
+function pageState(): string {
+  return JSON.stringify(pageForm)
+}
+
+async function closePageDialog(done: () => void): Promise<void> {
+  if (pageSaving.value) return
+  if (pageState() === pageSnapshot.value) {
+    done()
+    return
+  }
+  try {
+    await ElMessageBox.confirm('关闭后未保存的修改将丢失。', '放弃修改？', {
+      confirmButtonText: '放弃修改',
+      cancelButtonText: '继续编辑',
+      type: 'warning',
+      confirmButtonClass: 'el-button--danger',
+    })
+    done()
+  } catch {
+    // 用户选择继续编辑。
+  }
+}
 
 function openCreatePage(): void {
   editingPageId.value = ''
   Object.assign(pageForm, { slug: '', title: '', content: '', published: true })
+  pageSnapshot.value = pageState()
   pageOpen.value = true
 }
 
 function openEditPage(page: Page): void {
   editingPageId.value = page.id
   Object.assign(pageForm, { slug: page.slug, title: page.title, content: page.content, published: page.published })
+  pageSnapshot.value = pageState()
   pageOpen.value = true
 }
 
@@ -209,6 +310,7 @@ async function submitPage(): Promise<void> {
       await createPage(payload)
       ElMessage.success('页面已创建')
     }
+    pageSnapshot.value = pageState()
     pageOpen.value = false
     await load()
   } catch (error) {
@@ -239,11 +341,20 @@ async function removePage(page: Page): Promise<void> {
 }
 
 // ---- 举报 ----
+const reportDetailOpen = ref(false)
+const detailReport = ref<Report | null>(null)
+
+function openReportDetail(report: Report): void {
+  detailReport.value = report
+  reportDetailOpen.value = true
+}
+
 async function handleReport(report: Report, status: ReportStatus): Promise<void> {
   const note = status === 'rejected' ? '举报不成立' : '已处理'
   try {
-    await updateReport(report.id, status, note)
+    const updated = await updateReport(report.id, status, note)
     ElMessage.success('举报已更新')
+    if (detailReport.value?.id === updated.id) detailReport.value = updated
     await loadReports()
   } catch (error) {
     ElMessage.error(toApiError(error).message)
@@ -268,6 +379,13 @@ onMounted(load)
     </PageHeader>
 
     <ErrorState v-if="errorMessage" :message="errorMessage" @retry="load" />
+
+    <TableSkeleton
+      v-else-if="loading && announcements.length === 0 && reports.length === 0 && pages.length === 0"
+      :rows="8"
+      :columns="4"
+      title="正在加载站点内容"
+    />
 
     <el-tabs v-else v-model="activeTab" class="site-tabs">
       <el-tab-pane :label="`公告 (${announcements.length})`" name="announcements">
@@ -300,7 +418,7 @@ onMounted(load)
               <el-table-column label="更新时间" min-width="170">
                 <template #default="{ row }">{{ formatDateTime(row.updated_at) }}</template>
               </el-table-column>
-              <el-table-column label="操作" width="170" align="right">
+              <el-table-column label="操作" fixed="right" width="170" align="right">
                 <template #default="{ row }">
                   <div class="ax-row-actions">
                     <el-button link type="primary" :icon="EditPen" @click="openEditAnnouncement(row)">编辑</el-button>
@@ -313,11 +431,11 @@ onMounted(load)
         </div>
       </el-tab-pane>
 
-      <el-tab-pane :label="`举报 (${reports.length})`" name="reports">
+      <el-tab-pane :label="`举报 (${reportTotal})`" name="reports">
         <div class="site-toolbar">
           <el-radio-group
             :model-value="reportFilter"
-            @update:model-value="(v: any) => { reportFilter = v; loadReports() }"
+            @update:model-value="(v: any) => onReportFilterChange(v)"
           >
             <el-radio-button value="">全部</el-radio-button>
             <el-radio-button value="pending">待处理</el-radio-button>
@@ -325,10 +443,16 @@ onMounted(load)
             <el-radio-button value="rejected">已驳回</el-radio-button>
           </el-radio-group>
         </div>
-        <EmptyState v-if="reports.length === 0" title="暂无举报" description="用户举报会显示在这里。" />
+        <EmptyState
+          v-if="reportTotal === 0 && !reportsLoading"
+          :title="reportFilter ? '没有符合条件的举报' : '暂无举报'"
+          :description="reportFilter ? '当前状态筛选下没有举报记录。' : '用户举报会显示在这里。'"
+        >
+          <el-button v-if="reportFilter" @click="clearReportFilter">清空筛选</el-button>
+        </EmptyState>
         <div v-else class="ax-card table-card">
           <div class="ax-table-scroll">
-            <el-table :data="reports" style="width: 100%">
+            <el-table v-loading="reportsLoading" :data="reports" style="width: 100%">
               <el-table-column label="原因" min-width="180">
                 <template #default="{ row }">
                   <div class="site-cell">
@@ -350,9 +474,10 @@ onMounted(load)
               <el-table-column label="提交时间" min-width="170">
                 <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
               </el-table-column>
-              <el-table-column label="操作" width="190" align="right">
+              <el-table-column label="操作" fixed="right" width="240" align="right">
                 <template #default="{ row }">
                   <div class="ax-row-actions">
+                    <el-button link type="primary" @click="openReportDetail(row)">详情</el-button>
                     <el-button link type="primary" :icon="Check" :disabled="row.status === 'resolved'" @click="handleReport(row, 'resolved')">
                       处理
                     </el-button>
@@ -364,6 +489,18 @@ onMounted(load)
               </el-table-column>
             </el-table>
           </div>
+        </div>
+        <div v-if="reportTotal > 0" class="site-pager">
+          <el-pagination
+            background
+            layout="sizes, prev, pager, next, total"
+            :page-sizes="[10, 20, 50, 100]"
+            :total="reportTotal"
+            :current-page="reportPage"
+            :page-size="reportPageSize"
+            @current-change="onReportPageChange"
+            @size-change="onReportSizeChange"
+          />
         </div>
       </el-tab-pane>
 
@@ -388,7 +525,7 @@ onMounted(load)
               <el-table-column label="更新时间" min-width="170">
                 <template #default="{ row }">{{ formatDateTime(row.updated_at) }}</template>
               </el-table-column>
-              <el-table-column label="操作" width="170" align="right">
+              <el-table-column label="操作" fixed="right" width="170" align="right">
                 <template #default="{ row }">
                   <div class="ax-row-actions">
                     <el-button link type="primary" :icon="EditPen" @click="openEditPage(row)">编辑</el-button>
@@ -409,6 +546,7 @@ onMounted(load)
       width="min(560px, 92vw)"
       append-to-body
       :close-on-click-modal="false"
+      :before-close="closeAnnDialog"
       @closed="annFormRef?.clearValidate()"
     >
       <el-form ref="annFormRef" :model="annForm" :rules="annRules" label-position="top">
@@ -441,6 +579,7 @@ onMounted(load)
       width="min(640px, 92vw)"
       append-to-body
       :close-on-click-modal="false"
+      :before-close="closePageDialog"
       @closed="pageFormRef?.clearValidate()"
     >
       <el-form ref="pageFormRef" :model="pageForm" :rules="pageRules" label-position="top">
@@ -463,6 +602,66 @@ onMounted(load)
         <el-button type="primary" :loading="pageSaving" @click="submitPage">保存</el-button>
       </template>
     </el-dialog>
+
+    <el-drawer
+      v-model="reportDetailOpen"
+      title="举报详情"
+      size="min(460px, 92vw)"
+      append-to-body
+    >
+      <template v-if="detailReport">
+        <div class="report-detail__head">
+          <div>
+            <p class="report-detail__reason">{{ detailReport.reason }}</p>
+            <p class="report-detail__hint">举报编号 {{ detailReport.id }}</p>
+          </div>
+          <el-tag
+            size="small"
+            :type="(reportStatusOptions.find((s) => s.value === detailReport?.status)?.tag as any)"
+            effect="plain"
+          >
+            {{ reportStatusOptions.find((s) => s.value === detailReport?.status)?.label ?? detailReport.status }}
+          </el-tag>
+        </div>
+
+        <dl class="report-detail__list">
+          <div class="report-detail__row">
+            <dt>补充说明</dt>
+            <dd class="report-detail__multiline">{{ detailReport.detail || '—' }}</dd>
+          </div>
+          <div class="report-detail__row">
+            <dt>举报人</dt>
+            <dd>{{ detailReport.reporter_name || '匿名' }}</dd>
+          </div>
+          <div class="report-detail__row">
+            <dt>图片 ID</dt>
+            <dd class="ax-mono">{{ detailReport.image_id || '—' }}</dd>
+          </div>
+          <div class="report-detail__row">
+            <dt>处理备注</dt>
+            <dd>{{ detailReport.handler_note || '—' }}</dd>
+          </div>
+          <div class="report-detail__row">
+            <dt>提交时间</dt>
+            <dd>{{ formatDateTime(detailReport.created_at) }}</dd>
+          </div>
+          <div class="report-detail__row">
+            <dt>更新时间</dt>
+            <dd>{{ formatDateTime(detailReport.updated_at) }}</dd>
+          </div>
+        </dl>
+
+        <div class="report-detail__actions">
+          <template v-if="detailReport.status === 'pending'">
+            <el-button @click="handleReport(detailReport, 'rejected')">驳回</el-button>
+            <el-button type="primary" @click="handleReport(detailReport, 'resolved')">
+              标记已处理
+            </el-button>
+          </template>
+          <el-button v-else @click="reportDetailOpen = false">关闭</el-button>
+        </div>
+      </template>
+    </el-drawer>
   </div>
 </template>
 
@@ -473,6 +672,18 @@ onMounted(load)
 
 .site-toolbar {
   margin-bottom: var(--ax-space-3);
+}
+
+.site-pager {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--ax-space-3);
+}
+
+@media (max-width: 768px) {
+  .site-pager {
+    justify-content: center;
+  }
 }
 
 .site-title {
@@ -502,5 +713,74 @@ onMounted(load)
   margin-top: 4px;
   color: var(--ax-text-4);
   font-size: var(--ax-text-xs);
+}
+
+.report-detail__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--ax-space-4);
+  padding-bottom: var(--ax-space-4);
+  border-bottom: 1px solid var(--ax-border-subtle);
+}
+
+.report-detail__reason {
+  color: var(--ax-text);
+  font-size: var(--ax-text-md);
+  font-weight: var(--ax-weight-medium);
+  overflow-wrap: anywhere;
+}
+
+.report-detail__hint {
+  margin-top: var(--ax-space-1);
+  color: var(--ax-text-4);
+  font-size: var(--ax-text-xs);
+}
+
+.report-detail__list {
+  display: flex;
+  flex-direction: column;
+  margin: var(--ax-space-2) 0 0;
+}
+
+.report-detail__row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--ax-space-4);
+  padding: var(--ax-space-3) 0;
+  border-bottom: 1px solid var(--ax-border-subtle);
+}
+
+.report-detail__row:last-child {
+  border-bottom: none;
+}
+
+.report-detail__row dt {
+  flex: none;
+  color: var(--ax-text-3);
+  font-size: var(--ax-text-sm);
+}
+
+.report-detail__row dd {
+  margin: 0;
+  min-width: 0;
+  color: var(--ax-text-2);
+  font-size: var(--ax-text-sm);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.report-detail__multiline {
+  max-width: 60%;
+  white-space: pre-wrap;
+  text-align: left;
+}
+
+.report-detail__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--ax-space-2);
+  margin-top: var(--ax-space-5);
 }
 </style>

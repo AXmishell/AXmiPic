@@ -21,10 +21,13 @@ import type { Policy, PolicyInput, PolicyType, RoleGroup, RoleGroupInput } from 
 import EmptyState from '@/components/EmptyState.vue'
 import ErrorState from '@/components/ErrorState.vue'
 import PageHeader from '@/components/PageHeader.vue'
+import TableSkeleton from '@/components/TableSkeleton.vue'
 import { formatDateTime } from '@/utils/format'
+import { useTabQuery } from '@/utils/useTabQuery'
 
 type Tab = 'groups' | 'policies'
-const activeTab = ref<Tab>('groups')
+const POLICY_TABS: readonly Tab[] = ['groups', 'policies']
+const activeTab = useTabQuery<Tab>('tab', 'groups', POLICY_TABS)
 
 const groups = ref<RoleGroup[]>([])
 const policies = ref<Policy[]>([])
@@ -207,6 +210,50 @@ const groupSaving = ref(false)
 const groupFormRef = ref<FormInstance>()
 const editingGroupId = ref('')
 const groupForm = reactive<RoleGroupInput>({ name: '', description: '', is_default: false })
+const groupSnapshot = ref('')
+
+function groupState(): string {
+  return JSON.stringify(groupForm)
+}
+
+async function closeGroupDialog(done: () => void): Promise<void> {
+  if (groupSaving.value) return
+  if (groupState() === groupSnapshot.value) {
+    done()
+    return
+  }
+  try {
+    await ElMessageBox.confirm('关闭后未保存的修改将丢失。', '放弃修改？', {
+      confirmButtonText: '放弃修改',
+      cancelButtonText: '继续编辑',
+      type: 'warning',
+      confirmButtonClass: 'el-button--danger',
+    })
+    done()
+  } catch {
+    // 用户选择继续编辑。
+  }
+}
+
+/** 可预判的删除失败原因：仍被用户或绑定关系引用时直接禁用。 */
+function groupDeleteBlockedReason(group: RoleGroup): string {
+  if (group.customer_count > 0) {
+    return `该角色组仍有 ${group.customer_count} 位用户，请先调整这些用户的角色组`
+  }
+  return ''
+}
+
+function policyBindings(policyId: string): RoleGroup[] {
+  return groups.value.filter((group) => group.policies.some((policy) => policy.id === policyId))
+}
+
+function policyDeleteBlockedReason(policy: Policy): string {
+  const bound = policyBindings(policy.id)
+  if (bound.length > 0) {
+    return `已被「${bound.map((group) => group.name).join('、')}」引用，请先解绑`
+  }
+  return ''
+}
 const groupRules: FormRules = {
   name: [
     { required: true, message: '请输入角色组名称', trigger: 'blur' },
@@ -226,6 +273,30 @@ const policyForm = reactive<{ name: string; type: PolicyType; description: strin
   enabled: true,
   settingsText: '{}',
 })
+const policySnapshot = ref('')
+
+function policyState(): string {
+  return JSON.stringify(policyForm)
+}
+
+async function closePolicyDialog(done: () => void): Promise<void> {
+  if (policySaving.value) return
+  if (policyState() === policySnapshot.value) {
+    done()
+    return
+  }
+  try {
+    await ElMessageBox.confirm('关闭后未保存的修改将丢失。', '放弃修改？', {
+      confirmButtonText: '放弃修改',
+      cancelButtonText: '继续编辑',
+      type: 'warning',
+      confirmButtonClass: 'el-button--danger',
+    })
+    done()
+  } catch {
+    // 用户选择继续编辑。
+  }
+}
 
 /** 配置编辑模式：结构化表单或原始 JSON。 */
 const settingsMode = ref<'form' | 'json'>('form')
@@ -284,12 +355,14 @@ async function load(): Promise<void> {
 function openCreateGroup(): void {
   editingGroupId.value = ''
   Object.assign(groupForm, { name: '', description: '', is_default: false })
+  groupSnapshot.value = groupState()
   groupOpen.value = true
 }
 
 function openEditGroup(group: RoleGroup): void {
   editingGroupId.value = group.id
   Object.assign(groupForm, { name: group.name, description: group.description, is_default: group.is_default })
+  groupSnapshot.value = groupState()
   groupOpen.value = true
 }
 
@@ -312,6 +385,7 @@ async function submitGroup(): Promise<void> {
       await createRoleGroup(payload)
       ElMessage.success('角色组已创建')
     }
+    groupSnapshot.value = groupState()
     groupOpen.value = false
     await load()
   } catch (error) {
@@ -358,6 +432,7 @@ function openCreatePolicy(): void {
   policyForm.enabled = true
   settingsMode.value = 'form'
   applyTemplate('quota')
+  policySnapshot.value = policyState()
   policyOpen.value = true
 }
 
@@ -369,6 +444,7 @@ function openEditPolicy(policy: Policy): void {
   policyForm.enabled = policy.enabled
   settingsMode.value = 'form'
   policyForm.settingsText = JSON.stringify(policy.settings ?? {}, null, 2)
+  policySnapshot.value = policyState()
   policyOpen.value = true
 }
 
@@ -408,6 +484,7 @@ async function submitPolicy(): Promise<void> {
       await createPolicy(payload)
       ElMessage.success('策略已创建')
     }
+    policySnapshot.value = policyState()
     policyOpen.value = false
     await load()
   } catch (error) {
@@ -474,8 +551,8 @@ onMounted(load)
 
     <ErrorState v-if="errorMessage" :message="errorMessage" @retry="load" />
 
-    <div v-else-if="loading && groups.length === 0 && policies.length === 0" class="ax-card" aria-busy="true">
-      <div class="ax-card__body"><el-skeleton :rows="6" animated /></div>
+    <div v-else-if="loading && groups.length === 0 && policies.length === 0">
+      <TableSkeleton :rows="8" :columns="5" title="正在加载角色策略" />
     </div>
 
     <el-tabs v-else v-model="activeTab" class="policy-tabs">
@@ -521,12 +598,28 @@ onMounted(load)
               <el-table-column label="更新时间" min-width="170">
                 <template #default="{ row }">{{ formatDateTime(row.updated_at) }}</template>
               </el-table-column>
-              <el-table-column label="操作" width="280" align="right">
+              <el-table-column label="操作" fixed="right" width="280" align="right">
                 <template #default="{ row }">
                   <div class="ax-row-actions">
                     <el-button link type="primary" :icon="Link" @click="openBind(row)">绑定策略</el-button>
                     <el-button link type="primary" :icon="EditPen" @click="openEditGroup(row)">编辑</el-button>
-                    <el-button link type="danger" :icon="Delete" @click="removeGroup(row)">删除</el-button>
+                    <el-tooltip
+                      :disabled="!groupDeleteBlockedReason(row)"
+                      :content="groupDeleteBlockedReason(row)"
+                      placement="top"
+                    >
+                      <span class="action-guard">
+                        <el-button
+                          link
+                          type="danger"
+                          :icon="Delete"
+                          :disabled="Boolean(groupDeleteBlockedReason(row))"
+                          @click="removeGroup(row)"
+                        >
+                          删除
+                        </el-button>
+                      </span>
+                    </el-tooltip>
                   </div>
                 </template>
               </el-table-column>
@@ -572,11 +665,27 @@ onMounted(load)
               <el-table-column label="更新时间" min-width="170">
                 <template #default="{ row }">{{ formatDateTime(row.updated_at) }}</template>
               </el-table-column>
-              <el-table-column label="操作" width="170" align="right">
+              <el-table-column label="操作" fixed="right" width="170" align="right">
                 <template #default="{ row }">
                   <div class="ax-row-actions">
                     <el-button link type="primary" :icon="EditPen" @click="openEditPolicy(row)">编辑</el-button>
-                    <el-button link type="danger" :icon="Delete" @click="removePolicy(row)">删除</el-button>
+                    <el-tooltip
+                      :disabled="!policyDeleteBlockedReason(row)"
+                      :content="policyDeleteBlockedReason(row)"
+                      placement="top"
+                    >
+                      <span class="action-guard">
+                        <el-button
+                          link
+                          type="danger"
+                          :icon="Delete"
+                          :disabled="Boolean(policyDeleteBlockedReason(row))"
+                          @click="removePolicy(row)"
+                        >
+                          删除
+                        </el-button>
+                      </span>
+                    </el-tooltip>
                   </div>
                 </template>
               </el-table-column>
@@ -593,6 +702,7 @@ onMounted(load)
       width="min(480px, 92vw)"
       append-to-body
       :close-on-click-modal="false"
+      :before-close="closeGroupDialog"
       @closed="groupFormRef?.clearValidate()"
     >
       <el-form ref="groupFormRef" :model="groupForm" :rules="groupRules" label-position="top" @submit.prevent="submitGroup">
@@ -620,6 +730,7 @@ onMounted(load)
       width="min(560px, 92vw)"
       append-to-body
       :close-on-click-modal="false"
+      :before-close="closePolicyDialog"
       @closed="policyFormRef?.clearValidate()"
     >
       <el-form ref="policyFormRef" :model="policyForm" :rules="policyRules" label-position="top" @submit.prevent="submitPolicy">
@@ -846,6 +957,10 @@ onMounted(load)
 .bind-row__label {
   width: 80px;
   flex: none;
+}
+
+.action-guard {
+  display: inline-flex;
 }
 
 .feature-grid {

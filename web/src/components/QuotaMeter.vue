@@ -73,7 +73,7 @@ const fillStyle = computed(() => ({ transform: `scaleX(${percent.value / 100})` 
 .quota__numbers {
   overflow: hidden;
   color: var(--ax-text-4);
-  font-size: 11px;
+  font-size: var(--ax-text-2xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -119,6 +119,6 @@ const fillStyle = computed(() => ({ transform: `scaleX(${percent.value / 100})` 
 
 .quota--compact .quota__label,
 .quota--compact .quota__numbers {
-  font-size: 11px;
+  font-size: var(--ax-text-2xs);
 }
 </style>

@@ -28,6 +28,7 @@ import type {
 import EmptyState from '@/components/EmptyState.vue'
 import ErrorState from '@/components/ErrorState.vue'
 import PageHeader from '@/components/PageHeader.vue'
+import TableSkeleton from '@/components/TableSkeleton.vue'
 import { formatBytes, formatDateTime, formatNumber } from '@/utils/format'
 
 const backends = ref<StorageBackend[]>([])
@@ -104,6 +105,31 @@ function emptyForm(): StorageForm {
 }
 
 const form = reactive<StorageForm>(emptyForm())
+const formSnapshot = ref('')
+
+/** 用于对话框脏检查：打开时记录快照，关闭前比较。 */
+function formState(): string {
+  return JSON.stringify(form)
+}
+
+async function closeFormDialog(done: () => void): Promise<void> {
+  if (submitting.value) return
+  if (formState() === formSnapshot.value) {
+    done()
+    return
+  }
+  try {
+    await ElMessageBox.confirm('关闭后未保存的修改将丢失。', '放弃修改？', {
+      confirmButtonText: '放弃修改',
+      cancelButtonText: '继续编辑',
+      type: 'warning',
+      confirmButtonClass: 'el-button--danger',
+    })
+    done()
+  } catch {
+    // 用户选择继续编辑。
+  }
+}
 
 const isEdit = computed(() => editingId.value !== null)
 const driverLabel: Record<StorageDriver, string> = {
@@ -138,6 +164,7 @@ async function load(): Promise<void> {
 function openCreate(): void {
   editingId.value = null
   Object.assign(form, emptyForm())
+  formSnapshot.value = formState()
   dialogOpen.value = true
 }
 
@@ -179,6 +206,7 @@ function openEdit(item: StorageBackend): void {
     form.use_https = Boolean(s.use_https)
     form.presign_expiry_sec = Number(s.presign_expiry_sec ?? 3600)
   }
+  formSnapshot.value = formState()
   dialogOpen.value = true
 }
 
@@ -251,6 +279,7 @@ async function submit(): Promise<void> {
       await createStorage(buildPayload())
       ElMessage.success('存储配置已创建')
     }
+    formSnapshot.value = formState()
     dialogOpen.value = false
     await load()
   } catch (error) {
@@ -282,8 +311,22 @@ async function activate(item: StorageBackend): Promise<void> {
   }
 }
 
-async function remove(item: StorageBackend): Promise<void> {
-  try {
+/** 删除后端的可预判失败原因：前端已有数据，不应等接口报错。 */
+function backendDeleteBlockedReason(item: StorageBackend): string {
+  if (item.is_current) return '当前默认存储不可删除，请先切换默认存储'
+  if (item.image_count > 0) {
+    return `该存储上仍有 ${formatNumber(item.image_count)} 张图片，请先迁移或删除后再试`
+  }
+  return ''
+}
+
+/** 删除存储池的可预判失败原因。 */
+function poolDeleteBlockedReason(pool: StoragePool): string {
+  if (pool.is_current) return '当前写入池不可删除，请先切换到其他存储池'
+  return ''
+}
+
+async function remove(item: StorageBackend): Promise<void> {  try {
     await ElMessageBox.confirm(
       `确定删除存储配置「${item.name}」吗？仅当其上没有图片时可删除。`,
       '删除存储配置',
@@ -330,6 +373,30 @@ interface PoolForm {
 }
 
 const poolForm = reactive<PoolForm>({ name: '', policy: 'weighted_rr', members: [] })
+const poolFormSnapshot = ref('')
+
+function poolFormState(): string {
+  return JSON.stringify(poolForm)
+}
+
+async function closePoolDialog(done: () => void): Promise<void> {
+  if (poolSubmitting.value) return
+  if (poolFormState() === poolFormSnapshot.value) {
+    done()
+    return
+  }
+  try {
+    await ElMessageBox.confirm('关闭后未保存的修改将丢失。', '放弃修改？', {
+      confirmButtonText: '放弃修改',
+      cancelButtonText: '继续编辑',
+      type: 'warning',
+      confirmButtonClass: 'el-button--danger',
+    })
+    done()
+  } catch {
+    // 用户选择继续编辑。
+  }
+}
 
 const poolPolicyLabel: Record<StoragePoolPolicy, string> = {
   weighted_rr: '加权轮询',
@@ -355,6 +422,7 @@ function openPoolCreate(): void {
   }
   poolEditingId.value = null
   Object.assign(poolForm, emptyPoolForm())
+  poolFormSnapshot.value = poolFormState()
   poolDialogOpen.value = true
 }
 
@@ -371,6 +439,7 @@ function openPoolEdit(pool: StoragePool): void {
   if (poolForm.members.length === 0) {
     poolForm.members.push({ backend_id: '', weight: 100, priority: 0, enabled: true })
   }
+  poolFormSnapshot.value = poolFormState()
   poolDialogOpen.value = true
 }
 
@@ -414,6 +483,7 @@ async function submitPool(): Promise<void> {
       await createStoragePool(payload)
       ElMessage.success('存储池已创建')
     }
+    poolFormSnapshot.value = poolFormState()
     poolDialogOpen.value = false
     await load()
   } catch (error) {
@@ -490,8 +560,8 @@ onMounted(load)
 
     <ErrorState v-if="errorMessage" :message="errorMessage" @retry="load" />
 
-    <div v-else-if="loading && backends.length === 0" class="ax-card" aria-busy="true">
-      <div class="ax-card__body"><el-skeleton :rows="6" animated /></div>
+    <div v-else-if="loading && backends.length === 0">
+      <TableSkeleton :rows="6" :columns="5" title="正在加载存储配置" />
     </div>
 
     <EmptyState
@@ -525,7 +595,7 @@ onMounted(load)
           <el-table-column label="创建时间" min-width="170">
             <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
           </el-table-column>
-          <el-table-column label="操作" width="290" align="right">
+          <el-table-column label="操作" fixed="right" width="290" align="right">
             <template #default="{ row }">
               <div class="ax-row-actions">
                 <el-button
@@ -539,16 +609,24 @@ onMounted(load)
                   设为默认
                 </el-button>
                 <el-button link type="primary" :icon="EditPen" @click="openEdit(row)">编辑</el-button>
-                <el-button
-                  link
-                  type="danger"
-                  :icon="Delete"
-                  :disabled="row.is_current"
-                  :loading="pendingId === row.id"
-                  @click="remove(row)"
+                <el-tooltip
+                  :disabled="!backendDeleteBlockedReason(row)"
+                  :content="backendDeleteBlockedReason(row)"
+                  placement="top"
                 >
-                  删除
-                </el-button>
+                  <span class="action-guard">
+                    <el-button
+                      link
+                      type="danger"
+                      :icon="Delete"
+                      :disabled="Boolean(backendDeleteBlockedReason(row))"
+                      :loading="pendingId === row.id"
+                      @click="remove(row)"
+                    >
+                      删除
+                    </el-button>
+                  </span>
+                </el-tooltip>
               </div>
             </template>
           </el-table-column>
@@ -586,7 +664,7 @@ onMounted(load)
           <el-table-column label="占用" width="120">
             <template #default="{ row }">{{ formatBytes(row.size_bytes) }}</template>
           </el-table-column>
-          <el-table-column label="操作" width="250" align="right">
+          <el-table-column label="操作" fixed="right" width="250" align="right">
             <template #default="{ row }">
               <div class="ax-row-actions">
                 <el-button
@@ -600,16 +678,24 @@ onMounted(load)
                   启用
                 </el-button>
                 <el-button link type="primary" :icon="EditPen" @click="openPoolEdit(row)">编辑</el-button>
-                <el-button
-                  link
-                  type="danger"
-                  :icon="Delete"
-                  :disabled="row.is_current"
-                  :loading="poolPendingId === row.id"
-                  @click="removePool(row)"
+                <el-tooltip
+                  :disabled="!poolDeleteBlockedReason(row)"
+                  :content="poolDeleteBlockedReason(row)"
+                  placement="top"
                 >
-                  删除
-                </el-button>
+                  <span class="action-guard">
+                    <el-button
+                      link
+                      type="danger"
+                      :icon="Delete"
+                      :disabled="Boolean(poolDeleteBlockedReason(row))"
+                      :loading="poolPendingId === row.id"
+                      @click="removePool(row)"
+                    >
+                      删除
+                    </el-button>
+                  </span>
+                </el-tooltip>
               </div>
             </template>
           </el-table-column>
@@ -623,6 +709,7 @@ onMounted(load)
       width="min(680px, 94vw)"
       append-to-body
       :close-on-click-modal="false"
+      :before-close="closePoolDialog"
       @closed="poolFormRef?.clearValidate()"
     >
       <el-form ref="poolFormRef" :model="poolForm" :rules="poolRules" label-position="top">
@@ -679,6 +766,7 @@ onMounted(load)
       width="min(560px, 94vw)"
       append-to-body
       :close-on-click-modal="false"
+      :before-close="closeFormDialog"
       @closed="formRef?.clearValidate()"
     >
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
@@ -698,6 +786,7 @@ onMounted(load)
 
         <!-- 本地 -->
         <template v-if="form.driver === 'local'">
+          <el-divider content-position="left">本地路径</el-divider>
           <el-form-item label="根目录">
             <el-input v-model="form.root" placeholder="留空则使用配置文件中的默认目录" />
           </el-form-item>
@@ -708,6 +797,7 @@ onMounted(load)
 
         <!-- S3 -->
         <template v-else-if="form.driver === 's3'">
+          <el-divider content-position="left">连接信息</el-divider>
           <el-form-item label="Endpoint">
             <el-input v-model="form.endpoint" placeholder="https://s3.amazonaws.com" />
           </el-form-item>
@@ -717,6 +807,7 @@ onMounted(load)
           <el-form-item label="Bucket">
             <el-input v-model="form.bucket" placeholder="axmipic" />
           </el-form-item>
+          <el-divider content-position="left">凭据</el-divider>
           <el-form-item label="Access Key ID">
             <el-input
               v-model="form.access_key_id"
@@ -742,12 +833,14 @@ onMounted(load)
 
         <!-- 七牛 -->
         <template v-else-if="form.driver === 'qiniu'">
+          <el-divider content-position="left">连接信息</el-divider>
           <el-form-item label="Bucket">
             <el-input v-model="form.bucket" placeholder="axmipic" />
           </el-form-item>
           <el-form-item label="访问域名">
             <el-input v-model="form.domain" placeholder="https://cdn.example.com" />
           </el-form-item>
+          <el-divider content-position="left">凭据</el-divider>
           <el-form-item label="Access Key">
             <el-input
               v-model="form.qiniu_access_key"
@@ -773,6 +866,7 @@ onMounted(load)
 
         <!-- 阿里云 OSS -->
         <template v-else-if="form.driver === 'oss'">
+          <el-divider content-position="left">连接信息</el-divider>
           <el-form-item label="Region">
             <el-input v-model="form.region" placeholder="cn-hangzhou" />
           </el-form-item>
@@ -785,6 +879,7 @@ onMounted(load)
           <el-form-item label="Bucket">
             <el-input v-model="form.bucket" placeholder="axmipic" />
           </el-form-item>
+          <el-divider content-position="left">凭据</el-divider>
           <el-form-item label="AccessKey ID">
             <el-input
               v-model="form.oss_access_key_id"
@@ -810,6 +905,7 @@ onMounted(load)
 
         <!-- 腾讯云 COS -->
         <template v-else-if="form.driver === 'cos'">
+          <el-divider content-position="left">连接信息</el-divider>
           <el-form-item label="Region">
             <el-input v-model="form.region" placeholder="ap-guangzhou" />
           </el-form-item>
@@ -817,6 +913,7 @@ onMounted(load)
             <el-input v-model="form.bucket" placeholder="axmipic-1250000000" />
             <p class="storage-hint">格式为「存储桶名称-APPID」，例如 axmipic-1250000000。</p>
           </el-form-item>
+          <el-divider content-position="left">凭据</el-divider>
           <el-form-item label="SecretId">
             <el-input
               v-model="form.cos_secret_id"
@@ -894,5 +991,10 @@ onMounted(load)
 .pool-member-label {
   color: var(--ax-text-4);
   font-size: var(--ax-text-xs);
+}
+
+/* Tooltip 需要包裹一个可悬停元素，禁用的按钮本身不触发鼠标事件。 */
+.action-guard {
+  display: inline-flex;
 }
 </style>

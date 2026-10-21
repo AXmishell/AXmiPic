@@ -4,30 +4,55 @@ import { useRoute } from 'vue-router'
 
 import AppSidebar from '@/components/AppSidebar.vue'
 import AppTopbar from '@/components/AppTopbar.vue'
+import CommandPalette from '@/components/CommandPalette.vue'
 
 withDefaults(defineProps<{ variant?: 'user' | 'admin' }>(), { variant: 'admin' })
 
 const route = useRoute()
 const drawerOpen = ref(false)
+const collapsed = ref(localStorage.getItem('ax.sidebar.collapsed') === '1')
+const mainRef = ref<HTMLElement | null>(null)
+const paletteRef = ref<{ show: () => void } | null>(null)
+
+watch(collapsed, (value) => {
+  localStorage.setItem('ax.sidebar.collapsed', value ? '1' : '0')
+})
+
+function toggleSidebar(): void {
+  collapsed.value = !collapsed.value
+}
 
 watch(
   () => route.fullPath,
   () => {
     drawerOpen.value = false
+    // 主滚动容器是 .app-main，而不是 window；路由切换时必须手动回到顶部，
+    // 否则从长页面跳到短页面会停在半空。
+    if (mainRef.value) mainRef.value.scrollTop = 0
   },
 )
 </script>
 
 <template>
-  <div class="app-shell">
+  <div class="app-shell" :class="{ 'is-collapsed': collapsed }">
     <a class="skip-link" href="#main-content">跳到主要内容</a>
 
-    <AppSidebar :open="drawerOpen" :variant="variant" @close="drawerOpen = false" />
+    <AppSidebar
+      :open="drawerOpen"
+      :variant="variant"
+      :collapsed="collapsed"
+      @close="drawerOpen = false"
+    />
 
     <div class="app-frame">
-      <AppTopbar @toggle-menu="drawerOpen = !drawerOpen" />
-      <main id="main-content" class="app-main" tabindex="-1">
-        <div class="app-main__inner">
+      <AppTopbar
+        :sidebar-collapsed="collapsed"
+        @toggle-menu="drawerOpen = !drawerOpen"
+        @toggle-sidebar="toggleSidebar"
+        @open-search="paletteRef?.show()"
+      />
+      <main id="main-content" ref="mainRef" class="app-main" tabindex="-1">
+        <div class="app-main__inner" :class="{ 'app-main__inner--wide': variant === 'admin' }">
           <router-view />
         </div>
       </main>
@@ -36,6 +61,8 @@ watch(
     <transition name="scrim">
       <div v-if="drawerOpen" class="app-scrim" @click="drawerOpen = false" />
     </transition>
+
+    <CommandPalette ref="paletteRef" />
   </div>
 </template>
 
@@ -44,6 +71,11 @@ watch(
   display: grid;
   grid-template-columns: var(--ax-sidebar-w) minmax(0, 1fr);
   height: 100dvh;
+  transition: grid-template-columns var(--ax-duration) var(--ax-ease);
+}
+
+.app-shell.is-collapsed {
+  grid-template-columns: var(--ax-sidebar-collapsed-w) minmax(0, 1fr);
 }
 
 .app-frame {
@@ -67,6 +99,10 @@ watch(
   max-width: var(--ax-content-max);
   margin-inline: auto;
   padding: var(--ax-space-6) var(--ax-space-8) var(--ax-space-12);
+}
+
+.app-main__inner--wide {
+  max-width: var(--ax-content-max-wide);
 }
 
 .skip-link {
@@ -105,7 +141,8 @@ watch(
 }
 
 @media (max-width: 960px) {
-  .app-shell {
+  .app-shell,
+  .app-shell.is-collapsed {
     grid-template-columns: minmax(0, 1fr);
   }
 

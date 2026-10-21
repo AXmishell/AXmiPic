@@ -261,7 +261,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div>
+  <div class="ax-page">
     <PageHeader title="插件市场" description="在线安装、配置并管理运行时插件（WASM / 进程）。">
       <template #actions>
         <el-button :loading="marketLoading" @click="loadRegistry">刷新市场</el-button>
@@ -313,7 +313,7 @@ onMounted(async () => {
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="390">
+          <el-table-column label="操作" fixed="right" width="390" align="right">
             <template #default="{ row }">
               <el-button
                 v-if="isNotifyPlugin(row) && !isActive(row)"
@@ -396,7 +396,7 @@ onMounted(async () => {
           <el-table-column prop="version" label="版本" width="90" />
           <el-table-column prop="runtime" label="运行时" width="90" />
           <el-table-column prop="description" label="说明" />
-          <el-table-column label="操作" width="110">
+          <el-table-column label="操作" fixed="right" width="110">
             <template #default="{ row }">
               <el-button
                 v-if="!isInstalled(row.name)"

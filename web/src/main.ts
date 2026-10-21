@@ -38,6 +38,7 @@ import {
   ElTag,
   ElTooltip,
   ElUpload,
+  ElLoading,
 } from 'element-plus'
 
 import '@fontsource-variable/inter/wght.css'
@@ -58,6 +59,8 @@ const pinia = createPinia()
 
 app.use(pinia)
 app.use(router)
+// 注册 v-loading 指令；此前只有组件被手动注册，表格上的 v-loading 实际不生效。
+app.use(ElLoading)
 
 // 在挂载前应用已持久化（或系统偏好）的主题。
 useThemeStore(pinia).init()

@@ -718,6 +718,19 @@ onBeforeUnmount(() => {
   >
     <PageHeader title="图片管理" :description="description">
       <template #actions>
+        <el-upload
+          ref="uploadRef"
+          :show-file-list="false"
+          :accept="ACCEPT"
+          :multiple="auth.hasFeature('batch_upload')"
+          :before-upload="beforeUpload"
+          :http-request="handleUpload"
+        >
+          <el-button type="primary" :icon="Upload" :loading="uploadRunning">上传图片</el-button>
+        </el-upload>
+        <el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button>
+      </template>
+      <template #toolbar>
         <el-input
           v-model="keyword"
           class="images-search"
@@ -765,16 +778,6 @@ onBeforeUnmount(() => {
             :value="option.value"
           />
         </el-select>
-        <el-upload
-          ref="uploadRef"
-          :show-file-list="false"
-          :accept="ACCEPT"
-          :multiple="auth.hasFeature('batch_upload')"
-          :before-upload="beforeUpload"
-          :http-request="handleUpload"
-        >
-          <el-button type="primary" :icon="Upload" :loading="uploadRunning">上传图片</el-button>
-        </el-upload>
         <el-button
           :icon="layout === 'masonry' ? Grid : Histogram"
           :title="layout === 'masonry' ? '切换为网格' : '切换为瀑布流'"
@@ -782,7 +785,6 @@ onBeforeUnmount(() => {
         >
           {{ layout === 'masonry' ? '网格' : '瀑布流' }}
         </el-button>
-        <el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button>
       </template>
     </PageHeader>
 

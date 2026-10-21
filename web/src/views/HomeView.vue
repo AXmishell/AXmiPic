@@ -164,7 +164,7 @@ async function checkDatabase(): Promise<void> {
 
       <div class="home__topbar-actions">
         <a
-          class="icon-btn"
+          class="icon-btn home__github"
           href="https://github.com/AXmishell/AXmiPic"
           target="_blank"
           rel="noopener noreferrer"
@@ -186,10 +186,7 @@ async function checkDatabase(): Promise<void> {
         <el-button v-if="auth.isAuthenticated" type="primary" :icon="User" @click="goUserCenter">
           {{ auth.isAdmin ? '管理控制台' : '用户中心' }}
         </el-button>
-        <template v-else>
-          <el-button @click="router.push('/login')">登录</el-button>
-          <el-button type="primary" @click="router.push('/login')">注册 / 登录</el-button>
-        </template>
+        <el-button v-else type="primary" @click="router.push('/login')">登录 / 注册</el-button>
       </div>
     </header>
 
@@ -209,6 +206,7 @@ async function checkDatabase(): Promise<void> {
 
       <section class="hero">
         <div class="hero__glow" aria-hidden="true" />
+        <span class="hero__eyebrow">单二进制 · 可自托管 · 开源</span>
         <h1 class="hero__title">轻量、可靠的自托管图床</h1>
         <p class="hero__desc">
           拖拽、粘贴或点击即可上传图片，实时获得可分享的直链。
@@ -258,14 +256,18 @@ async function checkDatabase(): Promise<void> {
           </template>
         </el-upload>
 
-        <div v-if="uploading" class="upload-card__progress"><el-progress :indeterminate="true" :show-text="false" /></div>
+        <div v-if="uploading" class="upload-card__progress">
+          <el-progress :indeterminate="true" :show-text="false" />
+        </div>
 
         <div v-if="uploaded" class="upload-result">
           <div class="upload-result__preview">
             <img :src="uploaded.url" :alt="uploaded.original_name || uploaded.key" />
           </div>
           <div class="upload-result__meta">
-            <p class="upload-result__name">{{ uploaded.original_name || uploaded.filename || uploaded.key }}</p>
+            <p class="upload-result__name">
+              {{ uploaded.original_name || uploaded.filename || uploaded.key }}
+            </p>
             <CopyField label="图片直链" :value="uploaded.url" />
             <div class="upload-result__actions">
               <el-button
@@ -279,21 +281,61 @@ async function checkDatabase(): Promise<void> {
           </div>
         </div>
       </section>
-    </main>
 
-    <footer class="home__footer">
-      <span>AXmiPic · 自托管图床</span>
-      <el-button size="small" type="primary" @click="router.push('/login')">登录 / 注册</el-button>
-    </footer>
+      <section class="home__steps" aria-label="使用流程">
+        <div class="home__step">
+          <span class="home__step-index">01</span>
+          <h3 class="home__step-title">上传</h3>
+          <p class="home__step-desc">拖拽、粘贴或点击选择图片</p>
+        </div>
+        <div class="home__step">
+          <span class="home__step-index">02</span>
+          <h3 class="home__step-title">处理</h3>
+          <p class="home__step-desc">通过 URL 参数实时缩放与转码</p>
+        </div>
+        <div class="home__step">
+          <span class="home__step-index">03</span>
+          <h3 class="home__step-title">分发</h3>
+          <p class="home__step-desc">复制直链，或生成带权限的分享</p>
+        </div>
+      </section>
+    </main>
 
     <section class="home__plaza" aria-label="图片广场">
       <div class="home__plaza-inner">
         <div class="home__section-head">
-          <h2 class="home__section-title"><el-icon :size="16"><Grid /></el-icon>图片广场</h2>
+          <div>
+            <h2 class="home__section-title"><el-icon :size="16"><Grid /></el-icon>图片广场</h2>
+            <p class="home__section-desc">来自所有用户的公开图片，瀑布流浏览。</p>
+          </div>
+          <router-link class="home__section-link" to="/plaza">查看全部 →</router-link>
         </div>
         <PlazaMasonry />
       </div>
     </section>
+
+    <footer class="home__footer">
+      <div class="home__footer-inner">
+        <div class="home__footer-brand">
+          <span class="brand__mark brand__mark--small" aria-hidden="true">
+            <BrandMark :size="14" />
+          </span>
+          <span>AXmiPic</span>
+          <span class="home__footer-muted">自托管图床 · MIT License</span>
+        </div>
+        <nav class="home__footer-links" aria-label="页脚导航">
+          <a href="https://axmipic.gpcn.cc/" target="_blank" rel="noopener noreferrer">文档</a>
+          <router-link to="/plaza">图片广场</router-link>
+          <a
+            href="https://github.com/AXmishell/AXmiPic"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            GitHub
+          </a>
+        </nav>
+      </div>
+    </footer>
 
     <div v-if="dragActive" class="home__dropzone" aria-hidden="true">
       <el-icon :size="40"><Upload /></el-icon>
@@ -305,13 +347,14 @@ async function checkDatabase(): Promise<void> {
 <style scoped>
 .home {
   min-height: 100dvh;
-  background: var(--ax-bg);
+  background: var(--ax-atmosphere), var(--ax-canvas);
 }
 
 .home__topbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: var(--ax-space-3);
   max-width: 1080px;
   margin: 0 auto;
   padding: var(--ax-space-4) var(--ax-space-5);
@@ -321,11 +364,13 @@ async function checkDatabase(): Promise<void> {
   display: flex;
   align-items: center;
   gap: var(--ax-space-3);
+  min-width: 0;
   color: inherit;
 }
 
 .brand__mark {
   display: inline-flex;
+  flex: none;
   align-items: center;
   justify-content: center;
   width: 30px;
@@ -335,15 +380,23 @@ async function checkDatabase(): Promise<void> {
   border-radius: var(--ax-radius-md);
 }
 
+.brand__mark--small {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--ax-radius-sm);
+}
+
 .brand__name {
   color: var(--ax-text);
   font-size: var(--ax-text-lg);
   font-weight: var(--ax-weight-semibold);
   letter-spacing: var(--ax-tracking-display);
+  white-space: nowrap;
 }
 
 .home__topbar-actions {
   display: flex;
+  flex: none;
   align-items: center;
   gap: var(--ax-space-2);
 }
@@ -371,7 +424,7 @@ async function checkDatabase(): Promise<void> {
 .home__main {
   max-width: 780px;
   margin: 0 auto;
-  padding: var(--ax-space-6) var(--ax-space-5) var(--ax-space-12);
+  padding: var(--ax-space-6) var(--ax-space-5) var(--ax-space-10);
 }
 
 .home__db-alert {
@@ -402,11 +455,25 @@ async function checkDatabase(): Promise<void> {
   pointer-events: none;
 }
 
+.hero__eyebrow {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ax-space-2);
+  margin-bottom: var(--ax-space-4);
+  padding: 4px 10px;
+  color: var(--ax-text-3);
+  font-size: var(--ax-text-xs);
+  background: var(--ax-tint-weak);
+  border: 1px solid var(--ax-border-subtle);
+  border-radius: var(--ax-radius-full);
+}
+
 .hero__title {
   position: relative;
   margin: 0;
   color: var(--ax-text);
-  font-size: clamp(1.8rem, 5vw, 2.6rem);
+  font-size: clamp(1.75rem, 5vw, 2.5rem);
   font-weight: var(--ax-weight-semibold);
   letter-spacing: var(--ax-tracking-display);
 }
@@ -432,16 +499,17 @@ async function checkDatabase(): Promise<void> {
 }
 
 .upload-card {
-  margin-bottom: var(--ax-space-6);
+  padding: var(--ax-space-5);
+  margin-bottom: var(--ax-space-4);
 }
 
 .upload-card__head {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: var(--ax-space-2);
-  margin-bottom: var(--ax-space-3);
+  margin-bottom: var(--ax-space-4);
 }
 
 .upload-card__title {
@@ -535,6 +603,42 @@ async function checkDatabase(): Promise<void> {
   white-space: nowrap;
 }
 
+.home__steps {
+  display: grid;
+  gap: var(--ax-space-3);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: var(--ax-space-2);
+}
+
+.home__step {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--ax-space-4);
+  background: var(--ax-tint-weak);
+  border: 1px solid var(--ax-border-subtle);
+  border-radius: var(--ax-radius-md);
+}
+
+.home__step-index {
+  margin-bottom: var(--ax-space-1);
+  color: var(--ax-accent-hover);
+  font-family: var(--ax-font-mono);
+  font-size: var(--ax-text-xs);
+}
+
+.home__step-title {
+  color: var(--ax-text);
+  font-size: var(--ax-text-sm);
+  font-weight: var(--ax-weight-medium);
+}
+
+.home__step-desc {
+  color: var(--ax-text-4);
+  font-size: var(--ax-text-xs);
+  line-height: 1.45;
+}
+
 .home__plaza {
   border-top: 1px solid var(--ax-border-subtle);
 }
@@ -542,14 +646,15 @@ async function checkDatabase(): Promise<void> {
 .home__plaza-inner {
   max-width: 1080px;
   margin: 0 auto;
-  padding: var(--ax-space-8) var(--ax-space-5) var(--ax-space-12);
+  padding: var(--ax-space-8) var(--ax-space-5) var(--ax-space-10);
 }
 
 .home__section-head {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
-  margin-bottom: var(--ax-space-3);
+  gap: var(--ax-space-4);
+  margin-bottom: var(--ax-space-4);
 }
 
 .home__section-title {
@@ -561,16 +666,63 @@ async function checkDatabase(): Promise<void> {
   font-size: var(--ax-text-lg);
 }
 
+.home__section-desc {
+  margin-top: var(--ax-space-1);
+  color: var(--ax-text-4);
+  font-size: var(--ax-text-xs);
+}
+
+.home__section-link {
+  flex: none;
+  color: var(--ax-text-3);
+  font-size: var(--ax-text-sm);
+}
+
+.home__section-link:hover {
+  color: var(--ax-accent-hover);
+}
+
 .home__footer {
+  border-top: 1px solid var(--ax-border-subtle);
+}
+
+.home__footer-inner {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
+  gap: var(--ax-space-3);
   max-width: 1080px;
   margin: 0 auto;
   padding: var(--ax-space-5);
   color: var(--ax-text-4);
   font-size: var(--ax-text-xs);
-  border-top: 1px solid var(--ax-border-subtle);
+}
+
+.home__footer-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--ax-space-2);
+  color: var(--ax-text-3);
+}
+
+.home__footer-muted {
+  color: var(--ax-text-4);
+}
+
+.home__footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ax-space-4);
+}
+
+.home__footer-links a {
+  color: var(--ax-text-3);
+}
+
+.home__footer-links a:hover {
+  color: var(--ax-text);
 }
 
 .home__dropzone {
@@ -591,8 +743,48 @@ async function checkDatabase(): Promise<void> {
 }
 
 @media (max-width: 640px) {
+  .home__main {
+    padding-top: var(--ax-space-4);
+  }
+
+  .hero {
+    padding-top: var(--ax-space-6);
+  }
+
+  .hero__eyebrow {
+    margin-bottom: var(--ax-space-3);
+  }
+
+  .upload-card {
+    padding: var(--ax-space-4);
+  }
+
+  .upload-card__hint {
+    flex: 1 1 100%;
+    margin-left: 0;
+  }
+
+  .home__steps {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .upload-result {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .home__footer-inner {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 480px) {
+  .home__github {
+    display: none;
+  }
+
+  .home__section-link {
+    display: none;
   }
 }
 </style>

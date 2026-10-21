@@ -4,8 +4,10 @@ import { Refresh } from '@element-plus/icons-vue'
 
 import { getNotifyLogs, type NotifyLog } from '@/api/billing'
 import { toApiError } from '@/api/client'
+import EmptyState from '@/components/EmptyState.vue'
 import ErrorState from '@/components/ErrorState.vue'
 import PageHeader from '@/components/PageHeader.vue'
+import TableSkeleton from '@/components/TableSkeleton.vue'
 import { formatDateTime } from '@/utils/format'
 
 const logChannel = ref<'email' | 'sms'>('email')
@@ -47,6 +49,12 @@ function onLogsPageChange(page: number): void {
   void loadNotifyLogs()
 }
 
+function onLogsSizeChange(size: number): void {
+  logsPageSize.value = size
+  logsPage.value = 1
+  void loadNotifyLogs()
+}
+
 onMounted(loadNotifyLogs)
 </script>
 
@@ -67,42 +75,53 @@ onMounted(loadNotifyLogs)
 
     <ErrorState v-if="errorMessage" :message="errorMessage" @retry="loadNotifyLogs" />
 
+    <TableSkeleton
+      v-else-if="logsLoading && notifyLogs.length === 0"
+      :rows="8"
+      :columns="5"
+      title="正在加载通知日志"
+    />
+
     <article v-else class="ax-card">
       <div class="ax-card__body">
-        <el-skeleton v-if="logsLoading && notifyLogs.length === 0" :rows="4" animated />
-        <template v-else>
-          <el-table :data="notifyLogs" style="width: 100%">
-            <el-table-column label="时间" width="180">
-              <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
-            </el-table-column>
-            <el-table-column prop="to" label="接收方" min-width="180" show-overflow-tooltip />
-            <el-table-column
-              v-if="logChannel === 'email'"
-              prop="subject"
-              label="主题"
-              min-width="160"
-              show-overflow-tooltip
-            />
-            <el-table-column label="状态" width="100">
-              <template #default="{ row }">
-                <el-tooltip v-if="row.status === 'failed' && row.error" :content="row.error" placement="top">
-                  <el-tag type="danger" size="small" effect="plain">失败</el-tag>
-                </el-tooltip>
-                <el-tag v-else type="success" size="small" effect="plain">成功</el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column prop="provider" label="渠道" width="100" />
-            <el-table-column prop="body" label="内容" min-width="260" show-overflow-tooltip />
-          </el-table>
-          <el-empty v-if="notifyLogs.length === 0" description="暂无日志" :image-size="60" />
-        </template>
-        <div class="notify-logs__pager">
+        <EmptyState
+          v-if="notifyLogs.length === 0"
+          title="暂无日志"
+          :description="logChannel === 'email' ? '最近 30 天没有邮件发送记录。' : '最近 30 天没有短信发送记录。'"
+        />
+        <el-table v-else :data="notifyLogs" style="width: 100%">
+          <el-table-column label="时间" width="180">
+            <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
+          </el-table-column>
+          <el-table-column prop="to" label="接收方" min-width="180" show-overflow-tooltip />
+          <el-table-column
+            v-if="logChannel === 'email'"
+            prop="subject"
+            label="主题"
+            min-width="160"
+            show-overflow-tooltip
+          />
+          <el-table-column label="状态" width="100">
+            <template #default="{ row }">
+              <el-tooltip v-if="row.status === 'failed' && row.error" :content="row.error" placement="top">
+                <el-tag type="danger" size="small" effect="plain">失败</el-tag>
+              </el-tooltip>
+              <el-tag v-else type="success" size="small" effect="plain">成功</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="provider" label="渠道" width="100" />
+          <el-table-column prop="body" label="内容" min-width="260" show-overflow-tooltip />
+        </el-table>
+        <div v-if="logsTotal > 0" class="notify-logs__pager">
           <el-pagination
-            layout="prev, pager, next, total"
+            background
+            layout="sizes, prev, pager, next, total"
+            :page-sizes="[10, 20, 50, 100]"
             :total="logsTotal"
             :page-size="logsPageSize"
             :current-page="logsPage"
             @current-change="onLogsPageChange"
+            @size-change="onLogsSizeChange"
           />
         </div>
       </div>

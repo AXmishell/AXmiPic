@@ -24,7 +24,7 @@
   --ax-text: #f7f8f8;
   --ax-text-2: #d0d6e0;
   --ax-text-3: #8a8f98;
-  --ax-text-4: #62666d;
+  --ax-text-4: #7b818b;
   --ax-text-disabled: #4b4f56;
 
   /* ---- 颜色：强调色（唯一的有彩色系；仅用于交互元素） ---- */
@@ -72,6 +72,7 @@
     system-ui, -apple-system, 'Segoe UI', sans-serif;
   --ax-font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', Consolas, 'Liberation Mono',
     monospace;
+  --ax-text-2xs: 11px;
   --ax-text-xs: 12px;
   --ax-text-sm: 13px;
   --ax-text-base: 14px;
@@ -95,6 +96,7 @@
   --ax-space-4: 16px;
   --ax-space-5: 20px;
   --ax-space-6: 24px;
+  --ax-space-7: 28px;
   --ax-space-8: 32px;
   --ax-space-10: 40px;
   --ax-space-12: 48px;
@@ -127,11 +129,14 @@
 
   /* ---- 布局 ---- */
   --ax-sidebar-w: 232px;
+  --ax-sidebar-collapsed-w: 56px;
   --ax-topbar-h: 56px;
   --ax-content-max: 1200px;
+  --ax-content-max-wide: 1600px;
   --ax-z-topbar: 20;
   --ax-z-scrim: 30;
   --ax-z-drawer: 40;
+  --ax-z-modal: 3000;
 }
 
 /**
@@ -150,8 +155,8 @@
 
   --ax-text: #14161a;
   --ax-text-2: #3a3f47;
-  --ax-text-3: #6b7280;
-  --ax-text-4: #9aa1ab;
+  --ax-text-3: #5b6470;
+  --ax-text-4: #6a727e;
   --ax-text-disabled: #b9bfc8;
 
   --ax-accent: #5e6ad2;

@@ -117,6 +117,11 @@ function search(): void {
   void load()
 }
 
+function clearKeyword(): void {
+  keyword.value = ''
+  search()
+}
+
 function setOrder(value: ImageOrder): void {
   order.value = value
   page.value = 1
@@ -174,6 +179,9 @@ onBeforeUnmount(teardownMasonry)
   <div class="ax-page">
     <PageHeader title="图片广场" description="所有用户公开分享的图片。">
       <template #actions>
+        <el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button>
+      </template>
+      <template #toolbar>
         <el-input
           v-model="keyword"
           class="plaza-search"
@@ -207,7 +215,6 @@ onBeforeUnmount(teardownMasonry)
         >
           {{ layout === 'masonry' ? '网格' : '瀑布流' }}
         </el-button>
-        <el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button>
       </template>
     </PageHeader>
 
@@ -228,9 +235,15 @@ onBeforeUnmount(teardownMasonry)
 
     <EmptyState
       v-else-if="items.length === 0"
-      title="广场上还没有公开图片"
-      description="在图片管理页把图片设为「公开」，它就会出现在这里。"
-    />
+      :title="keyword.trim() ? '没有找到匹配的图片' : '广场上还没有公开图片'"
+      :description="
+        keyword.trim()
+          ? '试试其他关键词，或清空搜索条件。'
+          : '在图片管理页把图片设为「公开」，它就会出现在这里。'
+      "
+    >
+      <el-button v-if="keyword.trim()" @click="clearKeyword">清空搜索</el-button>
+    </EmptyState>
 
     <template v-else>
       <p class="plaza-count">共 {{ formatNumber(total) }} 张公开图片</p>

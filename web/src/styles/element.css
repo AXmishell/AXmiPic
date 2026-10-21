@@ -372,10 +372,103 @@ html.theme-light {
   border-color: var(--ax-border);
 }
 
-/* ---- 标签、分页、警告、消息、开关、进度、骨架屏 ---- */
+/* ---- 标签：统一为柔软填充的胶囊 ----
+   所有 el-tag 都走同一套形状与字号；语义色只改变文字色与底色，不再使用
+   彩色描边（effect="plain" 与默认效果因此看起来一致）。primary / success /
+   warning / danger 额外带一个 5px 状态圆点，便于在密集表格中扫读。 */
 .el-tag {
-  border-radius: var(--ax-radius-xs);
+  --el-tag-bg-color: var(--ax-tint);
+  --el-tag-border-color: transparent;
+  --el-tag-text-color: var(--ax-text-3);
+  gap: 5px;
+  height: 22px;
+  padding: 0 8px;
+  background: var(--el-tag-bg-color);
+  border: 1px solid transparent;
+  border-radius: var(--ax-radius-full);
+  color: var(--el-tag-text-color);
+  font-size: var(--ax-text-xs);
   font-weight: var(--ax-weight-medium);
+  line-height: 1;
+}
+
+.el-tag--small {
+  height: 20px;
+  padding: 0 7px;
+}
+
+.el-tag.is-plain,
+.el-tag.is-dark {
+  background: var(--el-tag-bg-color);
+  border-color: transparent;
+  color: var(--el-tag-text-color);
+}
+
+.el-tag.el-tag--primary {
+  background: var(--ax-accent-soft);
+  color: var(--ax-accent-hover);
+}
+
+.el-tag.el-tag--success {
+  background: var(--ax-success-soft);
+  color: var(--ax-success);
+}
+
+.el-tag.el-tag--warning {
+  background: var(--ax-warning-soft);
+  color: var(--ax-warning);
+}
+
+.el-tag.el-tag--danger {
+  background: var(--ax-danger-soft);
+  color: var(--ax-danger);
+}
+
+.el-tag.el-tag--info {
+  background: var(--ax-tint);
+  color: var(--ax-text-3);
+}
+
+.el-tag.el-tag--primary::before,
+.el-tag.el-tag--success::before,
+.el-tag.el-tag--warning::before,
+.el-tag.el-tag--danger::before {
+  content: '';
+  flex: none;
+  width: 5px;
+  height: 5px;
+  background: currentColor;
+  border-radius: var(--ax-radius-full);
+  opacity: 0.9;
+}
+
+/* ---- 标签页：与页头同一条纵向节奏 ---- */
+.el-tabs__header {
+  margin: 0 0 var(--ax-space-4);
+}
+
+.el-tabs__nav-wrap::after {
+  height: 1px;
+  background: var(--ax-border-subtle);
+}
+
+.el-tabs__item {
+  height: 38px;
+  padding: 0 var(--ax-space-3);
+  color: var(--ax-text-3);
+  font-size: var(--ax-text-sm);
+  font-weight: var(--ax-weight-medium);
+}
+
+.el-tabs__item.is-active,
+.el-tabs__item:hover {
+  color: var(--ax-text);
+}
+
+.el-tabs__active-bar {
+  height: 2px;
+  background: var(--ax-accent-bright);
+  border-radius: var(--ax-radius-full);
 }
 
 .el-pagination {

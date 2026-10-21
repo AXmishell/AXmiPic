@@ -1,91 +1,26 @@
 <script setup lang="ts">
-import { computed, type Component } from 'vue'
+import { computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { ArrowRight, Bell, Close, Coin, Folder, Goods, Grid, Key, MagicStick, Management, Message, Odometer, Picture, Service, Setting, Share, ShoppingCart, User } from '@element-plus/icons-vue'
+import { ArrowRight, Close, Management, Setting, User } from '@element-plus/icons-vue'
 
 import BrandMark from '@/components/BrandMark.vue'
 import QuotaMeter from '@/components/QuotaMeter.vue'
 import { useAuthStore } from '@/stores/auth'
+import { navGroupsFor, type NavItem } from '@/utils/navigation'
 
-const props = withDefaults(defineProps<{ open: boolean; variant?: 'user' | 'admin' }>(), {
-  variant: 'user',
-})
+const props = withDefaults(
+  defineProps<{ open: boolean; variant?: 'user' | 'admin'; collapsed?: boolean }>(),
+  {
+    variant: 'user',
+    collapsed: false,
+  },
+)
 const emit = defineEmits<{ (event: 'close'): void }>()
-
-interface NavItem {
-  label: string
-  to: string
-  icon: Component
-  exact?: boolean
-}
-
-interface NavGroup {
-  label: string
-  items: NavItem[]
-}
 
 const auth = useAuthStore()
 const route = useRoute()
 
-/** 普通用户控制台导航。 */
-const userGroups: NavGroup[] = [
-  {
-    label: '概览',
-    items: [{ label: '用户中心', to: '/user', icon: Odometer, exact: true }],
-  },
-  {
-    label: '资源',
-    items: [
-      { label: '我的图片', to: '/user/images', icon: Picture },
-      { label: '图片处理', to: '/user/processing', icon: MagicStick },
-      { label: '我的相册', to: '/user/albums', icon: Folder },
-      { label: '图片广场', to: '/user/plaza', icon: Grid },
-      { label: '我的分享', to: '/user/shares', icon: Share },
-      { label: '访问令牌', to: '/user/tokens', icon: Key },
-    ],
-  },
-  {
-    label: '账户',
-    items: [
-      { label: '套餐', to: '/user/pricing', icon: ShoppingCart },
-      { label: '工单', to: '/user/tickets', icon: Service },
-    ],
-  },
-]
-
-/** 管理员控制台导航。 */
-const adminGroups: NavGroup[] = [
-  {
-    label: '概览',
-    items: [{ label: '仪表盘', to: '/admin', icon: Odometer, exact: true }],
-  },
-  {
-    label: '内容',
-    items: [
-      { label: '用户管理', to: '/admin/users', icon: User },
-      { label: '图片广场', to: '/admin/plaza', icon: Grid },
-      { label: '站点内容', to: '/admin/site', icon: Bell },
-    ],
-  },
-  {
-    label: '运营',
-    items: [
-      { label: '角色策略', to: '/admin/policies', icon: Management },
-      { label: '计费管理', to: '/admin/billing', icon: ShoppingCart },
-      { label: '存储配置', to: '/admin/storage', icon: Coin },
-    ],
-  },
-  {
-    label: '系统',
-    items: [
-      { label: '系统设置', to: '/admin/system', icon: Setting },
-      { label: '插件市场', to: '/admin/plugins', icon: Goods },
-      { label: '邮件日志', to: '/admin/mail-logs', icon: Message },
-    ],
-  },
-]
-
-const groups = computed<NavGroup[]>(() => (props.variant === 'admin' ? adminGroups : userGroups))
+const groups = computed(() => navGroupsFor(props.variant))
 
 function isActive(item: NavItem): boolean {
   return item.exact ? route.path === item.to : route.path.startsWith(item.to)
@@ -93,7 +28,11 @@ function isActive(item: NavItem): boolean {
 </script>
 
 <template>
-  <aside class="sidebar" :class="{ 'is-open': open }" aria-label="主导航">
+  <aside
+    class="sidebar"
+    :class="{ 'is-open': open, 'is-collapsed': props.collapsed }"
+    aria-label="主导航"
+  >
     <div class="sidebar__brand">
       <router-link :to="variant === 'admin' ? '/admin' : '/user'" class="brand" aria-label="AXmiPic 控制台首页">
         <span class="brand__mark" aria-hidden="true">
@@ -119,6 +58,7 @@ function isActive(item: NavItem): boolean {
               class="nav-item"
               :class="{ 'is-active': isActive(item) }"
               :aria-current="isActive(item) ? 'page' : undefined"
+              :title="collapsed ? item.label : undefined"
               @click="emit('close')"
             >
               <span class="nav-item__rail" aria-hidden="true" />
@@ -131,16 +71,18 @@ function isActive(item: NavItem): boolean {
     </nav>
 
     <div class="sidebar__footer">
-      <QuotaMeter
-        v-if="auth.user && auth.user.quota_bytes > 0"
-        compact
-        :used="auth.user.used_bytes"
-        :quota="auth.user.quota_bytes"
-      />
+      <div v-if="auth.user && auth.user.quota_bytes > 0" class="sidebar__quota">
+        <QuotaMeter
+          compact
+          :used="auth.user.used_bytes"
+          :quota="auth.user.quota_bytes"
+        />
+      </div>
       <router-link
         v-if="variant === 'admin'"
         to="/user"
         class="nav-item nav-item--footer"
+        :title="collapsed ? '用户中心' : undefined"
         @click="emit('close')"
       >
         <span class="nav-item__rail" aria-hidden="true" />
@@ -152,6 +94,7 @@ function isActive(item: NavItem): boolean {
         v-if="variant !== 'admin' && auth.isAdmin"
         to="/admin"
         class="nav-item nav-item--footer"
+        :title="collapsed ? '管理控制台' : undefined"
         @click="emit('close')"
       >
         <span class="nav-item__rail" aria-hidden="true" />
@@ -164,6 +107,7 @@ function isActive(item: NavItem): boolean {
         class="nav-item nav-item--footer"
         :class="{ 'is-active': route.path.endsWith('/settings') }"
         :aria-current="route.path.endsWith('/settings') ? 'page' : undefined"
+        :title="collapsed ? '账号设置' : undefined"
         @click="emit('close')"
       >
         <span class="nav-item__rail" aria-hidden="true" />
@@ -228,7 +172,7 @@ function isActive(item: NavItem): boolean {
 
 .brand__sub {
   color: var(--ax-text-4);
-  font-size: 11px;
+  font-size: var(--ax-text-2xs);
   letter-spacing: 0.02em;
 }
 
@@ -260,7 +204,7 @@ function isActive(item: NavItem): boolean {
   margin: 0 0 var(--ax-space-2);
   padding-inline: var(--ax-space-2);
   color: var(--ax-text-4);
-  font-size: 11px;
+  font-size: var(--ax-text-2xs);
   font-weight: var(--ax-weight-medium);
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -339,6 +283,35 @@ function isActive(item: NavItem): boolean {
 
 .nav-item--footer {
   padding-block: 8px;
+}
+
+/* 桌面折叠：只保留图标，标签通过原生 title 提示。 */
+@media (min-width: 961px) {
+  .sidebar.is-collapsed .brand__text,
+  .sidebar.is-collapsed .sidebar__section,
+  .sidebar.is-collapsed .sidebar__quota,
+  .sidebar.is-collapsed .nav-item__label,
+  .sidebar.is-collapsed .nav-item__arrow {
+    display: none;
+  }
+
+  .sidebar.is-collapsed .sidebar__brand {
+    justify-content: center;
+    padding-inline: 0;
+  }
+
+  .sidebar.is-collapsed .sidebar__nav {
+    padding-inline: var(--ax-space-2);
+  }
+
+  .sidebar.is-collapsed .nav-item {
+    justify-content: center;
+    padding-inline: 0;
+  }
+
+  .sidebar.is-collapsed .sidebar__footer {
+    padding-inline: var(--ax-space-2);
+  }
 }
 
 @media (max-width: 960px) {

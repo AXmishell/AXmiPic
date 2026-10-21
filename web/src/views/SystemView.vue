@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { useRouter, onBeforeRouteLeave } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { DataLine, Monitor, Odometer, Refresh, SetUp } from '@element-plus/icons-vue'
 
 import { fetchStats } from '@/api/admin'
@@ -44,10 +44,21 @@ import type { AdminStats } from '@/api/types'
 import ErrorState from '@/components/ErrorState.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { formatBytes, formatNumber } from '@/utils/format'
+import { useTabQuery } from '@/utils/useTabQuery'
+
+type SettingsTab = 'overview' | 'notify' | 'payment' | 'moderation' | 'integration' | 'runtime'
+const SETTINGS_TABS: readonly SettingsTab[] = [
+  'overview',
+  'notify',
+  'payment',
+  'moderation',
+  'integration',
+  'runtime',
+]
 
 const loading = ref(false)
 const errorMessage = ref('')
-const activeTab = ref('overview')
+const activeTab = useTabQuery<SettingsTab>('tab', 'overview', SETTINGS_TABS)
 const router = useRouter()
 
 const stats = ref<AdminStats | null>(null)
@@ -337,6 +348,28 @@ function applyAuth(cfg: AuthConfig): void {
 
 /** 在线保存权限开关；失败时回滚为最近一次服务端生效值。 */
 async function saveAuth(): Promise<void> {
+  const previous = runtime.value
+  if (previous) {
+    const risky: string[] = []
+    if (previous.allow_registration && !allowRegistration.value) risky.push('关闭开放注册')
+    if (!previous.require_auth && requireAuth.value) risky.push('要求登录后上传')
+    if (risky.length > 0) {
+      try {
+        await ElMessageBox.confirm(
+          `将立即${risky.join('、')}，可能影响现有访客的上传流程。确定继续吗？`,
+          '高风险设置变更',
+          {
+            confirmButtonText: '继续',
+            cancelButtonText: '取消',
+            type: 'warning',
+          },
+        )
+      } catch {
+        applyAuth(previous)
+        return
+      }
+    }
+  }
   authSaving.value = true
   try {
     const updated = await updateAuthSettings({
@@ -362,6 +395,68 @@ async function saveAuth(): Promise<void> {
 
 // ---- 运行设置（通用设置域）----
 const savingDomain = ref<SettingDomain | ''>('')
+
+/** 最近一次服务端生效值的快照，用于脏状态与放弃修改。 */
+const savedDomains = reactive<Record<string, unknown>>({})
+
+function cloneValue<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T
+}
+
+function markDomainClean(domain: SettingDomain, value: unknown): void {
+  savedDomains[domain] = cloneValue(value)
+}
+
+function domainValue(domain: SettingDomain): unknown {
+  switch (domain) {
+    case 'upload':
+      return uploadForm
+    case 'processing':
+      return imagingForm
+    case 'security':
+      return securityForm
+    case 'client_ip':
+      return clientIPForm
+    case 'limits':
+      return limitsForm
+    case 'maintenance':
+      return maintenanceForm
+    case 'site':
+      return siteForm
+    default:
+      return null
+  }
+}
+
+function isDomainDirty(domain: SettingDomain): boolean {
+  const saved = savedDomains[domain]
+  if (saved === undefined) return false
+  return JSON.stringify(domainValue(domain)) !== JSON.stringify(saved)
+}
+
+const DOMAIN_LABELS: Record<string, string> = {
+  upload: '上传限制',
+  processing: '图像处理',
+  security: '安全扫描',
+  client_ip: '客户端真实 IP',
+  limits: '限流',
+  maintenance: '维护任务',
+  site: '站点信息',
+}
+
+const DOMAIN_ORDER: SettingDomain[] = [
+  'upload',
+  'processing',
+  'security',
+  'client_ip',
+  'limits',
+  'maintenance',
+  'site',
+]
+
+const dirtyDomains = computed(() => DOMAIN_ORDER.filter((domain) => isDomainDirty(domain)))
+
+const savingAll = ref(false)
 
 const mimeOptions = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
 const formatOptions = ['jpeg', 'png', 'gif', 'webp', 'avif']
@@ -412,6 +507,7 @@ const simulateResult = ref<ClientIPInfo | null>(null)
 
 function fillClientIP(v: ClientIPSettings): void {
   Object.assign(clientIPForm, v)
+  markDomainClean('client_ip', clientIPForm)
 }
 
 async function checkClientIP(): Promise<void> {
@@ -446,21 +542,54 @@ async function simulateClientIP(): Promise<void> {
 
 function fillUpload(v: UploadSettings): void {
   Object.assign(uploadForm, v)
+  markDomainClean('upload', uploadForm)
 }
 function fillImaging(v: ImagingSettings): void {
   Object.assign(imagingForm, v)
+  markDomainClean('processing', imagingForm)
 }
 function fillSecurity(v: SecuritySettings): void {
   Object.assign(securityForm, v)
+  markDomainClean('security', securityForm)
 }
 function fillLimits(v: LimitsSettings): void {
   Object.assign(limitsForm, v)
+  markDomainClean('limits', limitsForm)
 }
 function fillMaintenance(v: MaintenanceSettings): void {
   Object.assign(maintenanceForm, v)
+  markDomainClean('maintenance', maintenanceForm)
 }
 function fillSite(v: SiteSettings): void {
   Object.assign(siteForm, v)
+  markDomainClean('site', siteForm)
+}
+
+/** 把快照值写回对应表单（放弃修改时使用）。 */
+function applyDomainValue(domain: SettingDomain, value: unknown): void {
+  switch (domain) {
+    case 'upload':
+      fillUpload(value as UploadSettings)
+      break
+    case 'processing':
+      fillImaging(value as ImagingSettings)
+      break
+    case 'security':
+      fillSecurity(value as SecuritySettings)
+      break
+    case 'client_ip':
+      fillClientIP(value as ClientIPSettings)
+      break
+    case 'limits':
+      fillLimits(value as LimitsSettings)
+      break
+    case 'maintenance':
+      fillMaintenance(value as MaintenanceSettings)
+      break
+    case 'site':
+      fillSite(value as SiteSettings)
+      break
+  }
 }
 
 /** 跳转到插件市场。 */
@@ -473,12 +602,13 @@ async function saveDomain<T>(
   domain: SettingDomain,
   value: unknown,
   apply: (v: T) => void,
+  silent = false,
 ): Promise<boolean> {
   savingDomain.value = domain
   try {
     const updated = await updateSettingDomain<T>(domain, value)
     apply(updated)
-    ElMessage.success('已保存')
+    if (!silent) ElMessage.success('已保存')
     return true
   } catch (error) {
     ElMessage.error(toApiError(error).message)
@@ -486,6 +616,40 @@ async function saveDomain<T>(
   } finally {
     savingDomain.value = ''
   }
+}
+
+/** 保存当前域的表单值，用于「保存全部」。 */
+function persistDomain(domain: SettingDomain): Promise<boolean> {
+  const value = cloneValue(domainValue(domain))
+  return saveDomain<unknown>(domain, value, (updated) => applyDomainValue(domain, updated), true)
+}
+
+async function saveAllDomains(): Promise<void> {
+  const pending = [...dirtyDomains.value]
+  if (pending.length === 0 || savingAll.value) return
+  savingAll.value = true
+  const failed: string[] = []
+  try {
+    for (const domain of pending) {
+      const ok = await persistDomain(domain)
+      if (!ok) failed.push(DOMAIN_LABELS[domain] ?? domain)
+    }
+  } finally {
+    savingAll.value = false
+  }
+  if (failed.length === 0) {
+    ElMessage.success(`已保存 ${pending.length} 项设置`)
+  } else {
+    ElMessage.error(`以下设置保存失败：${failed.join('、')}`)
+  }
+}
+
+function discardAllDomains(): void {
+  for (const domain of DOMAIN_ORDER) {
+    const saved = savedDomains[domain]
+    if (saved !== undefined) applyDomainValue(domain, cloneValue(saved))
+  }
+  ElMessage.info('已放弃未保存的修改')
 }
 
 async function load(): Promise<void> {
@@ -580,9 +744,37 @@ onMounted(load)
 onMounted(() => {
   // 进程指标每 5 秒自动刷新一次。
   processTimer = window.setInterval(refreshProcess, 5000)
+  window.addEventListener('beforeunload', handleBeforeUnload)
 })
 onBeforeUnmount(() => {
   window.clearInterval(processTimer)
+  window.removeEventListener('beforeunload', handleBeforeUnload)
+})
+
+/** 关闭标签页/刷新时提示未保存的运行设置。 */
+function handleBeforeUnload(event: BeforeUnloadEvent): void {
+  if (dirtyDomains.value.length === 0) return
+  event.preventDefault()
+  event.returnValue = ''
+}
+
+onBeforeRouteLeave(async () => {
+  if (dirtyDomains.value.length === 0) return true
+  try {
+    await ElMessageBox.confirm(
+      `「${dirtyDomains.value.map((domain) => DOMAIN_LABELS[domain]).join('、')}」还有未保存的修改，离开后将丢失。`,
+      '离开系统设置？',
+      {
+        confirmButtonText: '放弃并离开',
+        cancelButtonText: '继续编辑',
+        type: 'warning',
+        confirmButtonClass: 'el-button--danger',
+      },
+    )
+    return true
+  } catch {
+    return false
+  }
 })
 </script>
 
@@ -1068,7 +1260,33 @@ onBeforeUnmount(() => {
         </article>
       </el-tab-pane>
       <!-- 运行设置 -->
-      <el-tab-pane label="运行设置" name="runtime">
+      <el-tab-pane name="runtime">
+        <template #label>
+          <span class="settings-tab-label">
+            运行设置
+            <span v-if="dirtyDomains.length > 0" class="settings-tab-dot" aria-label="有未保存的修改" />
+          </span>
+        </template>
+        <div v-if="dirtyDomains.length > 0" class="settings-savebar" role="status">
+          <div class="settings-savebar__text">
+            <strong>{{ dirtyDomains.length }} 项设置未保存</strong>
+            <span>{{ dirtyDomains.map((domain) => DOMAIN_LABELS[domain]).join('、') }}</span>
+          </div>
+          <div class="settings-savebar__actions">
+            <el-button :disabled="savingAll || Boolean(savingDomain)" @click="discardAllDomains">
+              放弃修改
+            </el-button>
+            <el-button
+              type="primary"
+              :loading="savingAll"
+              :disabled="Boolean(savingDomain)"
+              @click="saveAllDomains"
+            >
+              保存全部
+            </el-button>
+          </div>
+        </div>
+
         <article class="ax-card">
           <header class="ax-card__head">
             <h2 class="ax-card__title">上传限制</h2>
@@ -1090,6 +1308,8 @@ onBeforeUnmount(() => {
                 <el-button
                   type="primary"
                   :loading="savingDomain === 'upload'"
+                  :disabled="!isDomainDirty('upload')"
+                  :title="isDomainDirty('upload') ? '保存并应用' : '没有未保存的修改'"
                   @click="saveDomain('upload', { ...uploadForm }, fillUpload)"
                 >
                   保存并应用
@@ -1142,6 +1362,8 @@ onBeforeUnmount(() => {
                 <el-button
                   type="primary"
                   :loading="savingDomain === 'processing'"
+                  :disabled="!isDomainDirty('processing')"
+                  :title="isDomainDirty('processing') ? '保存并应用' : '没有未保存的修改'"
                   @click="saveDomain('processing', { ...imagingForm }, fillImaging)"
                 >
                   保存并应用
@@ -1175,6 +1397,8 @@ onBeforeUnmount(() => {
                 <el-button
                   type="primary"
                   :loading="savingDomain === 'security'"
+                  :disabled="!isDomainDirty('security')"
+                  :title="isDomainDirty('security') ? '保存并应用' : '没有未保存的修改'"
                   @click="saveDomain('security', { ...securityForm }, fillSecurity)"
                 >
                   保存并应用
@@ -1236,6 +1460,8 @@ onBeforeUnmount(() => {
                 <el-button
                   type="primary"
                   :loading="savingDomain === 'client_ip'"
+                  :disabled="!isDomainDirty('client_ip')"
+                  :title="isDomainDirty('client_ip') ? '保存并应用' : '没有未保存的修改'"
                   @click="saveDomain('client_ip', { ...clientIPForm }, fillClientIP)"
                 >
                   保存并应用
@@ -1340,6 +1566,8 @@ onBeforeUnmount(() => {
                 <el-button
                   type="primary"
                   :loading="savingDomain === 'limits'"
+                  :disabled="!isDomainDirty('limits')"
+                  :title="isDomainDirty('limits') ? '保存并应用' : '没有未保存的修改'"
                   @click="saveDomain('limits', { ...limitsForm }, fillLimits)"
                 >
                   保存
@@ -1371,6 +1599,8 @@ onBeforeUnmount(() => {
                 <el-button
                   type="primary"
                   :loading="savingDomain === 'maintenance'"
+                  :disabled="!isDomainDirty('maintenance')"
+                  :title="isDomainDirty('maintenance') ? '保存并应用' : '没有未保存的修改'"
                   @click="saveDomain('maintenance', { ...maintenanceForm }, fillMaintenance)"
                 >
                   保存
@@ -1398,6 +1628,8 @@ onBeforeUnmount(() => {
                 <el-button
                   type="primary"
                   :loading="savingDomain === 'site'"
+                  :disabled="!isDomainDirty('site')"
+                  :title="isDomainDirty('site') ? '保存并应用' : '没有未保存的修改'"
                   @click="saveDomain('site', { ...siteForm }, fillSite)"
                 >
                   保存
@@ -1425,6 +1657,61 @@ onBeforeUnmount(() => {
 
 .settings-block {
   margin-top: var(--ax-space-4);
+}
+
+.settings-savebar {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ax-space-3);
+  margin-bottom: var(--ax-space-4);
+  padding: var(--ax-space-2) var(--ax-space-4);
+  background: var(--ax-elevated);
+  border: 1px solid var(--ax-accent-ring);
+  border-radius: var(--ax-radius-md);
+  box-shadow: var(--ax-shadow-md);
+}
+
+.settings-savebar__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.settings-savebar__text strong {
+  color: var(--ax-text);
+  font-size: var(--ax-text-sm);
+  font-weight: var(--ax-weight-medium);
+}
+
+.settings-savebar__text span {
+  color: var(--ax-text-3);
+  font-size: var(--ax-text-xs);
+  overflow-wrap: anywhere;
+}
+
+.settings-savebar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ax-space-2);
+}
+
+.settings-tab-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.settings-tab-dot {
+  width: 6px;
+  height: 6px;
+  background: var(--ax-accent-bright);
+  border-radius: var(--ax-radius-full);
 }
 
 /* 概览双卡等高：运行环境与策略概览底边对齐，列表在卡内均分。 */

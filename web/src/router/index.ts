@@ -12,6 +12,8 @@ declare module 'vue-router' {
     requiresAdmin?: boolean
     /** 需要登录（普通用户即可）。 */
     requiresAuth?: boolean
+    /** 面包屑中的分组层级（取侧栏分组名）。 */
+    group?: string
   }
 }
 
@@ -140,67 +142,67 @@ const routes: RouteRecordRaw[] = [
         path: '',
         name: 'admin-dashboard',
         component: () => import('@/views/DashboardView.vue'),
-        meta: { title: '仪表盘' },
+        meta: { title: '仪表盘', group: '概览' },
       },
       {
         path: 'users',
         name: 'admin-users',
         component: () => import('@/views/UsersView.vue'),
-        meta: { title: '用户管理' },
+        meta: { title: '用户管理', group: '内容' },
       },
       {
         path: 'plaza',
         name: 'admin-plaza',
         component: () => import('@/views/PlazaView.vue'),
-        meta: { title: '图片广场' },
+        meta: { title: '图片广场', group: '内容' },
       },
       {
         path: 'site',
         name: 'admin-site',
         component: () => import('@/views/SiteView.vue'),
-        meta: { title: '站点内容' },
+        meta: { title: '站点内容', group: '内容' },
       },
       {
         path: 'policies',
         name: 'admin-policies',
         component: () => import('@/views/PoliciesView.vue'),
-        meta: { title: '角色策略' },
+        meta: { title: '角色策略', group: '运营' },
       },
       {
         path: 'billing',
         name: 'admin-billing',
         component: () => import('@/views/BillingView.vue'),
-        meta: { title: '计费管理' },
+        meta: { title: '计费管理', group: '运营' },
       },
       {
         path: 'storage',
         name: 'admin-storage',
         component: () => import('@/views/StorageView.vue'),
-        meta: { title: '存储配置' },
+        meta: { title: '存储配置', group: '运营' },
       },
       {
         path: 'system',
         name: 'admin-system',
         component: () => import('@/views/SystemView.vue'),
-        meta: { title: '系统设置' },
+        meta: { title: '系统设置', group: '系统' },
       },
       {
         path: 'plugins',
         name: 'admin-plugins',
         component: () => import('@/views/PluginsView.vue'),
-        meta: { title: '插件市场' },
+        meta: { title: '插件市场', group: '系统' },
       },
       {
         path: 'mail-logs',
         name: 'admin-mail-logs',
         component: () => import('@/views/NotifyLogsView.vue'),
-        meta: { title: '邮件日志' },
+        meta: { title: '邮件日志', group: '系统' },
       },
       {
         path: 'settings',
         name: 'admin-settings',
         component: () => import('@/views/SettingsView.vue'),
-        meta: { title: '账号设置' },
+        meta: { title: '账号设置', group: '账户' },
       },
     ],
   },

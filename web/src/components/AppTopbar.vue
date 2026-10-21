@@ -2,13 +2,19 @@
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowDown, Management, Moon, Setting, Sunny, SwitchButton, User } from '@element-plus/icons-vue'
+import { ArrowDown, Expand, Fold, Management, Moon, Search, Setting, Sunny, SwitchButton, User } from '@element-plus/icons-vue'
 
 import UserAvatar from '@/components/UserAvatar.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
 
-const emit = defineEmits<{ (event: 'toggle-menu'): void }>()
+withDefaults(defineProps<{ sidebarCollapsed?: boolean }>(), { sidebarCollapsed: false })
+
+const emit = defineEmits<{
+  (event: 'toggle-menu'): void
+  (event: 'toggle-sidebar'): void
+  (event: 'open-search'): void
+}>()
 
 const auth = useAuthStore()
 const theme = useThemeStore()
@@ -17,6 +23,9 @@ const router = useRouter()
 
 const pageTitle = computed(() => route.meta.title ?? '')
 const inAdminArea = computed(() => route.path.startsWith('/admin'))
+const breadcrumbRoot = computed(() => (inAdminArea.value ? '/admin' : '/user'))
+const breadcrumbGroup = computed(() => route.meta.group ?? '')
+const shortcutLabel = navigator.userAgent.includes('Mac') ? '⌘K' : 'Ctrl K'
 
 async function handleCommand(command: string | number | object): Promise<void> {
   if (command === 'settings') {
@@ -71,13 +80,41 @@ async function handleCommand(command: string | number | object): Promise<void> {
       </svg>
     </button>
 
+    <button
+      class="topbar__collapse"
+      type="button"
+      :aria-label="sidebarCollapsed ? '展开侧栏' : '折叠侧栏'"
+      :title="sidebarCollapsed ? '展开侧栏' : '折叠侧栏'"
+      @click="emit('toggle-sidebar')"
+    >
+      <el-icon :size="16">
+        <component :is="sidebarCollapsed ? Expand : Fold" />
+      </el-icon>
+    </button>
+
     <nav class="topbar__crumbs" aria-label="面包屑">
-      <span class="topbar__crumb-root">AXmiPic</span>
+      <router-link class="topbar__crumb-root" :to="breadcrumbRoot">AXmiPic</router-link>
       <span class="topbar__crumb-sep" aria-hidden="true">/</span>
+      <template v-if="breadcrumbGroup">
+        <span class="topbar__crumb-group">{{ breadcrumbGroup }}</span>
+        <span class="topbar__crumb-sep" aria-hidden="true">/</span>
+      </template>
       <span class="topbar__crumb-current">{{ pageTitle }}</span>
     </nav>
 
     <div class="topbar__spacer" />
+
+    <button
+      class="topbar__search"
+      type="button"
+      aria-label="全局搜索"
+      :title="`全局搜索（${shortcutLabel}）`"
+      @click="emit('open-search')"
+    >
+      <el-icon :size="15"><Search /></el-icon>
+      <span class="topbar__search-label">搜索</span>
+      <kbd class="topbar__search-kbd">{{ shortcutLabel }}</kbd>
+    </button>
 
     <button
       class="topbar__theme"
@@ -158,6 +195,46 @@ async function handleCommand(command: string | number | object): Promise<void> {
   background: var(--ax-tint-strong);
 }
 
+.topbar__search {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--ax-space-2);
+  height: 32px;
+  padding: 0 var(--ax-space-3);
+  color: var(--ax-text-3);
+  background: var(--ax-tint-weak);
+  border: 1px solid var(--ax-border-subtle);
+  border-radius: var(--ax-radius-full);
+  cursor: pointer;
+  transition:
+    color var(--ax-duration-fast) var(--ax-ease),
+    background-color var(--ax-duration-fast) var(--ax-ease),
+    border-color var(--ax-duration-fast) var(--ax-ease);
+}
+
+.topbar__search:hover {
+  color: var(--ax-text);
+  background: var(--ax-tint);
+  border-color: var(--ax-border);
+}
+
+.topbar__search-label {
+  font-size: var(--ax-text-sm);
+  font-weight: var(--ax-weight-medium);
+}
+
+.topbar__search-kbd {
+  padding: 1px 5px;
+  color: var(--ax-text-4);
+  background: var(--ax-tint);
+  border: 1px solid var(--ax-border-subtle);
+  border-radius: var(--ax-radius-xs);
+  font-family: var(--ax-font-mono);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
 .topbar__theme {
   display: inline-flex;
   align-items: center;
@@ -175,6 +252,28 @@ async function handleCommand(command: string | number | object): Promise<void> {
     background-color var(--ax-duration-fast) var(--ax-ease);
 }
 
+.topbar__collapse {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  color: var(--ax-text-3);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--ax-radius-sm);
+  cursor: pointer;
+  transition:
+    color var(--ax-duration-fast) var(--ax-ease),
+    background-color var(--ax-duration-fast) var(--ax-ease);
+}
+
+.topbar__collapse:hover {
+  color: var(--ax-text);
+  background: var(--ax-tint);
+}
+
 .topbar__theme:hover {
   color: var(--ax-text);
   background: var(--ax-tint-strong);
@@ -189,6 +288,16 @@ async function handleCommand(command: string | number | object): Promise<void> {
 }
 
 .topbar__crumb-root {
+  color: var(--ax-text-4);
+  font-weight: var(--ax-weight-medium);
+  transition: color var(--ax-duration-fast) var(--ax-ease);
+}
+
+.topbar__crumb-root:hover {
+  color: var(--ax-text-2);
+}
+
+.topbar__crumb-group {
   color: var(--ax-text-4);
   font-weight: var(--ax-weight-medium);
 }
@@ -250,7 +359,7 @@ async function handleCommand(command: string | number | object): Promise<void> {
 
 .topbar__role {
   color: var(--ax-text-4);
-  font-size: 11px;
+  font-size: var(--ax-text-2xs);
 }
 
 .topbar__caret {
@@ -266,12 +375,27 @@ async function handleCommand(command: string | number | object): Promise<void> {
     display: inline-flex;
   }
 
+  .topbar__collapse {
+    display: none;
+  }
+
   .topbar__user-meta {
     display: none;
   }
 
   .topbar__user {
     padding: 4px;
+  }
+
+  .topbar__search {
+    justify-content: center;
+    width: 32px;
+    padding: 0;
+  }
+
+  .topbar__search-label,
+  .topbar__search-kbd {
+    display: none;
   }
 
   .topbar__caret {
