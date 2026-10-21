@@ -9,12 +9,10 @@ import { ApiError } from '@/api/client'
 import { fetchInstallStatus, runInstall, type InstallInput } from '@/api/auth'
 import BrandMark from '@/components/BrandMark.vue'
 import { useAppStore } from '@/stores/app'
-import { useAuthStore } from '@/stores/auth'
 import { confirmPasswordRule, usernameRules } from '@/utils/validate'
 
 const router = useRouter()
 const app = useAppStore()
-const auth = useAuthStore()
 
 const step = ref(0)
 const submitting = ref(false)
@@ -248,18 +246,21 @@ async function submit(): Promise<void> {
 }
 
 async function goLogin(): Promise<void> {
-  // 初始化只创建管理员账户（admins 表），必须走独立的管理员登录入口；
-  // 普通 /login 校验的是 customers 表，会提示账号或密码错误。
-  await router.replace('/admin/login')
+  // 进入管理控制台；未登录时路由守卫会转到 /admin/login，并带上回跳地址。
+  await router.replace('/admin')
 }
 
 onMounted(async () => {
-  // 已初始化则离开初始化页面，避免重复执行。
+  // 已初始化时初始化入口关闭，再次访问 /install 显示 404。
   try {
     const status = await fetchInstallStatus()
     if (status.installed) {
       app.markInstalled()
-      await router.replace(auth.isAuthenticated ? (auth.isAdmin ? '/admin' : '/user') : '/admin/login')
+      await router.replace({
+        name: 'not-found',
+        params: { pathMatch: ['install'] },
+        replace: true,
+      })
     }
   } catch {
     // 无法读取状态时允许继续尝试初始化。

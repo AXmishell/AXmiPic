@@ -1,6 +1,7 @@
 import { ElMessage } from 'element-plus'
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 
+import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 
 declare module 'vue-router' {
@@ -226,10 +227,24 @@ export function homeForRole(isAdmin: boolean): string {
   return isAdmin ? '/admin' : '/user'
 }
 
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
   const auth = useAuthStore()
+  const app = useAppStore()
   auth.hydrate()
   document.title = to.meta.title ? `${to.meta.title} · AXmiPic` : 'AXmiPic 图床'
+
+  // 初始化入口只对未初始化的实例开放。初始化完成后再次访问 /install 应视为
+  // 不存在的页面（404），而不是跳转到管理员登录或控制台。
+  if (to.name === 'install') {
+    const installed = app.installed === null ? await app.checkInstall() : app.isInstalled
+    if (installed) {
+      return {
+        name: 'not-found',
+        params: { pathMatch: to.path.replace(/^\/+|\/+$/g, '').split('/').filter(Boolean) },
+        replace: true,
+      }
+    }
+  }
 
   // 不再在路由层检测初始化锁文件：未初始化时也正常访问各页面，
   // 由用户自行访问 /install 完成程序与数据库的初始化。
