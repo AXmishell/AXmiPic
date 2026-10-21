@@ -9,6 +9,27 @@ import (
 	"github.com/AXmishell/axmipic/internal/store"
 )
 
+func TestGetAccountByUsernameCaseInsensitive(t *testing.T) {
+	repo, err := store.Open("sqlite", filepath.Join(t.TempDir(), "case.db"))
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = repo.Close() })
+	ctx := context.Background()
+	if err := repo.CreateAdmin(ctx, &store.Admin{
+		ID: "case-1", Username: "MixedCase", PasswordHash: "x",
+	}); err != nil {
+		t.Fatalf("CreateAdmin: %v", err)
+	}
+	account, err := repo.GetAccountByUsername(ctx, store.RoleAdmin, "mixedcase")
+	if err != nil {
+		t.Fatalf("GetAccountByUsername: %v", err)
+	}
+	if account.Username != "MixedCase" {
+		t.Fatalf("username = %q, want original case", account.Username)
+	}
+}
+
 func TestListCustomersPagedFiltersAndSort(t *testing.T) {
 	repo, err := store.Open("sqlite", filepath.Join(t.TempDir(), "users.db"))
 	if err != nil {

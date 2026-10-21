@@ -209,7 +209,7 @@ func validateInstallInput(in InstallInput) error {
 	if strings.TrimSpace(in.DatabaseDSN) == "" {
 		return fmt.Errorf("%w: database dsn is required", ErrInvalidInput)
 	}
-	username := strings.ToLower(strings.TrimSpace(in.AdminUsername))
+	username := strings.TrimSpace(in.AdminUsername)
 	if len(username) < minUsernameLength || len(username) > maxUsernameLength {
 		return fmt.Errorf("%w: admin username must be %d-%d characters", ErrInvalidInput, minUsernameLength, maxUsernameLength)
 	}

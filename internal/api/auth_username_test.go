@@ -50,10 +50,10 @@ func TestChangeUsernameAPI(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), `"username":"alice2@example.com"`) {
+	if !strings.Contains(rec.Body.String(), `"username":"Alice2@Example.com"`) {
 		t.Fatalf("unexpected body: %s", rec.Body.String())
 	}
-	if _, err := accounts.LoginCustomer(context.Background(), "alice2@example.com", "password123"); err != nil {
+	if _, err := accounts.LoginCustomer(context.Background(), "alice2@EXAMPLE.com", "password123"); err != nil {
 		t.Fatalf("login with new username: %v", err)
 	}
 

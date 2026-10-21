@@ -87,15 +87,17 @@ func (r *Repository) GetAccountByID(ctx context.Context, role AccountRole, id st
 // 或 ErrNotFound。用户名在每个表中唯一，因此管理员和客户可以
 // 共享同一个用户名。
 func (r *Repository) GetAccountByUsername(ctx context.Context, role AccountRole, username string) (*Account, error) {
+	// 用户名保留大小写用于展示，但登录与唯一性检查按大小写不敏感处理。
+	username = strings.ToLower(strings.TrimSpace(username))
 	if role == RoleAdmin {
 		var admin Admin
-		if err := r.first(ctx, &admin, "username = ?", username); err != nil {
+		if err := r.first(ctx, &admin, "LOWER(username) = ?", username); err != nil {
 			return nil, fmt.Errorf("store: admin %q: %w", username, err)
 		}
 		return accountFromAdmin(&admin), nil
 	}
 	var customer Customer
-	if err := r.first(ctx, &customer, "username = ?", username); err != nil {
+	if err := r.first(ctx, &customer, "LOWER(username) = ?", username); err != nil {
 		return nil, fmt.Errorf("store: customer %q: %w", username, err)
 	}
 	return accountFromCustomer(&customer), nil
@@ -115,19 +117,19 @@ func (r *Repository) first(ctx context.Context, dest any, query string, args ...
 // GetAccountByEmail 从给定角色的表中返回具有 email 的账户，或 ErrNotFound。
 // 邮箱在两表中各自唯一（不允许跨表重复由服务层保证）。
 func (r *Repository) GetAccountByEmail(ctx context.Context, role AccountRole, email string) (*Account, error) {
-	email = strings.TrimSpace(email)
+	email = strings.ToLower(strings.TrimSpace(email))
 	if email == "" {
 		return nil, ErrNotFound
 	}
 	if role == RoleAdmin {
 		var admin Admin
-		if err := r.first(ctx, &admin, "email = ?", email); err != nil {
+		if err := r.first(ctx, &admin, "LOWER(email) = ?", email); err != nil {
 			return nil, fmt.Errorf("store: admin email %q: %w", email, err)
 		}
 		return accountFromAdmin(&admin), nil
 	}
 	var customer Customer
-	if err := r.first(ctx, &customer, "email = ?", email); err != nil {
+	if err := r.first(ctx, &customer, "LOWER(email) = ?", email); err != nil {
 		return nil, fmt.Errorf("store: customer email %q: %w", email, err)
 	}
 	return accountFromCustomer(&customer), nil
@@ -443,7 +445,7 @@ func (r *Repository) EmailInUse(ctx context.Context, email string, excludeID str
 	if count > 0 {
 		return true, nil
 	}
-	if err := r.db.WithContext(ctx).Model(&Admin{}).Where("email = ? AND id <> ?", email, excludeID).
+	if err := r.db.WithContext(ctx).Model(&Admin{}).Where("LOWER(email) = ? AND id <> ?", email, excludeID).
 		Count(&count).Error; err != nil {
 		return false, fmt.Errorf("store: check admin email: %w", err)
 	}
@@ -453,12 +455,12 @@ func (r *Repository) EmailInUse(ctx context.Context, email string, excludeID str
 // FindVerifiedAccountByEmail 在客户表与管理员表中查找邮箱已通过验证的账户，
 // 返回其角色与账户。未找到时返回 ErrNotFound。
 func (r *Repository) FindVerifiedAccountByEmail(ctx context.Context, email string) (AccountRole, *Account, error) {
-	email = strings.TrimSpace(email)
+	email = strings.ToLower(strings.TrimSpace(email))
 	if email == "" {
 		return "", nil, ErrNotFound
 	}
 	var customer Customer
-	err := r.first(ctx, &customer, "email = ? AND email_verified = ?", email, true)
+	err := r.first(ctx, &customer, "LOWER(email) = ? AND email_verified = ?", email, true)
 	if err == nil {
 		return RoleCustomer, accountFromCustomer(&customer), nil
 	}
@@ -466,7 +468,7 @@ func (r *Repository) FindVerifiedAccountByEmail(ctx context.Context, email strin
 		return "", nil, fmt.Errorf("store: find customer by email: %w", err)
 	}
 	var admin Admin
-	err = r.first(ctx, &admin, "email = ? AND email_verified = ?", email, true)
+	err = r.first(ctx, &admin, "LOWER(email) = ? AND email_verified = ?", email, true)
 	if err == nil {
 		return RoleAdmin, accountFromAdmin(&admin), nil
 	}

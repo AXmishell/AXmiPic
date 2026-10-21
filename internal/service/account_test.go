@@ -64,8 +64,12 @@ func TestUsernameAllowsEmailStyle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("email-style username rejected: %v", err)
 	}
-	if user.Username != "user.name+tag@example.com" {
+	if user.Username != "User.Name+tag@example.com" {
 		t.Fatalf("username = %q", user.Username)
+	}
+	// 登录标识大小写不敏感，但显示保留原始大小写。
+	if _, err := svc.LoginCustomer(ctx, "user.name+tag@example.com", "password123"); err != nil {
+		t.Fatalf("case-insensitive login: %v", err)
 	}
 	// 其它非法字符仍被拒绝。
 	if _, err := svc.RegisterCustomer(ctx, "bad#name", "password123"); !errors.Is(err, service.ErrInvalidInput) {
@@ -148,21 +152,21 @@ func TestChangeUsername(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ChangeUsername: %v", err)
 	}
-	if updated.Username != "alice2@example.com" {
+	if updated.Username != "Alice2@Example.com" {
 		t.Fatalf("username = %q", updated.Username)
 	}
 	if _, err := svc.LoginCustomer(ctx, "alice", "password123"); !errors.Is(err, service.ErrInvalidCredentials) {
 		t.Fatalf("old username login err = %v, want ErrInvalidCredentials", err)
 	}
-	if _, err := svc.LoginCustomer(ctx, "alice2@example.com", "password123"); err != nil {
+	if _, err := svc.LoginCustomer(ctx, "ALICE2@example.COM", "password123"); err != nil {
 		t.Fatalf("new username login: %v", err)
 	}
 
 	// 同角色唯一；相同用户名视为无操作。
-	if _, err := svc.RegisterCustomer(ctx, "bob", "password123"); err != nil {
+	if _, err := svc.RegisterCustomer(ctx, "Bob", "password123"); err != nil {
 		t.Fatalf("RegisterCustomer bob: %v", err)
 	}
-	if _, err := svc.ChangeUsername(ctx, principal, "bob", "password123", ""); !errors.Is(err, service.ErrUserExists) {
+	if _, err := svc.ChangeUsername(ctx, principal, "BOB", "password123", ""); !errors.Is(err, service.ErrUserExists) {
 		t.Fatalf("duplicate username err = %v, want ErrUserExists", err)
 	}
 	if _, err := svc.ChangeUsername(ctx, principal, "alice2@example.com", "password123", ""); err != nil {

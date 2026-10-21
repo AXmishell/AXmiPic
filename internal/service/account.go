@@ -223,7 +223,7 @@ func (s *AccountService) registrationPolicy(ctx context.Context) (*string, int64
 // RegisterCustomer 创建一个新的普通（客户）账户。它是内部/测试用的低级入口，
 // 不要求邮箱。面向 API 的注册应使用 RegisterCustomerWithEmail。
 func (s *AccountService) RegisterCustomer(ctx context.Context, username, password string) (*UserDTO, error) {
-	username = strings.ToLower(strings.TrimSpace(username))
+	username = strings.TrimSpace(username)
 	if err := validateCredentials(username, password); err != nil {
 		return nil, err
 	}
@@ -351,7 +351,7 @@ func (s *AccountService) SendRegistrationCode(ctx context.Context, email string)
 // RegisterCustomerWithEmail 校验邮箱验证码后创建普通用户账户并标记邮箱已验证。
 // 用户名或邮箱被占用时分别返回 ErrUserExists / ErrEmailInUse。
 func (s *AccountService) RegisterCustomerWithEmail(ctx context.Context, username, password, email, code string) (*UserDTO, error) {
-	username = strings.ToLower(strings.TrimSpace(username))
+	username = strings.TrimSpace(username)
 	email = strings.ToLower(strings.TrimSpace(email))
 	if err := validateCredentials(username, password); err != nil {
 		return nil, err
@@ -481,7 +481,7 @@ func (s *AccountService) GuestID(ctx context.Context) string {
 
 // RegisterAdmin 在 admins 表中创建一个管理员账户。
 func (s *AccountService) RegisterAdmin(ctx context.Context, username, password string) (*UserDTO, error) {
-	username = strings.ToLower(strings.TrimSpace(username))
+	username = strings.TrimSpace(username)
 	if err := validateCredentials(username, password); err != nil {
 		return nil, err
 	}
@@ -517,7 +517,7 @@ func (s *AccountService) LoginAdmin(ctx context.Context, username, password stri
 }
 
 func (s *AccountService) login(ctx context.Context, role store.AccountRole, username, password string) (*SessionDTO, error) {
-	identifier := strings.ToLower(strings.TrimSpace(username))
+	identifier := strings.TrimSpace(username)
 	account, err := s.repo.GetAccountByUsername(ctx, role, identifier)
 	if err != nil && errors.Is(err, store.ErrNotFound) {
 		// 用户名不存在时回退到邮箱登录。
@@ -789,7 +789,7 @@ func (s *AccountService) UnbindEmail(ctx context.Context, principal *auth.Princi
 // ChangeUsername 在验证当前密码（以及启用时的 TOTP）后修改当前账户的登录名。
 // 用户名在所属账户表内唯一；修改后现有会话继续有效，下次登录使用新用户名。
 func (s *AccountService) ChangeUsername(ctx context.Context, principal *auth.Principal, newUsername, currentPassword, totpCode string) (*UserDTO, error) {
-	newUsername = strings.ToLower(strings.TrimSpace(newUsername))
+	newUsername = strings.TrimSpace(newUsername)
 	if err := validateUsername(newUsername); err != nil {
 		return nil, err
 	}
@@ -1205,7 +1205,7 @@ func (s *AccountService) EnsureBootstrapAdmin(ctx context.Context, spec string) 
 	if !ok || strings.TrimSpace(username) == "" || password == "" {
 		return fmt.Errorf("%w: auth.bootstrap_admin must be \"username:password\"", ErrInvalidInput)
 	}
-	username = strings.ToLower(strings.TrimSpace(username))
+	username = strings.TrimSpace(username)
 	hash, err := auth.HashPassword(password)
 	if err != nil {
 		return err
