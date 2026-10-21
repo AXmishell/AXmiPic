@@ -2,7 +2,9 @@
 package config
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"net"
 	"net/url"
 	"strings"
@@ -659,11 +661,24 @@ func defaultConfig() Config {
 }
 
 // Load 读取 path 处的 YAML 文件，应用 AXMIPIC_* 环境变量覆盖，并校验结果。
+// 文件不存在时返回包裹 fs.ErrNotExist 的错误。
 func Load(path string) (Config, error) {
+	return load(path, false)
+}
+
+// LoadOrDefaults 与 Load 相同，但允许配置文件不存在：此时使用内置默认值，
+// 仍会应用 AXMIPIC_* 环境变量。用于全新部署的初始化模式。
+func LoadOrDefaults(path string) (Config, error) {
+	return load(path, true)
+}
+
+func load(path string, allowMissing bool) (Config, error) {
 	k := koanf.New(".")
 
 	if err := k.Load(file.Provider(path), yaml.Parser()); err != nil {
-		return Config{}, fmt.Errorf("config: load file %q: %w", path, err)
+		if !allowMissing || !errors.Is(err, fs.ErrNotExist) {
+			return Config{}, fmt.Errorf("config: load file %q: %w", path, err)
+		}
 	}
 	if err := k.Load(env.Provider(envPrefix, ".", envKey), nil); err != nil {
 		return Config{}, fmt.Errorf("config: load environment overrides: %w", err)

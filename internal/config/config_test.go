@@ -1,6 +1,8 @@
 package config_test
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -114,8 +116,26 @@ func TestEnvironmentOverrides(t *testing.T) {
 }
 
 func TestLoadMissingFile(t *testing.T) {
-	if _, err := config.Load(filepath.Join(t.TempDir(), "does-not-exist.yaml")); err == nil {
+	_, err := config.Load(filepath.Join(t.TempDir(), "does-not-exist.yaml"))
+	if err == nil {
 		t.Fatal("expected an error for a missing config file")
+	}
+	if !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("missing config error should wrap fs.ErrNotExist, got %v", err)
+	}
+}
+
+func TestLoadOrDefaultsMissingFile(t *testing.T) {
+	t.Setenv("AXMIPIC_SERVER_PORT", "18080")
+	cfg, err := config.LoadOrDefaults(filepath.Join(t.TempDir(), "does-not-exist.yaml"))
+	if err != nil {
+		t.Fatalf("LoadOrDefaults: %v", err)
+	}
+	if cfg.Server.Port != 18080 {
+		t.Fatalf("environment override not applied to defaults: port = %d", cfg.Server.Port)
+	}
+	if cfg.Database.Driver != "sqlite" || cfg.Install.Disabled {
+		t.Fatalf("unexpected defaults: %+v", cfg)
 	}
 }
 

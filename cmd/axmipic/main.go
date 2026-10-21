@@ -8,6 +8,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -56,7 +57,13 @@ func run() error {
 		return nil
 	}
 
-	cfg, err := config.Load(*configPath)
+	// 全新部署（尤其是 Docker 绑定挂载空目录）可能还没有配置文件。
+	// 此时以内置默认值启动初始化模式，由 /install 在完成后写入配置。
+	configMissing := false
+	if _, statErr := os.Stat(*configPath); errors.Is(statErr, fs.ErrNotExist) {
+		configMissing = true
+	}
+	cfg, err := config.LoadOrDefaults(*configPath)
 	if err != nil {
 		return err
 	}
@@ -68,6 +75,12 @@ func run() error {
 		slog.String("version", version),
 		slog.String("platform", runtime.GOOS+"/"+runtime.GOARCH),
 	)
+	if configMissing {
+		logger.Warn("config file not found; starting with built-in defaults for initialization",
+			slog.String("path", *configPath),
+			slog.String("next", "visit /install to finish setup, or provide the config file"),
+		)
+	}
 
 	installSvc := service.NewInstallService(cfg.Install.LockFile, cfg.Install.ConfigPath, cfg.Install.Disabled)
 	installed := installSvc.IsInstalled()
