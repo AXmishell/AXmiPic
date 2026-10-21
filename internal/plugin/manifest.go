@@ -92,7 +92,7 @@ func (m Manifest) validate() error {
 		return fmt.Errorf("plugin: manifest name is required")
 	}
 	if !validPluginName(m.Name) {
-		return fmt.Errorf("plugin %q: name must match [a-z0-9][a-z0-9._-]* and must not be . or ..", m.Name)
+		return fmt.Errorf("plugin %q: name must match [a-z0-9][a-z0-9._-]* (not . or ..)", m.Name)
 	}
 	if strings.HasPrefix(m.Name, "builtin-") {
 		return fmt.Errorf("plugin %q: the builtin- prefix is reserved for built-in plugins", m.Name)

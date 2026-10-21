@@ -27,12 +27,14 @@ func NewDevProxy(target string) (http.Handler, error) {
 		return nil, fmt.Errorf("webui: hot reload target %q must include a host", target)
 	}
 
-	proxy := httputil.NewSingleHostReverseProxy(u)
-	director := proxy.Director
-	proxy.Director = func(r *http.Request) {
-		director(r)
-		// 让 Vite 的 Host 校验通过：转发到目标主机而不是后端监听地址。
-		r.Host = u.Host
+	// 直接构造 ReverseProxy 并使用 Rewrite（Go 1.20+），避免使用已弃用的
+	// Director。ReverseProxy 要求 Rewrite 与 Director 恰好设置一个。
+	proxy := &httputil.ReverseProxy{
+		Rewrite: func(pr *httputil.ProxyRequest) {
+			pr.SetURL(u)
+			// 让 Vite 的 Host 校验通过：转发到目标主机而不是后端监听地址。
+			pr.Out.Host = u.Host
+		},
 	}
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
 		slog.Warn("web hot reload proxy failed",
