@@ -46,6 +46,13 @@ async function load(): Promise<void> {
     for (const key of Object.keys(values)) delete values[key]
     for (const key of Object.keys(secretInputs)) delete secretInputs[key]
     Object.assign(values, cfg.values ?? {})
+    // 插件配置在后端统一是字符串；开关字段必须归一化为 "true"/"false"，
+    // 否则 Element Plus 会把它们改成布尔值，提交时导致 JSON 类型不匹配。
+    for (const field of cfg.fields ?? []) {
+      if (field.type === 'bool') {
+        values[field.key] = values[field.key] === 'true' ? 'true' : 'false'
+      }
+    }
   } catch (error) {
     ElMessage.error(toApiError(error).message)
     config.value = null
@@ -66,6 +73,12 @@ async function save(): Promise<void> {
   }
   for (const [key, value] of Object.entries(secretInputs)) {
     if (value && visibleKeys.has(key)) payload[key] = value
+  }
+  // 再兜底一次，确保开关字段始终以字符串提交。
+  for (const field of visibleFields.value) {
+    if (field.type === 'bool') {
+      payload[field.key] = payload[field.key] === 'true' ? 'true' : 'false'
+    }
   }
   saving.value = true
   try {
@@ -88,7 +101,12 @@ defineExpose({ reload: load })
     <el-form label-position="top" @submit.prevent>
       <div class="plugin-config__grid">
         <el-form-item v-for="field in visibleFields" :key="field.key" :label="field.label">
-          <el-switch v-if="field.type === 'bool'" v-model="values[field.key]" />
+          <el-switch
+            v-if="field.type === 'bool'"
+            v-model="values[field.key]"
+            active-value="true"
+            inactive-value="false"
+          />
           <el-select
             v-else-if="field.type === 'select'"
             v-model="values[field.key]"

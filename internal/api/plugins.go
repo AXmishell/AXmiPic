@@ -2,8 +2,10 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -44,7 +46,30 @@ func (h *Handler) adminGetPluginConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 type pluginConfigRequest struct {
-	Values map[string]string `json:"values"`
+	// 配置值统一按字符串存储，但前端开关等控件可能提交 bool/number；解码后再
+	// 归一化，避免第二次保存（例如 SMTP 的 use_tls 变为布尔值）时报
+	// invalid JSON body。
+	Values map[string]any `json:"values"`
+}
+
+// pluginConfigValues 把 JSON 标量归一化为插件配置使用的字符串值。
+func pluginConfigValues(raw map[string]any) (map[string]string, error) {
+	out := make(map[string]string, len(raw))
+	for key, value := range raw {
+		switch v := value.(type) {
+		case nil:
+			out[key] = ""
+		case string:
+			out[key] = v
+		case bool:
+			out[key] = strconv.FormatBool(v)
+		case float64:
+			out[key] = strconv.FormatFloat(v, 'f', -1, 64)
+		default:
+			return nil, fmt.Errorf("plugin config value %q must be a string, number or boolean", key)
+		}
+	}
+	return out, nil
 }
 
 // adminUpdatePluginConfig 保存插件配置并即时应用（无需重启）。
@@ -58,8 +83,13 @@ func (h *Handler) adminUpdatePluginConfig(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
+	values, err := pluginConfigValues(body.Values)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, http.StatusBadRequest, err.Error())
+		return
+	}
 	name := chi.URLParam(r, "name")
-	if err := h.plugins.SaveConfig(r.Context(), name, body.Values); err != nil {
+	if err := h.plugins.SaveConfig(r.Context(), name, values); err != nil {
 		h.fail(w, r, err)
 		return
 	}
