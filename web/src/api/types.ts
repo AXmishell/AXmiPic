@@ -12,6 +12,14 @@ export type ImageOrder = 'newest' | 'earliest' | 'largest' | 'smallest'
 /** 图片可见性：public 可出现在图片广场，private 仅本人可见（默认）。 */
 export type ImagePermission = 'public' | 'private'
 
+/** 通用分页响应。 */
+export interface Paged<T> {
+  items: T[]
+  total: number
+  page: number
+  page_size: number
+}
+
 export interface User {
   id: string
   username: string
@@ -95,6 +103,12 @@ export interface PageData<T> {
   next_cursor?: string
 }
 
+export interface DailyStat {
+  date: string
+  images: number
+  bytes: number
+}
+
 export interface AdminStats {
   admins: number
   customers: number
@@ -104,6 +118,7 @@ export interface AdminStats {
   storage_driver: string
   processor: string
   formats: string[]
+  trend: DailyStat[]
 }
 
 export interface LoginResult {

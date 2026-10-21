@@ -16,15 +16,26 @@ const statsCacheTTL = 30 * time.Second
 
 // StatsDTO 汇总实例级别的指标。
 type StatsDTO struct {
-	Admins        int64    `json:"admins"`
-	Customers     int64    `json:"customers"`
-	Users         int64    `json:"users"`
-	Images        int64    `json:"images"`
-	TotalBytes    int64    `json:"total_bytes"`
-	StorageDriver string   `json:"storage_driver"`
-	Processor     string   `json:"processor"`
-	Formats       []string `json:"formats"`
+	Admins        int64       `json:"admins"`
+	Customers     int64       `json:"customers"`
+	Users         int64       `json:"users"`
+	Images        int64       `json:"images"`
+	TotalBytes    int64       `json:"total_bytes"`
+	StorageDriver string      `json:"storage_driver"`
+	Processor     string      `json:"processor"`
+	Formats       []string    `json:"formats"`
+	Trend         []DailyStat `json:"trend"`
 }
+
+// DailyStat 是仪表盘趋势图中的一个自然日。
+type DailyStat struct {
+	Date   string `json:"date"`
+	Images int64  `json:"images"`
+	Bytes  int64  `json:"bytes"`
+}
+
+// statsTrendDays 是仪表盘趋势展示的天数。
+const statsTrendDays = 7
 
 // UpdateUserInput 携带可选的账户变更。
 type UpdateUserInput struct {
@@ -104,6 +115,11 @@ func (s *AdminService) computeStats(ctx context.Context) (*StatsDTO, error) {
 		return nil, fmt.Errorf("stats: image stats: %w", err)
 	}
 
+	trend, err := s.computeTrend(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	formats := []string{}
 	processorName := ""
 	if s.processor != nil {
@@ -122,7 +138,34 @@ func (s *AdminService) computeStats(ctx context.Context) (*StatsDTO, error) {
 		StorageDriver: s.storageDriver,
 		Processor:     processorName,
 		Formats:       formats,
+		Trend:         trend,
 	}, nil
+}
+
+// computeTrend 返回最近 statsTrendDays 天的每日新增统计，缺失的日期补零，
+// 保证前端始终拿到固定长度、按日期升序排列的序列。
+func (s *AdminService) computeTrend(ctx context.Context) ([]DailyStat, error) {
+	now := time.Now()
+	start := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).
+		AddDate(0, 0, -(statsTrendDays - 1))
+
+	rows, err := s.repo.ImageDailyStats(ctx, start)
+	if err != nil {
+		return nil, fmt.Errorf("stats: daily trend: %w", err)
+	}
+
+	byDate := make(map[string]store.ImageDailyStat, len(rows))
+	for _, row := range rows {
+		byDate[row.Date] = row
+	}
+
+	trend := make([]DailyStat, 0, statsTrendDays)
+	for i := 0; i < statsTrendDays; i++ {
+		day := start.AddDate(0, 0, i).Format("2006-01-02")
+		row := byDate[day]
+		trend = append(trend, DailyStat{Date: day, Images: row.Count, Bytes: row.Bytes})
+	}
+	return trend, nil
 }
 
 // ListCustomers 返回所有客户账户。

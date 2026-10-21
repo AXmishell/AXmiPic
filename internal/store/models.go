@@ -152,6 +152,13 @@ type ImageStats struct {
 	TotalBytes int64
 }
 
+// ImageDailyStat 是某个自然日内新增图像的数量与字节数。
+type ImageDailyStat struct {
+	Date  string
+	Count int64
+	Bytes int64
+}
+
 // APIToken 是长期有效的程序化凭据。仅存储哈希值。
 type APIToken struct {
 	ID         string `gorm:"primaryKey;size:36"`
