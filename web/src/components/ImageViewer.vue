@@ -4,9 +4,11 @@ import { ElMessage } from 'element-plus'
 import {
   ArrowLeft,
   ArrowRight,
+  ArrowUp,
   Close,
   CopyDocument,
   FullScreen,
+  InfoFilled,
   Link,
   RefreshLeft,
   ZoomIn,
@@ -36,6 +38,10 @@ const naturalH = ref(0)
 const stageW = ref(0)
 const stageH = ref(0)
 const stageEl = ref<HTMLElement | null>(null)
+// 移动端布局：底部信息改为可展开抽屉，默认只用一行摘要提示。
+const isMobileLayout = ref(false)
+const infoOpen = ref(false)
+let mobileMedia: MediaQueryList | null = null
 // 设备像素比。默认缩放取 1/dpr，使 1 图像 px = 1 物理像素。
 const dpr = ref(typeof window !== 'undefined' && window.devicePixelRatio ? window.devicePixelRatio : 1)
 
@@ -413,7 +419,15 @@ function onKeydown(event: KeyboardEvent): void {
       go(1)
       break
     case 'Escape':
-      close()
+      if (isMobileLayout.value && infoOpen.value) {
+        infoOpen.value = false
+      } else {
+        close()
+      }
+      break
+    case 'i':
+    case 'I':
+      if (isMobileLayout.value) infoOpen.value = !infoOpen.value
       break
     case '+':
     case '=':
@@ -468,9 +482,16 @@ function watchDprMedia(): void {
   dprMedia.addEventListener('change', syncDpr)
 }
 
+/** 同步移动端布局；切回桌面时收起抽屉，避免信息面板停留在隐藏状态。 */
+function syncMobileLayout(event?: MediaQueryListEvent): void {
+  isMobileLayout.value = event ? event.matches : Boolean(mobileMedia?.matches)
+  if (!isMobileLayout.value) infoOpen.value = false
+}
+
 watch(open, async (value) => {
   document.body.style.overflow = value ? 'hidden' : ''
   moved = false
+  infoOpen.value = false
   if (value) {
     resetView()
     await nextTick()
@@ -491,11 +512,15 @@ onMounted(() => {
   window.addEventListener('keydown', onKeydown)
   window.addEventListener('resize', syncDpr)
   watchDprMedia()
+  mobileMedia = window.matchMedia('(max-width: 768px)')
+  syncMobileLayout()
+  mobileMedia.addEventListener('change', syncMobileLayout)
 })
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown)
   window.removeEventListener('resize', syncDpr)
   dprMedia?.removeEventListener('change', syncDpr)
+  mobileMedia?.removeEventListener('change', syncMobileLayout)
   cancelGestures()
   teardownObserver()
   cancelClose()
@@ -590,8 +615,51 @@ onBeforeUnmount(() => {
           </button>
         </div>
 
-        <aside class="ax-viewer__info">
-          <h2 class="ax-viewer__info-title">图片信息</h2>
+        <button
+          v-if="isMobileLayout"
+          class="ax-viewer__summary"
+          type="button"
+          :aria-expanded="infoOpen"
+          aria-controls="ax-viewer-info"
+          @click="infoOpen = true"
+        >
+          <el-icon class="ax-viewer__summary-icon"><InfoFilled /></el-icon>
+          <span class="ax-viewer__summary-text">
+            {{ formatDimensions(current.width, current.height) }}
+            <span aria-hidden="true">·</span>
+            {{ formatBytes(current.size) }}
+            <span aria-hidden="true">·</span>
+            {{ formatMime(current.mime_type) }}
+          </span>
+          <el-icon class="ax-viewer__summary-arrow" :class="{ 'is-open': infoOpen }"><ArrowUp /></el-icon>
+        </button>
+
+        <div
+          v-if="isMobileLayout && infoOpen"
+          class="ax-viewer__info-backdrop"
+          aria-hidden="true"
+          @click="infoOpen = false"
+        />
+
+        <aside
+          id="ax-viewer-info"
+          class="ax-viewer__info"
+          :class="{ 'is-open': infoOpen }"
+          :aria-hidden="isMobileLayout && !infoOpen"
+        >
+          <span v-if="isMobileLayout" class="ax-viewer__info-handle" aria-hidden="true" />
+          <header class="ax-viewer__info-head">
+            <h2 class="ax-viewer__info-title">图片信息</h2>
+            <button
+              v-if="isMobileLayout"
+              class="ax-viewer__info-close"
+              type="button"
+              aria-label="收起图片信息"
+              @click="infoOpen = false"
+            >
+              <el-icon :size="18"><Close /></el-icon>
+            </button>
+          </header>
           <dl class="ax-viewer__fields">
             <div class="ax-viewer__field">
               <dt>名称</dt>
@@ -830,8 +898,24 @@ onBeforeUnmount(() => {
   border-left: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+/* 移动端摘要与抽屉，桌面端隐藏。 */
+.ax-viewer__summary,
+.ax-viewer__info-backdrop,
+.ax-viewer__info-handle,
+.ax-viewer__info-close {
+  display: none;
+}
+
+.ax-viewer__info-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ax-space-3);
+  margin-bottom: var(--ax-space-3);
+}
+
 .ax-viewer__info-title {
-  margin: 0 0 var(--ax-space-3);
+  margin: 0;
   color: #fff;
   font-size: var(--ax-text-sm);
   font-weight: var(--ax-weight-semibold);
@@ -905,7 +989,7 @@ onBeforeUnmount(() => {
     grid-template-areas:
       'bar'
       'stage'
-      'info';
+      'summary';
     grid-template-rows: auto minmax(0, 1fr) auto;
   }
 
@@ -946,11 +1030,115 @@ onBeforeUnmount(() => {
     right: 8px;
   }
 
+  /* 默认只显示一行关键信息，点击后展开完整抽屉。 */
+  .ax-viewer__summary {
+    display: flex;
+    grid-area: summary;
+    align-items: center;
+    gap: var(--ax-space-2);
+    width: 100%;
+    min-width: 0;
+    padding: 10px 14px calc(10px + env(safe-area-inset-bottom, 0px));
+    color: rgba(255, 255, 255, 0.82);
+    font: inherit;
+    font-size: var(--ax-text-xs);
+    text-align: left;
+    background: rgba(255, 255, 255, 0.06);
+    border: 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    cursor: pointer;
+  }
+
+  .ax-viewer__summary:active {
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  .ax-viewer__summary-icon {
+    flex: none;
+    color: var(--ax-accent-bright);
+  }
+
+  .ax-viewer__summary-text {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .ax-viewer__summary-arrow {
+    flex: none;
+    color: rgba(255, 255, 255, 0.5);
+    transition: transform var(--ax-duration-fast) var(--ax-ease);
+  }
+
+  .ax-viewer__summary-arrow.is-open {
+    transform: rotate(180deg);
+  }
+
+  .ax-viewer__info-backdrop {
+    position: absolute;
+    inset: 0;
+    z-index: 7;
+    display: block;
+    background: rgba(0, 0, 0, 0.5);
+  }
+
   .ax-viewer__info {
-    max-height: 32vh;
-    padding: var(--ax-space-3);
-    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 8;
+    max-height: min(70vh, 620px);
+    padding: 10px var(--ax-space-4) calc(var(--ax-space-4) + env(safe-area-inset-bottom, 0px));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    visibility: hidden;
+    background: #141519;
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
     border-left: none;
+    border-radius: 18px 18px 0 0;
+    box-shadow: 0 -16px 48px rgba(0, 0, 0, 0.5);
+    transform: translateY(calc(100% + 16px));
+    transition:
+      transform 0.24s var(--ax-ease),
+      visibility 0.24s;
+    pointer-events: none;
+  }
+
+  .ax-viewer__info.is-open {
+    visibility: visible;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+
+  .ax-viewer__info-handle {
+    display: block;
+    width: 38px;
+    height: 4px;
+    margin: 0 auto 10px;
+    background: rgba(255, 255, 255, 0.24);
+    border-radius: 999px;
+  }
+
+  .ax-viewer__info-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    color: rgba(255, 255, 255, 0.7);
+    background: rgba(255, 255, 255, 0.08);
+    border: 0;
+    border-radius: 50%;
+    cursor: pointer;
+  }
+
+  .ax-viewer__info-close:active {
+    background: rgba(255, 255, 255, 0.16);
   }
 }
 </style>
