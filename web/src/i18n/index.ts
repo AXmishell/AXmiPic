@@ -1,9 +1,10 @@
 import { createI18n } from 'vue-i18n'
 
 import enUS from './locales/en-US'
+import jaJP from './locales/ja-JP'
 import zhCN from './locales/zh-CN'
 
-export const SUPPORTED_LOCALES = ['zh-CN', 'en-US'] as const
+export const SUPPORTED_LOCALES = ['zh-CN', 'en-US', 'ja-JP'] as const
 export type AppLocale = (typeof SUPPORTED_LOCALES)[number]
 
 export const DEFAULT_LOCALE: AppLocale = 'zh-CN'
@@ -20,6 +21,7 @@ export interface LocaleOption {
 export const LOCALE_OPTIONS: LocaleOption[] = [
   { value: 'zh-CN', label: '简体中文', short: '中' },
   { value: 'en-US', label: 'English', short: 'EN' },
+  { value: 'ja-JP', label: '日本語', short: 'JA' },
 ]
 
 export function isAppLocale(value: unknown): value is AppLocale {
@@ -42,7 +44,10 @@ export function detectLocale(): AppLocale {
   if (typeof navigator === 'undefined') return DEFAULT_LOCALE
   const languages = navigator.languages?.length ? navigator.languages : [navigator.language]
   const preferred = languages.find((value): value is string => typeof value === 'string') ?? ''
-  return preferred.toLowerCase().startsWith('zh') ? 'zh-CN' : 'en-US'
+  const language = preferred.toLowerCase()
+  if (language.startsWith('zh')) return 'zh-CN'
+  if (language.startsWith('ja')) return 'ja-JP'
+  return 'en-US'
 }
 
 export const i18n = createI18n({
@@ -52,6 +57,7 @@ export const i18n = createI18n({
   messages: {
     'zh-CN': zhCN,
     'en-US': enUS,
+    'ja-JP': jaJP,
   },
   // 回退到中文时保持安静，避免在英文环境下刷缺失键告警。
   missingWarn: false,

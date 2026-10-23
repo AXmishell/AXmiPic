@@ -8,6 +8,7 @@ on:
       - '.github/workflows/docs.yml'
       - 'README.md'
       - 'README-CN.md'
+      - 'README-JA.md'
   workflow_dispatch:
 
 permissions:

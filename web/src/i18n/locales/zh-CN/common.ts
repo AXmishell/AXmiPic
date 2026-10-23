@@ -61,6 +61,7 @@ export default {
     switch: '切换语言',
     zhCN: '简体中文',
     enUS: 'English',
+    jaJP: '日本語',
   },
   routes: {
     home: '首页',

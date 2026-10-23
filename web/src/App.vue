@@ -3,6 +3,7 @@ import { computed, watchEffect } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import en from 'element-plus/es/locale/lang/en'
+import ja from 'element-plus/es/locale/lang/ja'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 
 import LocaleSwitcher from '@/components/LocaleSwitcher.vue'
@@ -12,7 +13,11 @@ const route = useRoute()
 const localeStore = useLocaleStore()
 const { t } = useI18n()
 
-const elementLocale = computed(() => (localeStore.locale === 'en-US' ? en : zhCn))
+const elementLocale = computed(() => {
+  if (localeStore.locale === 'en-US') return en
+  if (localeStore.locale === 'ja-JP') return ja
+  return zhCn
+})
 
 /** 标题随路由与语言变化，避免切换语言后仍显示旧文案。 */
 watchEffect(() => {

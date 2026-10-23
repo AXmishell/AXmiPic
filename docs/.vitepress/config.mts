@@ -2,7 +2,7 @@ import process from 'node:process'
 import { defineConfig } from 'vitepress'
 
 export default defineConfig({
-  // English is the default documentation language; Chinese lives under /zh/.
+  // English is the default documentation language; Chinese lives under /zh/ and Japanese under /ja/.
   lang: 'en-US',
   title: 'AXmiPic',
   description: 'Lightweight, reliable self-hosted image hosting',
@@ -88,6 +88,81 @@ export default defineConfig({
     root: {
       label: 'English',
       lang: 'en-US',
+    },
+    ja: {
+      label: '日本語',
+      lang: 'ja-JP',
+      link: '/ja/',
+      themeConfig: {
+        nav: [
+          { text: 'ガイド', link: '/ja/guide/', activeMatch: '/ja/guide/' },
+          { text: 'API', link: '/ja/api/', activeMatch: '/ja/api/' },
+          { text: '開発', link: '/ja/dev/', activeMatch: '/ja/dev/' },
+          { text: 'GitHub', link: 'https://github.com/AXmishell/AXmiPic' },
+        ],
+        sidebar: {
+          '/ja/guide/': [
+            {
+              text: 'ガイド',
+              items: [
+                { text: 'はじめに', link: '/ja/guide/' },
+                { text: 'クイックスタート', link: '/ja/guide/getting-started' },
+                { text: '設定', link: '/ja/guide/configuration' },
+                { text: '画像処理', link: '/ja/guide/image-processing' },
+                { text: 'UI とルート', link: '/ja/guide/ui-and-routes' },
+                { text: 'Docker デプロイ', link: '/ja/guide/deployment' },
+              ],
+            },
+          ],
+          '/ja/api/': [
+            {
+              text: 'API',
+              items: [
+                { text: '概要', link: '/ja/api/' },
+                { text: '認証', link: '/ja/api/auth' },
+                { text: 'アップロード', link: '/ja/api/upload' },
+                { text: '画像とトークン', link: '/ja/api/images' },
+                { text: 'アルバムと画像広場', link: '/ja/api/albums' },
+                { text: '共有', link: '/ja/api/shares' },
+                { text: 'サイトコンテンツ', link: '/ja/api/content' },
+                { text: 'プランと注文', link: '/ja/api/billing' },
+                { text: '決済チャネル', link: '/ja/api/payment' },
+                { text: '画像広場の AI モデレーション', link: '/ja/api/moderation' },
+                { text: '画像セキュリティと通知', link: '/ja/api/security' },
+                { text: 'ロールグループとポリシー', link: '/ja/api/policies' },
+                { text: '管理エンドポイント', link: '/ja/api/admin' },
+              ],
+            },
+          ],
+          '/ja/dev/': [
+            {
+              text: '開発',
+              items: [
+                { text: '開発ガイド', link: '/ja/dev/' },
+                { text: 'SDK', link: '/ja/dev/sdk' },
+                { text: 'プラグインシステム', link: '/ja/dev/plugins' },
+                { text: '継続的インテグレーション', link: '/ja/dev/ci' },
+                { text: 'ディレクトリ構成', link: '/ja/dev/structure' },
+                { text: 'フロントエンド国際化', link: '/ja/dev/i18n' },
+              ],
+            },
+          ],
+        },
+        outline: { level: [2, 3], label: 'このページ' },
+        editLink: {
+          pattern: 'https://github.com/AXmishell/AXmiPic/edit/main/docs/:path',
+          text: 'GitHub でこのページを編集',
+        },
+        docFooter: { prev: '前のページ', next: '次のページ' },
+        lastUpdatedText: '最終更新',
+        returnToTopLabel: 'トップへ戻る',
+        sidebarMenuLabel: 'メニュー',
+        darkModeSwitchLabel: 'テーマ',
+        footer: {
+          message: 'MIT ライセンスで公開',
+          copyright: 'Copyright © AXmiPic',
+        },
+      },
     },
     zh: {
       label: '简体中文',

@@ -2,9 +2,9 @@
 
 轻量、可靠的自托管图床服务。提供图片上传、即时处理、多存储后端与后台管理，后端为单个 Go 二进制，前端为内嵌的单页应用。
 
-> 🌐 简体中文 · [English](README.md)
+> 🌐 简体中文 · [English](README.md) · [日本語](README-JA.md)
 >
-> 📖 完整文档见 **[在线文档站](https://axmipic.gpcn.cc/)**（英文，默认） · **[中文文档](https://axmipic.gpcn.cc/zh/)**。
+> 📖 完整文档见 **[在线文档站](https://axmipic.gpcn.cc/)**（英文，默认） · **[日本語](https://axmipic.gpcn.cc/ja/)** · **[中文文档](https://axmipic.gpcn.cc/zh/)**。
 
 ## 特性
 

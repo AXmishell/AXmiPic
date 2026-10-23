@@ -2,9 +2,9 @@
 
 A lightweight, reliable self-hosted image hosting service. It provides image uploads, on-the-fly processing, multiple storage backends, and an admin console, with a single Go binary backend and an embedded single-page frontend.
 
-> 🌐 English · [简体中文](README-CN.md)
+> 🌐 English · [简体中文](README-CN.md) · [日本語](README-JA.md)
 >
-> 📖 Full documentation: **[Docs](https://axmipic.gpcn.cc/)** (English, default) · **[中文文档](https://axmipic.gpcn.cc/zh/)**.
+> 📖 Full documentation: **[Docs](https://axmipic.gpcn.cc/)** (English, default) · **[日本語](https://axmipic.gpcn.cc/ja/)** · **[中文文档](https://axmipic.gpcn.cc/zh/)**.
 
 ## Features
 
