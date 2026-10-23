@@ -1,40 +1,40 @@
-# 项目简介
+# Introduction
 
-轻量、可靠的自托管图床服务。提供图片上传、即时处理、多存储后端与后台管理，后端为单个 Go 二进制，前端为内嵌的单页应用。
+A lightweight, reliable self-hosted image hosting service. It provides image uploads, on-the-fly processing, multiple storage backends, and an admin console. The backend is a single Go binary, and the frontend is an embedded single-page app.
 
-## 特性
+## Features
 
-- **多种上传方式**：后台界面上传、批量上传、粘贴上传、拖拽上传、`multipart` 接口上传、对象存储预签名直传
-- **一键嵌入代码**：复制图片的 URL、HTML、BBCode 或 Markdown（受角色功能开关控制）
-- **图片与相册分享**：生成分享链接，可选访问密码、有效期与最大访问次数；公开分享页为 `/s/{token}`
-- **站内公告与独立页面**：管理员发布公告（支持置顶与级别）并在仪表盘展示；维护可通过 `/p/{slug}` 公开访问的独立页面
-- **举报管理**：用户举报图片，管理员在后台处理或驳回
-- **套餐与计费**：套餐（价格、有效期、配额、角色组）与优惠券（固定/百分比、门槛、限次、时效），下单、订单管理与可插拔支付渠道
-- **官方支付适配**：支付宝当面付（RSA2 签名/验签）与微信支付 v3（SHA256-RSA 签名、AES-GCM 回调解密），以及人工/模拟渠道
-- **图片安全**：上传内容扫描器（可插拔），内置白名单 + 危险魔数检测，拒绝伪装成图片的可执行内容
-- **通知系统**：可插拔的短信（通用 HTTP 网关）与邮件（SMTP/STARTTLS）渠道，支持后台发送测试
-- **工单系统**：用户提交工单并对接客服，管理员回复与关闭
-- **随机存储键与去重**：存储文件使用按日期分区、随机且不可猜测的键名；内容 `sha256` 单独入库，同一所有者上传相同内容时自动去重，不同所有者各自持有独立对象
-- **保留原始文件名**：存储层使用随机命名后的文件，数据库中单独记录原文件名、存储文件名与哈希值
-- **多图片处理驱动**：纯 Go（默认）、libvips（`-tags libvips`）与 ImageMagick（`magick` 命令）三种处理器，运行时按配置选择并在不可用时回退
-- **即时图片处理**：通过 URL 查询参数实时缩放、裁剪、旋转、翻转、转灰度、模糊、锐化、文字水印与转码，带 ETag 缓存
-- **多存储后端**：本地文件系统、S3 兼容对象存储（AWS S3 / MinIO / Cloudflare R2）、阿里云 OSS、腾讯云 COS、七牛云 Kodo
-- **运行中热切换存储**：后台可随时切换默认存储；已有图片按记录自动路由回其原存储读取，无需重启
-- **数据库可选**：SQLite（默认，开箱即用）或 PostgreSQL
-- **相册与图片广场**：用相册归类图片；图片与相册均可设为公开，出现在跨用户的图片广场与公开相册列表，并提供用户公开资料页
-- **角色组与多策略**：按角色组控制用户的存储配额、上传限制、速率限制、图片处理能力与功能开关；策略可复用、按类型覆盖，注册用户自动加入默认角色组
-- **账户体系**：管理员与普通用户分表管理；JWT 会话 + 长期 API 令牌
-- **界面分离与初始化模式**：公开首页 + 用户中心（`/user`）与管理员控制台（`/admin`）分离；内置 Guest 低权访客与手动访问 `/install` 的初始化模式
-- **配额与限流**：按用户的存储配额，按用户/访客/IP 的速率限制
-- **安全**：密钥 AES-256-GCM 加密存储、bcrypt 密码、纵深防御响应头
+- **Multiple upload methods**: admin UI upload, batch upload, paste upload, drag-and-drop upload, `multipart` API upload, and presigned direct upload to object storage
+- **One-click embed code**: copy an image's URL, HTML, BBCode, or Markdown (controlled by role feature toggles)
+- **Image and album sharing**: generate share links with an optional access password, expiry, and maximum visit count; the public share page is `/s/{token}`
+- **Announcements and standalone pages**: administrators can publish announcements (with pinning and severity levels) shown on the dashboard, and maintain standalone pages publicly accessible at `/p/{slug}`
+- **Report management**: users report images, and administrators handle or dismiss the reports in the admin console
+- **Plans and billing**: plans (price, validity period, quota, role group) and coupons (fixed/percentage, threshold, usage limit, validity), plus checkout, order management, and pluggable payment channels
+- **First-party payment integrations**: Alipay Face-to-Face Payment (RSA2 signing/verification) and WeChat Pay v3 (SHA256-RSA signing, AES-GCM callback decryption), along with manual/mock channels
+- **Image safety**: an upload content scanner (pluggable) with a built-in whitelist and dangerous magic-number detection, rejecting executable content disguised as images
+- **Notification system**: pluggable SMS (generic HTTP gateway) and email (SMTP/STARTTLS) channels, with test sending from the admin console
+- **Ticket system**: users submit tickets and reach support, while administrators reply and close them
+- **Random storage keys and deduplication**: stored files use date-partitioned, random, unguessable key names; the content `sha256` is recorded separately, so the same owner uploading identical content is deduplicated automatically, while different owners each hold an independent object
+- **Original filenames preserved**: the storage layer uses randomly named files, while the database separately records the original filename, stored filename, and hash
+- **Multiple image processing drivers**: pure Go (default), libvips (`-tags libvips`), and ImageMagick (the `magick` command) processors, selected by configuration at runtime with fallback when unavailable
+- **On-the-fly image processing**: real-time resize, crop, rotate, flip, grayscale, blur, sharpen, text watermark, and transcode via URL query parameters, with ETag caching
+- **Multiple storage backends**: local filesystem, S3-compatible object storage (AWS S3 / MinIO / Cloudflare R2), Alibaba Cloud OSS, Tencent Cloud COS, and Qiniu Cloud Kodo
+- **Hot storage switching at runtime**: the default storage can be switched at any time from the admin console; existing images are automatically routed back to their original storage for reads based on their records, with no restart required
+- **Optional database**: SQLite (default, works out of the box) or PostgreSQL
+- **Albums and the image plaza**: organize images into albums; both images and albums can be made public, appearing in the cross-user image plaza and public album listings, with public user profile pages
+- **Role groups and multiple policies**: role groups control a user's storage quota, upload limits, rate limits, image processing capabilities, and feature toggles; policies are reusable and overridable by type, and newly registered users automatically join the default role group
+- **Account system**: administrators and regular users are managed in separate tables; JWT sessions + long-lived API tokens
+- **Separated interfaces and setup mode**: a public landing page + user center (`/user`) separated from the admin console (`/admin`); a built-in low-privilege Guest visitor and a setup mode entered manually at `/install`
+- **Quotas and rate limiting**: per-user storage quotas and per-user/guest/IP rate limits
+- **Security**: secrets encrypted at rest with AES-256-GCM, bcrypt passwords, and defense-in-depth response headers
 
-## 技术栈
+## Tech stack
 
-| 层 | 技术 |
-|----|------|
-| 后端 | Go 1.26、chi 路由、GORM |
-| 数据库 | SQLite（纯 Go 驱动） / PostgreSQL |
-| 图片处理 | 纯 Go（`disintegration/imaging`），可选 libvips（`-tags libvips`） |
-| 对象存储 | 本地 / S3 兼容（minio-go） / 阿里云 OSS SDK / 腾讯云 COS SDK / 七牛云 SDK |
-| 支付 | 微信支付官方 SDK（`wechatpay-apiv3/wechatpay-go`）、支付宝 RSA2（原生）、易支付（原生） |
-| 前端 | Vue 3、Pinia、Vue Router、Element Plus、TypeScript、Vite |
+| Layer | Technology |
+|-------|------------|
+| Backend | Go 1.26, chi router, GORM |
+| Database | SQLite (pure Go driver) / PostgreSQL |
+| Image processing | Pure Go (`disintegration/imaging`), optional libvips (`-tags libvips`) |
+| Object storage | Local / S3-compatible (minio-go) / Alibaba Cloud OSS SDK / Tencent Cloud COS SDK / Qiniu SDK |
+| Payments | Official WeChat Pay SDK (`wechatpay-apiv3/wechatpay-go`), Alipay RSA2 (native), YiPay (native) |
+| Frontend | Vue 3, Pinia, Vue Router, Element Plus, TypeScript, Vite |

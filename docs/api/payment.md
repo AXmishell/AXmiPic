@@ -1,19 +1,19 @@
-# 支付渠道
+# Payment Channels
 
-支付通过 `internal/payment` 的可插拔 `Gateway` 接口实现，内置五种渠道：
+Payments are implemented through the pluggable `Gateway` interface in `internal/payment`, with five built-in channels:
 
-| 渠道 | 说明 |
-|------|------|
-| `manual` | 人工核销：下单后由管理员在后台确认付款 |
-| `mock` | 模拟收银台：仅用于开发，普通用户可自助完成支付 |
-| `alipay` | 支付宝当面付（扫码），RSA2 签名下单与回调验签 |
-| `wechat` | 微信支付 v3 Native 扫码，基于官方 SDK（`wechatpay-apiv3/wechatpay-go`）完成下单与回调验签/解密 |
-| `epay` | 易支付（彩虹易支付兼容）聚合支付，MD5 签名下单与异步通知验签 |
+| Channel | Description |
+|---------|-------------|
+| `manual` | Manual confirmation: after placing an order, an administrator confirms payment in the admin console |
+| `mock` | Mock checkout: for development only; regular users can complete payment themselves |
+| `alipay` | Alipay Face-to-Face Payment (QR code), with RSA2 signing for orders and signature verification for callbacks |
+| `wechat` | WeChat Pay v3 Native QR code, based on the official SDK (`wechatpay-apiv3/wechatpay-go`), handling order creation plus callback signature verification/decryption |
+| `epay` | YiPay (Rainbow YiPay compatible) aggregated payment, with MD5 signing for orders and asynchronous notification verification |
 
-`payment.default_gateway` 选择默认渠道。支付宝在 `payment.alipay` 配置 `app_id`、`private_key`（应用私钥）、`public_key`（支付宝公钥）；微信在 `payment.wechat` 配置 `app_id`、`mch_id`、`serial_no`（商户证书序列号）、`private_key`（商户 API 私钥）、`api_v3_key`（32 字节）、`platform_public_key`（微信支付平台证书公钥，**必填**，用于对回调 `Wechatpay-Signature` 做 RSA 验签）与可选的 `platform_serial_no`；缺少平台公钥时微信渠道将拒绝构造，避免未验签的回调确认支付。易支付在 `payment.epay` 配置 `pid`（商户号）、`key`（MD5 密钥）、`gateway_url`（站点根地址），可选 `api_url`、`submit_url`、`pay_type`（`alipay`/`wxpay`/`qqpay` 等）。凭据齐备并置 `enabled: true` 后渠道会在启动时注册。
+`payment.default_gateway` selects the default channel. For Alipay, configure `app_id`, `private_key` (application private key), and `public_key` (Alipay public key) under `payment.alipay`. For WeChat, configure `app_id`, `mch_id`, `serial_no` (merchant certificate serial number), `private_key` (merchant API private key), `api_v3_key` (32 bytes), `platform_public_key` (WeChat Pay platform certificate public key, **required** for RSA verification of the `Wechatpay-Signature` callback header), and the optional `platform_serial_no` under `payment.wechat`; without the platform public key the WeChat channel refuses to be constructed, preventing confirmation of payments through unverified callbacks. For YiPay, configure `pid` (merchant ID), `key` (MD5 key), and `gateway_url` (site root address) under `payment.epay`, with optional `api_url`, `submit_url`, and `pay_type` (`alipay`/`wxpay`/`qqpay`, etc.). Once credentials are complete and `enabled: true` is set, the channel is registered at startup.
 
-为避免绕过真实支付，普通用户只能自助完成 `mock` 订单；`manual` 订单需管理员通过 `POST /api/v1/admin/orders/{id}/pay` 核销；`alipay`/`wechat`/`epay` 订单只能由支付回调确认，且回调金额会与订单金额核对。
+To prevent bypassing real payments, regular users can only complete `mock` orders themselves; `manual` orders must be confirmed by an administrator via `POST /api/v1/admin/orders/{id}/pay`; and `alipay`/`wechat`/`epay` orders can only be confirmed by payment callbacks, with callback amounts checked against the order amount.
 
-支付设置也可在后台「系统设置 → 支付设置」中在线维护：`GET /api/v1/admin/payment` 读取（密钥仅返回是否已设置），`PUT /api/v1/admin/payment` 保存并即时生效（密钥字段为空表示保持原值）。支付凭据经主密钥加密后保存在数据库的 `settings` 表中；配置文件中的支付配置作为首次启动的兜底并写入数据库。
+Payment settings can also be maintained online in the admin console under "System Settings → Payment Settings": `GET /api/v1/admin/payment` reads them (secrets only report whether they are set), and `PUT /api/v1/admin/payment` saves them with immediate effect (an empty secret field means keep the existing value). Payment credentials are encrypted with the master key and stored in the `settings` table in the database; payment configuration in the configuration file serves as a fallback for the first startup and is written to the database.
 
-下单请求体的 `provider` 字段选择渠道；支付结果回调地址为 `POST /api/v1/payments/{provider}/callback`（支付宝与易支付返回纯文本 `success`，微信返回 200）。`GET /api/v1/payment-gateways` 返回已注册渠道列表。
+The `provider` field in the order request body selects the channel; the payment result callback address is `POST /api/v1/payments/{provider}/callback` (Alipay and YiPay return plain-text `success`; WeChat returns 200). `GET /api/v1/payment-gateways` returns the list of registered channels.

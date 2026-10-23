@@ -3,33 +3,33 @@ layout: home
 
 hero:
   name: AXmiPic
-  text: 轻量、可靠的自托管图床服务
-  tagline: 单个 Go 二进制 + 内嵌单页应用。支持多存储后端、即时图片处理、相册与图片广场、套餐计费与后台管理。
+  text: A lightweight, reliable self-hosted image hosting service
+  tagline: A single Go binary + embedded single-page app. Supports multiple storage backends, on-the-fly image processing, albums and the image plaza, plan billing, and an admin console.
   image:
     src: /favicon.svg
     alt: AXmiPic
   actions:
     - theme: brand
-      text: 快速开始
+      text: Get Started
       link: /guide/getting-started
     - theme: alt
-      text: API 参考
+      text: API Reference
       link: /api/
     - theme: alt
       text: GitHub
       link: https://github.com/AXmishell/AXmiPic
 
 features:
-  - title: 多种上传方式
-    details: 后台界面上传、批量上传、粘贴上传、拖拽上传、multipart 接口与对象存储预签名直传。
-  - title: 即时图片处理
-    details: 通过 URL 查询参数实时缩放、裁剪、旋转、翻转、转灰度、模糊、锐化、文字水印与转码，带 ETag 缓存。
-  - title: 多存储后端
-    details: 本地文件系统、S3 兼容对象存储（AWS / MinIO / R2 / OSS / COS）与七牛云 Kodo，后台可运行中热切换。
-  - title: 账户与权限
-    details: JWT 会话 + 长期 API 令牌，角色组按策略控制配额、限流、处理能力与功能开关，内置 Guest 访客。
-  - title: 站内运营
-    details: 相册与图片广场、分享链接、公告与独立页面、举报处理、工单系统与 AI 图片审查。
-  - title: 套餐与支付
-    details: 套餐、优惠券、订单与可插拔支付渠道（支付宝当面付、微信支付 v3、易支付、人工与模拟）。
+  - title: Multiple upload methods
+    details: Admin UI upload, batch upload, paste upload, drag-and-drop upload, the multipart API, and presigned direct upload to object storage.
+  - title: On-the-fly image processing
+    details: Real-time resize, crop, rotate, flip, grayscale, blur, sharpen, text watermark, and transcode via URL query parameters, with ETag caching.
+  - title: Multiple storage backends
+    details: Local filesystem, S3-compatible object storage (AWS / MinIO / R2 / OSS / COS), and Qiniu Cloud Kodo, hot-switchable at runtime from the admin console.
+  - title: Accounts and permissions
+    details: JWT sessions + long-lived API tokens. Role groups control quotas, rate limits, processing capabilities, and feature toggles through policies, with a built-in Guest role.
+  - title: Site operations
+    details: Albums and the image plaza, share links, announcements and standalone pages, report handling, a ticket system, and AI image moderation.
+  - title: Plans and payments
+    details: Plans, coupons, orders, and pluggable payment channels (Alipay Face-to-Face Payment, WeChat Pay v3, YiPay, manual, and mock).
 ---

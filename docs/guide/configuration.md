@@ -1,103 +1,103 @@
-# 配置说明
+# Configuration
 
-配置文件为 YAML，支持通过环境变量覆盖，前缀为 `AXMIPIC_`（例如 `AXMIPIC_SERVER_PORT=9000`）。完整示例见 `configs/config.example.yaml`。
+The configuration file is YAML and supports overrides through environment variables with the `AXMIPIC_` prefix (for example `AXMIPIC_SERVER_PORT=9000`). See `configs/config.example.yaml` for a complete example.
 
-> **引导项 vs 运行设置**：`config.yaml` 只需保留**引导项**——`server`（监听/`base_url`）、`database`、初始 `storage`、`install`、`logging`，以及可选的 `auth.encryption_key`/`auth.jwt_secret`（主密钥）。其余设置（权限开关、上传/处理/限流/安全/短信/维护/站点等）保存在数据库中，可在后台「系统设置」修改；首次启动时以配置文件为兜底播种，之后以数据库为准。**请勿把密钥明文放进 `config.yaml`**：需要回读的密钥（存储密钥、支付密钥、SMTP 密码等）以密文存数据库，主密钥建议通过环境变量或 0600 密钥文件提供。
+> **Bootstrap items vs. runtime settings**: `config.yaml` only needs to keep **bootstrap items** — `server` (listen/`base_url`), `database`, the initial `storage`, `install`, `logging`, and optionally `auth.encryption_key`/`auth.jwt_secret` (the master key). All other settings (permission toggles, upload/processing/rate-limit/security/SMS/maintenance/site, etc.) are stored in the database and can be changed in the admin console under "System Settings"; on first start the configuration file is used as a fallback to seed them, and afterwards the database takes precedence. **Do not put secrets in plaintext in `config.yaml`**: secrets that must be read back (storage keys, payment keys, SMTP passwords, etc.) are stored encrypted in the database, and the master key should be provided through an environment variable or a 0600 key file.
 
-## 服务器
+## Server
 
 ```yaml
 server:
   host: "0.0.0.0"
   port: 8080
-  base_url: "http://localhost:8080"   # 生成本地存储图片公开 URL 时使用
-  trust_proxy: false                    # 位于可信反向代理之后时才设为 true
+  base_url: "http://localhost:8080"   # used when generating public URLs for locally stored images
+  trust_proxy: false                    # set to true only when behind a trusted reverse proxy
   client_ip:
     source: "remote"                    # remote | x-forwarded-for | x-real-ip | cf-connecting-ip | true-client-ip | x-client-ip | forwarded | custom
-    header: ""                          # source=custom 时的头名
-    trusted_proxies: []                 # 可信代理 CIDR；代理来源下为空则回退 remote
-    xff_depth: 0                        # 0=右起第一个不可信地址
+    header: ""                          # header name when source=custom
+    trusted_proxies: []                 # trusted proxy CIDRs; if empty with a proxy source, falls back to remote
+    xff_depth: 0                        # 0=first untrusted address from the right
   read_timeout_sec: 30
   write_timeout_sec: 30
   shutdown_timeout_sec: 10
-  pprof_enabled: false                   # 挂载受管理员鉴权保护的 pprof（/api/v1/admin/pprof/）
+  pprof_enabled: false                   # mounts pprof protected by admin authentication (/api/v1/admin/pprof/)
 ```
 
-> `trust_proxy` 为 `true` 时才会解析 `X-Forwarded-For` / `X-Real-IP`。直连部署请保持 `false`，否则客户端可伪造来源 IP 绕过限流。
+> `X-Forwarded-For` / `X-Real-IP` are only parsed when `trust_proxy` is `true`. Keep it `false` for direct deployments, otherwise clients can forge their source IP to bypass rate limits.
 
-## 前端热更新（开发）
+## Frontend hot reload (development)
 
-HMR 热更新模式通过配置文件开启，**默认关闭**（使用编译时内嵌的前端产物）：
+HMR mode is enabled through the configuration file and is **disabled by default** (the frontend artifacts embedded at compile time are used):
 
 ```yaml
 web:
   hot_reload:
-    enabled: false                    # 本地开发时改为 true
-    target: "http://127.0.0.1:5173"   # Vite 开发服务器地址
+    enabled: false                    # change to true for local development
+    target: "http://127.0.0.1:5173"   # Vite dev server address
 ```
 
-开启后，后端会把未匹配的前端请求（页面、模块与 HMR WebSocket）反向代理到 `target`，因此浏览器只需访问后端端口（默认 `8080`），前端改动会即时热更新，无需重新构建或刷新。`/api`、`/i/` 与 `/healthz` 仍由后端直接处理，不会转发。
+When enabled, the backend reverse-proxies unmatched frontend requests (pages, modules, and the HMR WebSocket) to `target`, so the browser only needs to access the backend port (default `8080`) and frontend changes hot-reload instantly without rebuilding or refreshing. `/api`, `/i/`, and `/healthz` are still handled directly by the backend and are not forwarded.
 
-使用步骤：
+Usage:
 
 ```bash
-cd web && pnpm dev        # 先启动 Vite 开发服务器
-# 在 configs/config.yaml 中设置 web.hot_reload.enabled: true，然后启动后端
+cd web && pnpm dev        # start the Vite dev server first
+# set web.hot_reload.enabled: true in configs/config.yaml, then start the backend
 ./bin/axmipic -config configs/config.yaml
 ```
 
-> 仅用于本地开发，请勿在生产环境开启；生产环境请移除该项或保持 `false`，并在发布前执行 `make build` 重新内嵌前端产物。也可用环境变量覆盖：`AXMIPIC_WEB_HOT_RELOAD_ENABLED=true`、`AXMIPIC_WEB_HOT_RELOAD_TARGET=http://127.0.0.1:5173`。
+> For local development only; do not enable it in production. In production, remove this section or keep it `false`, and run `make build` before releasing to re-embed the frontend artifacts. You can also override it with environment variables: `AXMIPIC_WEB_HOT_RELOAD_ENABLED=true`, `AXMIPIC_WEB_HOT_RELOAD_TARGET=http://127.0.0.1:5173`.
 
-**客户端真实 IP**：`server.client_ip` 控制限流、访客配额与日志所用的 IP。
-- `source: remote`（默认）忽略所有转发头，直接使用对端地址，最安全。
-- 位于反向代理/Cloudflare 之后时，选择对应来源（如 `x-forwarded-for`、`cf-connecting-ip`），并**必须**配置 `trusted_proxies`（可信代理 CIDR）。只有当直接对端位于可信网段内才解析转发头，否则回退对端地址，防止伪造。
-- `x-forwarded-for` / `forwarded` 默认取「右起第一个不可信地址」；也可用 `xff_depth` 指定右侧跳过的可信代理数量。
-- 非法头值会自动回退对端地址。
+**Real client IP**: `server.client_ip` controls the IP used for rate limiting, guest quotas, and logs.
+- `source: remote` (default) ignores all forwarding headers and uses the peer address directly, which is the safest option.
+- Behind a reverse proxy/Cloudflare, choose the corresponding source (such as `x-forwarded-for`, `cf-connecting-ip`) and you **must** configure `trusted_proxies` (trusted proxy CIDRs). Forwarding headers are only parsed when the direct peer is within a trusted network; otherwise the peer address is used to prevent forgery.
+- `x-forwarded-for` / `forwarded` use "the first untrusted address from the right" by default; `xff_depth` can also specify how many trusted proxies to skip on the right.
+- Invalid header values automatically fall back to the peer address.
 
-## 数据库
+## Database
 
 ```yaml
 database:
   driver: "sqlite"                      # sqlite | postgres | mysql
-  dsn: "./data/axmipic.db"              # sqlite 为文件路径
-  # postgres 使用 libpq 连接串或 URL：
+  dsn: "./data/axmipic.db"              # for sqlite this is a file path
+  # postgres uses a libpq connection string or URL:
   #   host=127.0.0.1 port=5432 user=axmipic password=secret dbname=axmipic sslmode=disable
   #   postgres://axmipic:secret@127.0.0.1:5432/axmipic?sslmode=disable
-  # mysql 使用 go-sql-driver 的 DSN：
+  # mysql uses the go-sql-driver DSN:
   #   axmipic:secret@tcp(127.0.0.1:3306)/axmipic
-  # 连接池上限（默认 25 / 5 / 30 分钟）。0 表示不限制（max_idle_conns 为 0
-  # 表示不保留空闲连接）。
+  # Connection pool limits (defaults 25 / 5 / 30 minutes). 0 means unlimited (max_idle_conns of 0
+  # means no idle connections are kept).
   max_open_conns: 25
   max_idle_conns: 5
   conn_max_lifetime_minutes: 30
 ```
 
-SQLite 会自动启用 `busy_timeout` 与 WAL 模式。
+SQLite automatically enables `busy_timeout` and WAL mode.
 
-MySQL 支持 5.7 及以上（MariaDB 兼容）。连接串中的 `parseTime=true`、`charset=utf8mb4`、`loc=Local` 会自动补齐（已显式指定则不覆盖）。
+MySQL 5.7 and later is supported (MariaDB compatible). `parseTime=true`, `charset=utf8mb4`, and `loc=Local` are automatically appended to the connection string (explicitly specified values are not overridden).
 
-MySQL 5.7 的服务端默认字符集是 `latin1`（8.0 起为 `utf8mb4`）。程序建表时会显式带上 `DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`，因此数据库默认字符集为 `latin1` 也能正常保存中文。推荐仍以 utf8mb4 建库：
+The server-side default character set for MySQL 5.7 is `latin1` (`utf8mb4` since 8.0). When creating tables, the application explicitly adds `DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`, so Chinese text is stored correctly even when the database default charset is `latin1`. Creating the database with utf8mb4 is still recommended:
 
 ```sql
 CREATE DATABASE axmipic CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ```
 
-若数据库中存在**旧版本创建**的 latin1 表，启动日志会输出告警并列出表名，需要手动转换（会重写整表，请在低峰期执行）：
+If the database contains latin1 tables **created by an older version**, the startup log emits a warning and lists the table names. These must be converted manually (this rewrites the entire table, so run it during off-peak hours):
 
 ```sql
 ALTER TABLE `images` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
--- 其它告警中列出的表同理
+-- do the same for the other tables listed in the warning
 ```
 
-5.7 建议保持默认的 InnoDB 大前缀（`innodb_large_prefix=ON`、`innodb_default_row_format=DYNAMIC`），以支持 `utf8mb4` 下的长索引（如 `images.key` 的 `varchar(255)` 唯一索引）。
+For 5.7, keep the default InnoDB large prefix (`innodb_large_prefix=ON`, `innodb_default_row_format=DYNAMIC`) to support long indexes under `utf8mb4` (such as the `varchar(255)` unique index on `images.key`).
 
-## 存储
+## Storage
 
 ```yaml
 storage:
   driver: "local"                       # local | s3 | qiniu | oss | cos
   local:
-    root: "./data/uploads"              # 本地文件存放目录
+    root: "./data/uploads"              # local file storage directory
   s3:
     endpoint: "https://s3.amazonaws.com"
     region: "us-east-1"
@@ -106,7 +106,7 @@ storage:
     secret_access_key: ""
     secure: true
     use_path_style: false
-    public_base_url: ""                 # 可选，CDN 或自定义公网域名
+    public_base_url: ""                 # optional, CDN or custom public domain
     presign_expiry_sec: 900
   qiniu:
     access_key: ""
@@ -118,37 +118,37 @@ storage:
     private: false
     use_https: true
     presign_expiry_sec: 3600
-  oss:                                  # 阿里云 OSS
-    endpoint: ""                        # 可选，留空由 region 推导
-    region: "cn-hangzhou"               # 也接受 oss-cn-hangzhou
+  oss:                                  # Alibaba Cloud OSS
+    endpoint: ""                        # optional; derived from region when empty
+    region: "cn-hangzhou"               # oss-cn-hangzhou is also accepted
     bucket: "axmipic"
     access_key_id: ""
     access_key_secret: ""
-    domain: ""                          # 可选，自定义/CDN 域名
+    domain: ""                          # optional, custom/CDN domain
     private: false
     use_https: true
     presign_expiry_sec: 900
-  cos:                                  # 腾讯云 COS
-    bucket: "axmipic-1250000000"        # 名称-APPID
+  cos:                                  # Tencent Cloud COS
+    bucket: "axmipic-1250000000"        # name-APPID
     region: "ap-guangzhou"
     secret_id: ""
     secret_key: ""
-    domain: ""                          # 可选，自定义/CDN 域名
+    domain: ""                          # optional, custom/CDN domain
     private: false
     use_https: true
     presign_expiry_sec: 900
 ```
 
-配置文件中的存储始终作为兜底后端。更多后端可在后台「存储配置」中动态添加并在运行中切换。
+Storage configured in the configuration file always serves as the fallback backend. Additional backends can be added dynamically in the admin console under "Storage Configuration" and switched at runtime.
 
-**存储池**：在「存储配置 → 存储池」中把多个后端组成池，并选择当前写入池。池只决定新对象写入哪个后端，已有图片始终按 `images.storage_id` 从原后端读取。支持的策略：
+**Storage pools**: under "Storage Configuration → Storage Pools", group multiple backends into a pool and select the current write pool. The pool only determines which backend new objects are written to; existing images are always read from their original backend according to `images.storage_id`. Supported strategies:
 
-- `weighted_rr`：按成员权重加权轮询（默认）；
-- `priority`：优先使用 `Priority` 数值更小的成员，同优先级内加权轮询。
+- `weighted_rr`: weighted round-robin by member weight (default);
+- `priority`: prefer members with a lower `Priority` value, with weighted round-robin within the same priority.
 
-启用存储池前，系统会检查历史图片是否都有 `storage_id`；首次升级时会把旧图片自动归入原当前后端。池成员被禁用或没有可用成员时，上传会失败而不会静默写入兜底存储。
+Before enabling a storage pool, the system checks whether all historical images have a `storage_id`; on the first upgrade, old images are automatically assigned to the previous current backend. If pool members are disabled or no members are available, uploads fail instead of silently writing to the fallback storage.
 
-## 上传与处理
+## Upload and processing
 
 ```yaml
 upload:
@@ -165,161 +165,166 @@ processing:
   max_height: 4096
   default_quality: 82
   allowed_formats: ["jpeg", "png", "gif", "webp", "avif"]
-  cache_mb: 64                          # 派生图进程内缓存（MiB），0 表示禁用
-  max_concurrency: 0                    # 并发渲染数，0 表示按 CPU 核数
-  max_decode_pixels: 16000000           # 单张可解码像素上限（防解压炸弹 / 控内存）
-  max_render_memory_mb: 256             # 并发渲染的总内存预算（MiB）
+  cache_mb: 64                          # in-process cache for derived images (MiB), 0 disables it
+  max_concurrency: 0                    # concurrent renders, 0 means one per CPU core
+  max_decode_pixels: 16000000           # per-image decodable pixel limit (prevents decompression bombs / caps memory)
+  max_render_memory_mb: 256             # total memory budget for concurrent renders (MiB)
 ```
 
-## 运行时与内存
+## Runtime and memory
 
-图片解码是瞬时内存的主要来源。以下选项用于约束峰值并让 GC 更积极地归还内存：
+Image decoding is the main source of transient memory. The following options bound the peak and let the GC return memory more aggressively:
 
 ```yaml
 processing:
-  # 降低 max_concurrency、max_decode_pixels 与 max_render_memory_mb 可显著
-  # 降低峰值内存；被拒绝的超大原图会返回错误而不是拖垮进程。
+  # Lowering max_concurrency, max_decode_pixels, and max_render_memory_mb can significantly
+  # reduce peak memory; oversized originals that are rejected return an error instead of
+  # dragging down the process.
   max_concurrency: 2
   max_decode_pixels: 16000000
   max_render_memory_mb: 256
 
 runtime:
-  # 映射到 GOMEMLIMIT：进程软内存上限（MiB）。0 表示自动：若检测到容器
-  # cgroup 内存限额则取其 90%，否则保持 Go 默认（不限制）。容器中建议显式
-  # 设为容器限额的 60~75%。
+  # Maps to GOMEMLIMIT: the process soft memory limit (MiB). 0 means automatic: if a container
+  # cgroup memory limit is detected, 90% of it is used; otherwise the Go default (no limit) is
+  # kept. In containers, explicitly setting 60–75% of the container limit is recommended.
   memory_limit_mb: 0
-  # 映射到 GOGC：50 更省内存、更耗 CPU；0 保持 Go 默认（100）。
+  # Maps to GOGC: 50 saves memory at the cost of more CPU; 0 keeps the Go default (100).
   gc_percent: 0
 
 plugins:
-  # 每个 WASM 插件线性内存上限（MiB）；0 使用内置默认 64。
+  # Linear memory limit per WASM plugin (MiB); 0 uses the built-in default of 64.
   memory_limit_mb: 64
-  # 空闲自动卸载（分钟）：已启用但超过该时长未被调用的插件会被卸载以释放
-  # 内存，下次调用时透明重载。0 表示关闭。
+  # Idle auto-unload (minutes): plugins that are enabled but have not been called for longer
+  # than this are unloaded to free memory and transparently reloaded on the next call.
+  # 0 disables it.
   idle_unload_minutes: 0
-  # 启动加载模式：lazy（默认）仅登记不实例化、首次使用才加载；eager 启动即
-  # 实例化所有已启用插件。
+  # Startup loading mode: lazy (default) only registers without instantiating and loads on first
+  # use; eager instantiates all enabled plugins at startup.
   startup: "lazy"
-  # 无论启动模式都立即预热的插件名（例如活跃的短信渠道），避免首次调用冷启动。
+  # Plugins to warm up immediately regardless of startup mode (for example an active SMS channel),
+  # avoiding a cold start on the first call.
   preload: []
 ```
 
-> 插件分为**内置**与**外置**：内置插件随宿主编译发布（默认受信、进程内运行、无需沙箱），外置插件必须使用 `runtime: wasm` 并运行在 wazero 沙箱中。旧版 `email.*` / `sms.*` 配置仅用于首次迁移，之后请在后台「插件市场」统一配置。
+> Plugins are either **built-in** or **external**: built-in plugins ship with the host build (trusted by default, run in-process, no sandbox required), while external plugins must use `runtime: wasm` and run in the wazero sandbox. The legacy `email.*` / `sms.*` configuration is only used for the initial migration; configure them centrally under "Plugin Marketplace" in the admin console afterwards.
 
-> 插件启用/暂停与空闲卸载都是动态的，无需重启：暂停会立刻释放其 wazero 运行时，空闲卸载在下次调用时按需重建。启动时只实例化「启用」的插件，被暂停的插件不再在启动瞬间占用内存。后台「插件」页可查看每个插件的启用/加载状态；`GET /api/v1/admin/plugins/installed` 的 `memory_bytes` 字段显示已加载 WASM 插件的线性内存占用。
+> Plugin enabling/pausing and idle unloading are all dynamic and require no restart: pausing immediately releases the plugin's wazero runtime, and idle unloading rebuilds it on demand at the next call. Only "enabled" plugins are instantiated at startup, so paused plugins no longer consume memory at startup. The admin console's "Plugins" page shows each plugin's enabled/loaded status; the `memory_bytes` field of `GET /api/v1/admin/plugins/installed` shows the linear memory usage of loaded WASM plugins.
 
-## 通知渠道（内置插件）
+## Notification channels (built-in plugins)
 
-短信与邮件的配置已迁移到「插件市场」，配置文件中的 `sms` / `email` 仅作为首次启动的迁移种子：
+SMS and email configuration has moved to the "Plugin Marketplace"; `sms` / `email` in the configuration file are only used as migration seeds on first start:
 
 ```yaml
 plugins:
-  # 外置插件目录；内置插件无需此目录。
+  # External plugin directory; built-in plugins do not need this directory.
   dir: "./plugins"
 
-# 以下为旧版引导项，仅在首次迁移时读取，之后以插件配置为准。
+# The following are legacy bootstrap items, read only during the initial migration; plugin configuration takes precedence afterwards.
 sms:
   enabled: false
 email:
   enabled: false
 ```
 
-内置通知插件：
+Built-in notification plugins:
 
-- `builtin-sms-log` / `builtin-email-log`：日志渠道，调试用，默认当前渠道；
-- `builtin-sms-http`：通用 HTTP 短信网关（`provider`/`endpoint`/`method`）；
-- `builtin-email-smtp`：SMTP 邮件（`host`/`port`/`username`/`password`/`from`/`use_tls`）。
+- `builtin-sms-log` / `builtin-email-log`: log channels for debugging, the current channel by default;
+- `builtin-sms-http`: generic HTTP SMS gateway (`provider`/`endpoint`/`method`);
+- `builtin-email-smtp`: SMTP email (`host`/`port`/`username`/`password`/`from`/`use_tls`).
 
-在后台「插件市场」配置字段，并用「设为当前」切换短信/邮件当前渠道；也可调用
-`PUT /api/v1/admin/plugins/active`。密文字段以 AES-256-GCM 加密存储，接口不回显。
+Configure the fields in the admin console's "Plugin Marketplace" and use "Set as current" to switch the current SMS/email channel; you can also call
+`PUT /api/v1/admin/plugins/active`. Ciphertext fields are stored encrypted with AES-256-GCM and are never echoed back by the API.
 
 
-> 也可以用标准环境变量 `GOMEMLIMIT` / `GOGC` 覆盖，两者等价。生产环境处理大图时，优先使用 `-tags libvips` 构建（内存与 CPU 都优于纯 Go 处理器）。
+> You can also override with the standard environment variables `GOMEMLIMIT` / `GOGC`, which are equivalent. When processing large images in production, prefer building with `-tags libvips` (better than the pure Go processor in both memory and CPU).
 
-开启 `server.pprof_enabled` 后，可通过管理端 `GET /api/v1/admin/pprof/`（需管理员令牌）获取 heap/goroutine/profile 等剖析数据；排查完成请及时关闭。
+With `server.pprof_enabled` enabled, you can retrieve heap/goroutine/profile and other profiling data through the admin endpoint `GET /api/v1/admin/pprof/` (requires an admin token); disable it promptly once troubleshooting is done.
 
-## 认证与限流
+## Authentication and rate limiting
 
 ```yaml
 auth:
-  jwt_secret: ""                        # 留空时自动生成并持久化（见下方说明）
-  encryption_key: ""                    # 可选：仅用于加密存储后端密钥，留空回退 jwt_secret
+  jwt_secret: ""                        # generated and persisted automatically when empty (see below)
+  encryption_key: ""                    # optional: only used to encrypt storage backend secrets; falls back to jwt_secret when empty
   session_ttl_hours: 24
   allow_registration: true
-  require_auth: true                    # true 时仅登录用户可上传
-  default_quota_mb: 1024                # 每用户配额，0 表示不限
-  bootstrap_admin: ""                   # 仅当无管理员时播种，格式 "用户名:密码"
+  require_auth: true                    # when true, only logged-in users can upload
+  default_quota_mb: 1024                # per-user quota, 0 means unlimited
+  bootstrap_admin: ""                   # seeded only when no administrator exists, format "username:password"
 
 limits:
   upload_per_minute: 30
   upload_burst: 5
   guest_per_minute: 6
   guest_burst: 2
-  image_per_minute: 600                 # 公开图片读取/处理的每 IP 限流
+  image_per_minute: 600                 # per-IP rate limit for public image reads/processing
   image_burst: 120
-  share_per_minute: 30                  # 分享访问（密码校验）的每 IP 限流，防暴力破解
+  share_per_minute: 30                  # per-IP rate limit for share access (password checks), prevents brute force
   share_burst: 10
 ```
 
-生产环境与多实例部署请务必显式设置固定的 `auth.jwt_secret`。当日 `jwt_secret` 与 `encryption_key` 都留空时，服务会生成一个主密钥并持久化到磁盘（SQLite 场景为数据库同目录下的 `.axmipic-key`，否则为 `./data/.axmipic-key`），从而保证重启后已加密入库的存储密钥仍可解密；单实例部署可依赖此机制开箱即用。
+For production and multi-instance deployments, always set a fixed `auth.jwt_secret` explicitly. When both `jwt_secret` and `encryption_key` are empty, the service generates a master key and persists it to disk (in the SQLite case, `.axmipic-key` in the same directory as the database; otherwise `./data/.axmipic-key`), so storage secrets already encrypted in the database can still be decrypted after a restart; single-instance deployments can rely on this mechanism and work out of the box.
 
-## 访客与安装
+## Guests and setup
 
 ```yaml
 auth:
-  # 允许未登录访客上传（使用 Guest 低权角色组）。
+  # Allow unauthenticated guests to upload (using the low-privilege Guest role group).
   allow_guest_upload: true
-  # 每个访客（按签名 cookie）的配额（MiB）与单文件上限（MiB）。
+  # Quota (MiB) and per-file limit (MiB) for each guest (identified by a signed cookie).
   guest_quota_mb: 64
   guest_upload_max_mb: 5
-  # 单个客户端 IP 在 24 小时窗口内的访客累计上传总量（MiB，0 表示不限）。
+  # Total guest upload volume (MiB, 0 means unlimited) per client IP within a 24-hour window.
   guest_ip_quota_mb: 512
 
 install:
-  # 该锁文件存在即视为已初始化；删除它并重启可重新进入初始化模式。
+  # The instance is considered initialized once this lock file exists; delete it and restart to
+  # enter setup mode again.
   lock_file: "./data/install.lock"
-  # 初始化模式会重写的配置文件路径。
+  # Path of the configuration file that setup mode rewrites.
   config_path: "./configs/config.yaml"
-  # 完全跳过初始化检查（测试 / 容器编排）。前端路由不会自动检测锁文件，
-  # 未初始化时也正常展示站点，需用户主动访问 /install。
+  # Completely skip the setup check (testing / container orchestration). Frontend routes do not
+  # detect the lock file automatically and display the site normally even when uninitialized;
+  # users must visit /install manually.
   disabled: false
 ```
 
-## 管理员安全入口
+## Admin secure entry
 
-安全入口默认在后台「系统设置 → 运行设置」中开启并保存在数据库，入口格式为：
+The secure entry is enabled by default in the admin console under "System Settings → Runtime Settings" and stored in the database. The entry format is:
 
 ```text
-https://<站点地址>/admin/entry/<32字节随机token>
+https://<site-address>/admin/entry/<32-byte-random-token>
 ```
 
-开启后：
+When enabled:
 
-- 普通 `/admin/login` 返回 404；
-- 未持有入口 Cookie 时，管理员登录接口同样返回 404；
-- 访问安全入口会写入 10 分钟有效的 HttpOnly 入口 Cookie，然后跳转到 `/admin/login`；
-- 登录成功后清除入口 Cookie；
-- 开启、关闭、轮换均需要当前密码；启用 TOTP 时还需动态验证码。
+- the regular `/admin/login` returns 404;
+- without the entry cookie, the admin login API also returns 404;
+- visiting the secure entry sets an entry cookie valid for 10 minutes (HttpOnly) and then redirects to `/admin/login`;
+- the entry cookie is cleared after a successful login;
+- enabling, disabling, and rotating all require the current password; when TOTP is enabled, a dynamic verification code is also required.
 
-数据库中的 token 使用 AES-GCM 加密存储。忘记入口或需要紧急关闭时，可用配置文件/环境变量强制覆盖：
+The token is stored encrypted with AES-GCM in the database. If you forget the entry or need to disable it urgently, force an override through the configuration file or environment variables:
 
 ```yaml
 admin_entry:
-  # true 时以本配置为准；后台不能再修改安全入口。
+  # When true, this configuration takes precedence; the secure entry can no longer be changed in the admin console.
   override: true
   enabled: false
-  # enabled=true 时必填，16-128 位 URL-safe 字符。
+  # Required when enabled=true, 16-128 URL-safe characters.
   token: ""
 ```
 
-对应环境变量：
+Corresponding environment variables:
 
 ```bash
 AXMIPIC_ADMIN_ENTRY_OVERRIDE=true
 AXMIPIC_ADMIN_ENTRY_ENABLED=false
-# 恢复/强制指定入口时：
+# To restore/force a specific entry:
 # AXMIPIC_ADMIN_ENTRY_ENABLED=true
 # AXMIPIC_ADMIN_ENTRY_TOKEN=<token>
 ```
 
-恢复后建议通过后台重新生成入口，并移除应急覆盖配置。
+After restoring, regenerate the entry from the admin console and remove the emergency override configuration.

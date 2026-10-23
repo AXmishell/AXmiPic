@@ -1,9 +1,9 @@
 # API
 
-所有接口以 `/api/v1` 为前缀，请求头使用 `Authorization: Bearer <令牌>`（会话 JWT 或 API 令牌）。响应统一为：
+All endpoints are prefixed with `/api/v1`, and requests use the `Authorization: Bearer <token>` header (a session JWT or an API token). Responses share a uniform shape:
 
 ```json
 { "code": 0, "message": "ok", "data": {} }
 ```
 
-`code` 为 0 表示成功；错误时 `code` 为对应 HTTP 状态码，`data` 为 `null`。
+A `code` of 0 indicates success; on error, `code` is the corresponding HTTP status code and `data` is `null`.

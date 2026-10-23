@@ -1,33 +1,33 @@
-# 图片处理
+# Image Processing
 
-图片通过 `/i/<存储键>` 访问，可在查询串中附加处理参数：
+Images are accessed via `/i/<storage-key>`, and processing parameters can be appended to the query string:
 
 ```
 http://localhost:8080/i/2026/10/05/6f1c…a2.png?w=400&h=300&fit=cover&f=webp&q=80
 ```
 
-| 参数 | 含义 | 取值 |
-|------|------|------|
-| `w` | 目标宽度 | 像素 |
-| `h` | 目标高度 | 像素 |
-| `fit` | 缩放策略 | `contain`（默认，等比缩放）/ `cover`（裁剪填充）/ `fill`（拉伸填充，`cover`/`fill` 均需同时给出 `w`、`h`） |
-| `q` | 输出质量 | 1–100，缺省用 `processing.default_quality` |
-| `f` | 输出格式 | `jpeg`/`png`/`gif`/`webp`/`avif`（受 `processing.allowed_formats` 与处理器能力限制） |
-| `r` | 旋转角度 | `90`/`180`/`270` |
-| `flip` | 翻转 | `h`（水平）/`v`（垂直）/`hv`（同时） |
-| `gray` | 转灰度 | `1`/`true` |
-| `blur` | 高斯模糊半径 | 0–100 |
-| `sharpen` | 锐化强度 | 0–100 |
-| `wm` | 文字水印内容 | 任意文本（最长 200 字符） |
-| `wm_pos` | 水印位置 | `top-left`/`top-right`/`bottom-left`/`bottom-right`/`center` |
-| `wm_opacity` | 水印不透明度 | 0–100（默认 80） |
-| `wm_size` | 水印字号 | 像素，0 表示自适应 |
-| `wm_color` | 水印颜色 | 十六进制，如 `#ffffff` |
-| `enlarge` | 是否允许放大 | `1`/`true`/`yes`/`on` |
+| Parameter | Meaning | Values |
+|-----------|---------|--------|
+| `w` | Target width | pixels |
+| `h` | Target height | pixels |
+| `fit` | Resize strategy | `contain` (default, scale proportionally) / `cover` (crop to fill) / `fill` (stretch to fill; both `cover`/`fill` require `w` and `h`) |
+| `q` | Output quality | 1–100, defaults to `processing.default_quality` |
+| `f` | Output format | `jpeg`/`png`/`gif`/`webp`/`avif` (limited by `processing.allowed_formats` and processor capabilities) |
+| `r` | Rotation angle | `90`/`180`/`270` |
+| `flip` | Flip | `h` (horizontal) / `v` (vertical) / `hv` (both) |
+| `gray` | Convert to grayscale | `1`/`true` |
+| `blur` | Gaussian blur radius | 0–100 |
+| `sharpen` | Sharpening strength | 0–100 |
+| `wm` | Text watermark content | any text (up to 200 characters) |
+| `wm_pos` | Watermark position | `top-left`/`top-right`/`bottom-left`/`bottom-right`/`center` |
+| `wm_opacity` | Watermark opacity | 0–100 (default 80) |
+| `wm_size` | Watermark font size | pixels, 0 means automatic |
+| `wm_color` | Watermark color | hexadecimal, e.g. `#ffffff` |
+| `enlarge` | Whether to allow upscaling | `1`/`true`/`yes`/`on` |
 
-带处理参数的响应会附带 `ETag`，支持 `If-None-Match` 返回 `304`。
+Responses with processing parameters include an `ETag` and support `If-None-Match` to return `304`.
 
-`processing` 配置提供开关与默认值：
+The `processing` configuration provides the switches and defaults:
 
 ```yaml
 processing:
@@ -36,30 +36,30 @@ processing:
   max_height: 4096
   default_quality: 82
   allowed_formats: ["jpeg", "png", "gif", "webp", "avif"]
-  allow_enlarge: false      # 是否允许放大
-  allow_effects: true       # 是否允许灰度/模糊/锐化
-  allow_watermark: true     # 是否允许通过 URL 加水印
-  watermark_text: ""        # 非空时为所有变换强制叠加该水印
+  allow_enlarge: false      # whether upscaling is allowed
+  allow_effects: true       # whether grayscale/blur/sharpen are allowed
+  allow_watermark: true     # whether watermarks can be added via URL
+  watermark_text: ""        # when non-empty, this watermark is forcibly applied to all transformations
 ```
 
-前端「图片处理」页面（`/processing`）提供上述参数的实时预览，并生成可复制的处理链接。
+The frontend "Image Processing" page (`/processing`) offers live previews of the parameters above and generates copyable processing links.
 
-## 使用 libvips 处理器（可选）
+## Using the libvips processor (optional)
 
-默认使用纯 Go 处理器（支持 JPEG/PNG/GIF 输出）。如需 WebP/AVIF 输出与更高性能，可在安装 libvips 后使用：
+The pure Go processor is used by default (supports JPEG/PNG/GIF output). For WebP/AVIF output and higher performance, install libvips and build with:
 
 ```bash
 go build -tags libvips -o bin/axmipic ./cmd/axmipic
 ```
 
-## 图片处理驱动
+## Image processing drivers
 
-`processing.driver` 选择运行时使用的处理器，未知或不可用的驱动会在启动时回退到 `purego`：
+`processing.driver` selects the processor used at runtime; unknown or unavailable drivers fall back to `purego` at startup:
 
-| 驱动 | 说明 | 依赖 |
-|------|------|------|
-| `purego` | 纯 Go（默认），支持 JPEG/PNG/GIF 输出 | 无 |
-| `libvips` | libvips/bimg，额外支持 WebP/AVIF 与更高性能 | `-tags libvips` + CGO + libvips |
-| `magick` | ImageMagick 命令行，额外支持 WebP/AVIF | 系统安装 `magick` 或 `convert` |
+| Driver | Description | Requirements |
+|--------|-------------|--------------|
+| `purego` | Pure Go (default), supports JPEG/PNG/GIF output | none |
+| `libvips` | libvips/bimg, additionally supports WebP/AVIF with higher performance | `-tags libvips` + CGO + libvips |
+| `magick` | ImageMagick command line, additionally supports WebP/AVIF | `magick` or `convert` installed on the system |
 
-`GET /api/v1/admin/imaging/drivers` 返回当前二进制可用的驱动与正在使用的处理器。
+`GET /api/v1/admin/imaging/drivers` returns the drivers available in the current binary and the processor in use.

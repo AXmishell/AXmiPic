@@ -1,25 +1,25 @@
-# 分享
+# Shares
 
-分享链接可指向单张图片或整个相册，支持可选的访问密码、有效期（小时）与最大访问次数。
+A share link can point to a single image or an entire album, with an optional access password, expiry (in hours), and maximum view count.
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| POST | `/shares` | 创建分享（体见下） |
-| GET | `/shares` | 当前账号创建的分享 |
-| DELETE | `/shares/{id}` | 撤销分享 |
-| GET | `/shares/{token}` | 分享公开信息（无需登录，用于判断是否需要密码） |
-| POST | `/shares/{token}/access` | 校验密码并返回内容（无需登录） |
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/shares` | Create a share (body below) |
+| GET | `/shares` | Shares created by the current account |
+| DELETE | `/shares/{id}` | Revoke a share |
+| GET | `/shares/{token}` | Public share information (no login required; used to determine whether a password is needed) |
+| POST | `/shares/{token}/access` | Verify the password and return the content (no login required) |
 
-创建请求体示例：
+Sample create request body:
 
 ```json
 {
   "target_type": "image",
-  "target_id": "<image_id 或 album_id>",
-  "password": "可选",
+  "target_id": "<image_id or album_id>",
+  "password": "optional",
   "expires_in_hours": 24,
   "max_views": 100
 }
 ```
 
-`target_type` 取值为 `image` 或 `album`。`password` 为空表示无需密码；`expires_in_hours` 与 `max_views` 为 0 或省略表示不限制。访问受密码保护的分享时，`POST /shares/{token}/access` 需在请求体携带 `{"password":"…"}`。加密分享通过角色组的 `share` 与 `share_password` 功能开关控制。分享的公开页面为 `/s/{token}`。
+`target_type` is `image` or `album`. An empty `password` means no password is required; `expires_in_hours` and `max_views` being 0 or omitted means no limit. When accessing a password-protected share, `POST /shares/{token}/access` must include `{"password":"…"}` in the request body. Password-protected shares are controlled by the role group's `share` and `share_password` feature toggles. The public page for a share is `/s/{token}`.

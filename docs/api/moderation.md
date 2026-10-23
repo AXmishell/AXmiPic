@@ -1,31 +1,31 @@
-# 图片广场 AI 审查
+# Image Plaza AI Moderation
 
-对用户上传的图片，可在其「开放到图片广场」（设为公开）之前调用视觉模型做内容审查。审查**仅作用于图片广场**：未通过审查的图片不会公开，仍保存在用户自己的私有图片中。
+Before an uploaded image is "opened to the image plaza" (made public), a vision model can be called to perform content moderation. Moderation **applies only to the image plaza**: images that fail moderation are not made public and remain in the user's own private images.
 
-配置方式有两种，**数据库中的设置优先**：
+There are two ways to configure it, and **database settings take precedence**:
 
-1. **后台在线配置（推荐，保存即时生效、无需重启）**：「系统设置 → AI 审查」页面，或 `GET/PUT /api/v1/admin/moderation`。密钥经主密钥加密后保存在数据库 `settings` 表，接口仅返回是否已设置（`api_key_set`）。
-2. **配置文件 / 环境变量（首次启动的兜底）**：`moderation.*` 段或 `AXMIPIC_MODERATION_*`。数据库无记录时以它初始化并写入数据库。
+1. **Online configuration in the admin console (recommended; takes effect immediately without a restart)**: the "System Settings → AI Moderation" page, or `GET/PUT /api/v1/admin/moderation`. The key is encrypted with the master key and stored in the database `settings` table; the API only reports whether it is set (`api_key_set`).
+2. **Configuration file / environment variables (fallback for first startup)**: the `moderation.*` section or `AXMIPIC_MODERATION_*`. When there is no database record, it is initialized from this and written to the database.
 
-| 配置 | 说明 |
-|------|------|
-| `moderation.enabled` | 是否启用图片广场 AI 审查 |
-| `moderation.base_url` | 标准 OpenAI 兼容接口根地址，如 `https://api.openai.com/v1` |
-| `moderation.api_key` | 接口密钥（Bearer）；在线保存时留空表示保持原密钥 |
-| `moderation.model` | 视觉模型名，如 `gpt-4o-mini` |
-| `moderation.timeout_sec` | 单次审查请求超时（秒，默认 30） |
-| `moderation.prompt` | 覆盖默认审查提示词（默认要求模型只回答 `SAFE` 或 `UNSAFE`） |
-| `moderation.max_image_mb` | 送审图片体积上限（MiB，默认 10）；超过按未通过处理 |
+| Setting | Description |
+|---------|-------------|
+| `moderation.enabled` | Whether image plaza AI moderation is enabled |
+| `moderation.base_url` | Root URL of a standard OpenAI-compatible API, e.g. `https://api.openai.com/v1` |
+| `moderation.api_key` | API key (Bearer); leave empty when saving online to keep the existing key |
+| `moderation.model` | Vision model name, e.g. `gpt-4o-mini` |
+| `moderation.timeout_sec` | Timeout for a single moderation request (seconds; default 30) |
+| `moderation.prompt` | Override the default moderation prompt (by default the model must answer only `SAFE` or `UNSAFE`) |
+| `moderation.max_image_mb` | Maximum size of an image submitted for moderation (MiB; default 10); larger images are treated as failed |
 
-行为与兜底：
+Behavior and fallbacks:
 
-- 图片通过 `POST /api/v1/images/batch` 设为公开时逐张审查（并发上限 4），通过的公开、未通过的强制保持私有；响应会附带 `published` 与 `blocked`（被拦下的图片 id），前端据此提示用户。
-- **保守拒绝**：模型返回空内容、无法识别，或接口调用失败（网络/超时/非 200）时，一律视为审查不通过，图片保持私有。
-- 已经是公开的图片不会重复审查；将图片设为私有不触发审查。
-- 该审查是「公开前」的闸门，不改变上传本身——图片始终先私有入库。
-- 后台保存后会即时重建运行中的审查器，无需重启。
+- When images are made public via `POST /api/v1/images/batch`, each is moderated individually (concurrency limit 4). Those that pass become public; those that fail are forced to stay private. The response includes `published` and `blocked` (the IDs of blocked images), which the frontend uses to inform the user.
+- **Fail closed**: if the model returns empty content or an unrecognizable result, or the API call fails (network/timeout/non-200), moderation is always treated as failed and the image stays private.
+- Images that are already public are not moderated again; setting an image to private does not trigger moderation.
+- This moderation is a gate "before going public" and does not change the upload itself—images are always stored privately first.
+- After saving in the admin console, the running moderator is rebuilt immediately; no restart is needed.
 
-示例：
+Example:
 
 ```yaml
 moderation:

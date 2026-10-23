@@ -1,17 +1,17 @@
-# 站点内容（公告 / 举报 / 独立页面）
+# Site Content (Announcements / Reports / Standalone Pages)
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/announcements` | 已发布公告（无需登录） |
-| GET | `/pages/{slug}` | 已发布独立页面（无需登录） |
-| POST | `/reports` | 提交举报（`{"image_id":"…","reason":"…","detail":"…"}`，`image_id` 可选） |
-| GET/POST | `/admin/announcements` | 公告列表 / 新建 |
-| PUT/DELETE | `/admin/announcements/{id}` | 修改 / 删除公告 |
-| GET | `/admin/reports` | 举报列表（可带 `?status=pending\|resolved\|rejected`） |
-| PATCH | `/admin/reports/{id}` | 处理举报（`{"status":"resolved","note":"…"}`） |
-| GET/POST | `/admin/pages` | 独立页面列表 / 新建 |
-| PUT/DELETE | `/admin/pages/{id}` | 修改 / 删除页面 |
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/announcements` | Published announcements (no login required) |
+| GET | `/pages/{slug}` | Published standalone pages (no login required) |
+| POST | `/reports` | Submit a report (`{"image_id":"…","reason":"…","detail":"…"}`; `image_id` is optional) |
+| GET/POST | `/admin/announcements` | Announcement list / create |
+| PUT/DELETE | `/admin/announcements/{id}` | Update / delete an announcement |
+| GET | `/admin/reports` | Report list (optionally with `?status=pending\|resolved\|rejected`) |
+| PATCH | `/admin/reports/{id}` | Handle a report (`{"status":"resolved","note":"…"}`) |
+| GET/POST | `/admin/pages` | Standalone page list / create |
+| PUT/DELETE | `/admin/pages/{id}` | Update / delete a page |
 
-公告的 `level` 取值为 `info`/`success`/`warning`/`danger`，可置顶（`pinned`）与设为草稿（`published=false`）。独立页面的 `slug` 仅允许小写字母、数字与连字符，公开地址为 `/p/{slug}`，前端以轻量 Markdown 渲染内容。
+An announcement's `level` is `info`/`success`/`warning`/`danger`, and it can be pinned (`pinned`) or saved as a draft (`published=false`). A standalone page's `slug` allows only lowercase letters, digits, and hyphens; its public address is `/p/{slug}`, and the frontend renders the content as lightweight Markdown.
 
-`GET /admin/reports` 支持 `page`、`page_size`（默认 20，最大 200）与 `status`。传入分页参数时返回 `{items,total,page,page_size}`，不传时保持旧数组响应。
+`GET /admin/reports` supports `page`, `page_size` (default 20, maximum 200), and `status`. When pagination parameters are passed it returns `{items,total,page,page_size}`; otherwise it keeps the legacy array response.

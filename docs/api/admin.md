@@ -1,37 +1,37 @@
-# 管理接口（需管理员）
+# Admin Endpoints (Administrator Required)
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/admin/stats` | 实例统计 |
-| GET | `/admin/customers` | 普通用户列表 |
-| GET/POST | `/admin/admins` | 管理员列表 / 新建管理员 |
-| PATCH/DELETE | `/admin/customers/{id}` | 启用/禁用、删除普通用户 |
-| PATCH/DELETE | `/admin/admins/{id}` | 启用/禁用、删除管理员 |
-| GET/POST | `/admin/storage` | 存储后端列表 / 新建 |
-| GET/PUT/DELETE | `/admin/storage/{id}` | 存储后端详情 / 修改 / 删除 |
-| POST | `/admin/storage/{id}/activate` | 切换默认存储后端（热切换） |
-| GET/POST | `/admin/storage/pools` | 存储池列表 / 新建 |
-| GET/PUT/DELETE | `/admin/storage/pools/{id}` | 存储池详情 / 修改 / 删除 |
-| POST | `/admin/storage/pools/{id}/activate` | 将存储池设为当前写入目标 |
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/admin/stats` | Instance statistics |
+| GET | `/admin/customers` | Regular user list |
+| GET/POST | `/admin/admins` | Administrator list / create administrator |
+| PATCH/DELETE | `/admin/customers/{id}` | Enable/disable or delete a regular user |
+| PATCH/DELETE | `/admin/admins/{id}` | Enable/disable or delete an administrator |
+| GET/POST | `/admin/storage` | Storage backend list / create |
+| GET/PUT/DELETE | `/admin/storage/{id}` | Storage backend details / update / delete |
+| POST | `/admin/storage/{id}/activate` | Switch the default storage backend (hot switch) |
+| GET/POST | `/admin/storage/pools` | Storage pool list / create |
+| GET/PUT/DELETE | `/admin/storage/pools/{id}` | Storage pool details / update / delete |
+| POST | `/admin/storage/pools/{id}/activate` | Make a storage pool the current write target |
 
-存储后端的密钥（S3/七牛的 Secret）以密文入库，接口仅返回「是否已设置」，不回传明文。
+Storage backend secrets (S3/Qiniu Secret) are stored encrypted in the database; the API only returns whether they are set and never returns plaintext.
 
-存储池只决定**新对象写入哪个后端**，已有图片仍按 `images.storage_id` 从原后端读取。`policy` 支持 `weighted_rr`（加权轮询，默认）与 `priority`（数值越小越优先）。启用存储池前会检查历史图片是否都已记录 `storage_id`；未记录时会拒绝并要求先回填，避免旧图片读取错位。
+A storage pool only determines **which backend new objects are written to**; existing images are still read from their original backend according to `images.storage_id`. `policy` supports `weighted_rr` (weighted round-robin, the default) and `priority` (lower values take precedence). Before enabling a storage pool, the system checks whether all historical images have a recorded `storage_id`; if some do not, it refuses and requires backfilling first, avoiding misrouted reads of old images.
 
-## 普通用户列表分页与筛选
+## Customer List Pagination and Filtering
 
-`GET /admin/customers` 在不带任何查询参数时保持旧行为，返回全量用户数组（Go/TypeScript SDK 依赖该形状）。提供以下任一参数时返回分页对象：
+Without any query parameters, `GET /admin/customers` keeps its legacy behavior and returns a full array of users (the Go/TypeScript SDKs depend on this shape). When any of the following parameters is provided, it returns a paginated object:
 
-| 参数 | 说明 |
-|------|------|
-| `page` | 页码，从 1 开始（默认 1） |
-| `page_size` | 每页数量（默认 20，最大 200） |
-| `keyword` | 按用户名或邮箱模糊匹配 |
-| `status` | `enabled` / `disabled`，空表示全部 |
-| `role_group_id` | 按角色组过滤 |
-| `sort` | `newest`（默认）/ `oldest` / `username` / `usage` |
+| Parameter | Description |
+|-----------|-------------|
+| `page` | Page number, starting at 1 (default 1) |
+| `page_size` | Number of items per page (default 20, maximum 200) |
+| `keyword` | Fuzzy match by username or email |
+| `status` | `enabled` / `disabled`; empty means all |
+| `role_group_id` | Filter by role group |
+| `sort` | `newest` (default) / `oldest` / `username` / `usage` |
 
-分页响应：
+Paginated response:
 
 ```json
 {
