@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
 import { toApiError } from '@/api/client'
@@ -7,7 +7,7 @@ import { listPlaza } from '@/api/images'
 import type { ImageItem } from '@/api/types'
 import ImageViewer from '@/components/ImageViewer.vue'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const props = withDefaults(defineProps<{ pageSize?: number }>(), { pageSize: 30 })
 
 const items = ref<ImageItem[]>([])
@@ -88,6 +88,11 @@ function retry(): void {
   hasMore.value = true
   void loadMore()
 }
+
+// 前端兜底错误文案由 t() 生成；切换语言后重新请求，避免错误状态停留在旧语言。
+watch(locale, () => {
+  if (errorMessage.value) retry()
+})
 
 function onPreviewError(id: string): void {
   failedIds.value.add(id)

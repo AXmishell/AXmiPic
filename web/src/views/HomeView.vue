@@ -20,6 +20,7 @@ import { toApiError } from '@/api/client'
 import type { Announcement, ImageItem } from '@/api/types'
 import BrandMark from '@/components/BrandMark.vue'
 import CopyField from '@/components/CopyField.vue'
+import LocaleSwitcher from '@/components/LocaleSwitcher.vue'
 import PlazaMasonry from '@/components/PlazaMasonry.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
@@ -36,8 +37,9 @@ const uploaded = ref<ImageItem | null>(null)
 const announcements = ref<Announcement[]>([])
 const ACCEPT = 'image/jpeg,image/png,image/gif,image/webp'
 
-/** 数据库异常提示文案；为 null 表示连接正常，不展示提示。 */
-const dbIssue = ref<string | null>(null)
+/** 数据库异常的 i18n 键；为 null 表示连接正常，不展示提示。 */
+const dbIssue = ref<'home.dbUnavailable' | 'home.dbConnectFailed' | null>(null)
+const dbIssueText = computed(() => (dbIssue.value ? t(dbIssue.value) : ''))
 const dbChecking = ref(false)
 const DB_CHECK_INTERVAL = 30_000
 let dbTimer: number | undefined
@@ -137,11 +139,9 @@ async function checkDatabase(): Promise<void> {
   dbChecking.value = true
   try {
     const health = await fetchHealthStatus()
-    dbIssue.value = isDatabaseHealthy(health)
-      ? null
-      : health.database?.message || t('home.dbUnavailable')
+    dbIssue.value = isDatabaseHealthy(health) ? null : 'home.dbUnavailable'
   } catch {
-    dbIssue.value = t('home.dbConnectFailed')
+    dbIssue.value = 'home.dbConnectFailed'
   } finally {
     dbChecking.value = false
   }
@@ -185,6 +185,7 @@ async function checkDatabase(): Promise<void> {
         >
           <el-icon :size="16"><component :is="theme.isDark ? Sunny : Moon" /></el-icon>
         </button>
+        <LocaleSwitcher />
         <el-button v-if="auth.isAuthenticated" type="primary" :icon="User" @click="goUserCenter">
           {{ auth.isAdmin ? t('topbar.adminConsole') : t('topbar.userCenter') }}
         </el-button>
@@ -197,7 +198,7 @@ async function checkDatabase(): Promise<void> {
         <el-alert type="error" :closable="false" show-icon>
           <template #title>{{ t('home.dbAlertTitle') }}</template>
           <div class="home__db-alert-body">
-            <span>{{ dbIssue }}</span>
+            <span>{{ dbIssueText }}</span>
             <el-button size="small" :loading="dbChecking" @click="checkDatabase">{{ t('common.retry') }}</el-button>
             <el-button size="small" link type="primary" @click="router.push('/install')">
               {{ t('home.goInstall') }}

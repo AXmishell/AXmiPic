@@ -24,7 +24,11 @@ watchEffect(() => {
 
 /** 控制台布局的顶栏自带切换器；公开页面使用悬浮切换器。 */
 const showFloatingSwitcher = computed(
-  () => !route.meta.requiresAuth && !route.meta.requiresAdmin,
+  () =>
+    !route.meta.requiresAuth &&
+    !route.meta.requiresAdmin &&
+    // 首页顶栏自带语言切换器，避免与悬浮入口重复。
+    route.name !== 'home',
 )
 </script>
 
