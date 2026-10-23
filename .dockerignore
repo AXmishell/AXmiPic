@@ -20,5 +20,5 @@ web/dist
 internal/webui/dist
 
 # 文档与许可证无需参与构建
-README.md
+README*.md
 LICENSE

@@ -1,136 +1,138 @@
 # AXmiPic
 
-轻量、可靠的自托管图床服务。提供图片上传、即时处理、多存储后端与后台管理，后端为单个 Go 二进制，前端为内嵌的单页应用。
+A lightweight, reliable self-hosted image hosting service. It provides image uploads, on-the-fly processing, multiple storage backends, and an admin console, with a single Go binary backend and an embedded single-page frontend.
 
-> 📖 完整文档见 **[在线文档站](https://axmipic.gpcn.cc/)**（英文，默认） · **[中文文档](https://axmipic.gpcn.cc/zh/)**。
+> 🌐 English · [简体中文](README-CN.md)
+>
+> 📖 Full documentation: **[Docs](https://axmipic.gpcn.cc/)** (English, default) · **[中文文档](https://axmipic.gpcn.cc/zh/)**.
 
-## 特性
+## Features
 
-- **多种上传方式**：后台界面上传、批量上传、粘贴上传、拖拽上传、`multipart` 接口上传、对象存储预签名直传
-- **X 链接导入**：粘贴 X 帖子链接即可解析作者与图片，支持 fxtwitter 免费接口或 X 官方 API，可选择直接公开到广场或先私有；自动保留作者与原帖署名
-- **一键嵌入代码**：复制图片的 URL、HTML、BBCode 或 Markdown（受角色功能开关控制）
-- **图片与相册分享**：生成分享链接，可选访问密码、有效期与最大访问次数；公开分享页为 `/s/{token}`
-- **站内公告与独立页面**：管理员发布公告（支持置顶与级别）并在仪表盘展示；维护可通过 `/p/{slug}` 公开访问的独立页面
-- **举报管理**：用户举报图片，管理员在后台处理或驳回
-- **套餐与计费**：套餐（价格、有效期、配额、角色组）与优惠券（固定/百分比、门槛、限次、时效），下单、订单管理与可插拔支付渠道
-- **官方支付适配**：支付宝当面付（RSA2 签名/验签）与微信支付 v3（SHA256-RSA 签名、AES-GCM 回调解密），以及人工/模拟渠道
-- **图片安全**：上传内容扫描器（可插拔），内置白名单 + 危险魔数检测，拒绝伪装成图片的可执行内容
-- **通知系统**：短信与邮件通过插件发送；内置日志/HTTP 短信与 SMTP 邮件插件默认受信、无需沙箱，支持后台发送测试
-- **内置/外置插件**：内置插件随宿主编译、进程内运行；外置插件必须使用 WASM 沙箱。后台插件市场统一安装、配置、测试与切换当前渠道
-- **工单系统**：用户提交工单并对接客服，管理员回复与关闭
-- **随机存储键与去重**：存储文件使用按日期分区、随机且不可猜测的键名；内容 `sha256` 单独入库，同一所有者上传相同内容时自动去重，不同所有者各自持有独立对象
-- **保留原始文件名**：存储层使用随机命名后的文件，数据库中单独记录原文件名、存储文件名与哈希值
-- **多图片处理驱动**：纯 Go（默认）、libvips（`-tags libvips`）与 ImageMagick（`magick` 命令）三种处理器，运行时按配置选择并在不可用时回退
-- **即时图片处理**：通过 URL 查询参数实时缩放、裁剪、旋转、翻转、转灰度、模糊、锐化、文字水印与转码，带 ETag 缓存
-- **多存储后端**：本地文件系统、S3 兼容对象存储（AWS S3 / MinIO / Cloudflare R2）、阿里云 OSS、腾讯云 COS、七牛云 Kodo
-- **运行中热切换存储**：后台可随时切换默认存储；已有图片按记录自动路由回其原存储读取，无需重启
-- **存储池**：把多个存储后端组成池，按加权轮询或优先级策略放置新对象；池只影响写入，旧图片仍按记录读取
-- **数据库可选**：SQLite（默认，开箱即用）、PostgreSQL 或 MySQL 5.7+（MariaDB 兼容）
-- **相册与图片广场**：用相册归类图片；图片与相册均可设为公开，出现在跨用户的图片广场与公开相册列表，并提供用户公开资料页
-- **角色组与多策略**：按角色组控制用户的存储配额、上传限制、速率限制、图片处理能力与功能开关；策略可复用、按类型覆盖，注册用户自动加入默认角色组
-- **账户体系**：管理员与普通用户分表管理；JWT 会话 + 长期 API 令牌
-- **界面分离与初始化模式**：公开首页 + 用户中心（`/user`）与管理员控制台（`/admin`）分离；内置 Guest 低权访客与手动访问 `/install` 的初始化模式
-- **界面国际化**：前端基于 vue-i18n 提供中英双语，Element Plus 内置文案、页面标题与语言偏好同步切换
-- **配额与限流**：按用户的存储配额，按用户/访客/IP 的速率限制
-- **安全**：密钥 AES-256-GCM 加密存储、bcrypt 密码、纵深防御响应头
+- **Multiple upload methods**: admin UI upload, batch upload, paste upload, drag-and-drop upload, `multipart` API upload, and presigned direct upload to object storage
+- **X link import**: paste an X post URL to resolve the author and images, using the free fxtwitter API or the official X API; choose to publish directly to the plaza or keep images private first, with author and original-post attribution preserved automatically
+- **One-click embed code**: copy an image's URL, HTML, BBCode, or Markdown (controlled by role feature toggles)
+- **Image and album sharing**: generate share links with an optional access password, expiry, and maximum visit count; the public share page is `/s/{token}`
+- **Announcements and standalone pages**: admins can publish announcements (with pinning and severity levels) shown on the dashboard, and maintain standalone pages publicly accessible at `/p/{slug}`
+- **Report management**: users report images; admins handle or dismiss reports in the admin console
+- **Plans and billing**: plans (price, validity period, quota, role group) and coupons (fixed/percentage, threshold, usage limit, validity), plus checkout, order management, and pluggable payment channels
+- **First-party payment integrations**: Alipay Face-to-Face Payment (RSA2 signing/verification) and WeChat Pay v3 (SHA256-RSA signing, AES-GCM callback decryption), along with manual and mock channels
+- **Image safety**: a pluggable upload content scanner with a built-in whitelist and dangerous magic-number detection, rejecting executable content disguised as images
+- **Notification system**: SMS and email are sent through plugins; the built-in log/HTTP SMS and SMTP email plugins are trusted by default and require no sandbox, and support test sending from the admin console
+- **Built-in and external plugins**: built-in plugins are compiled with the host and run in-process; external plugins must run in a WASM sandbox. The admin plugin marketplace installs, configures, tests, and switches the active channel in one place
+- **Ticket system**: users submit tickets and reach support; admins reply and close them
+- **Random storage keys and deduplication**: stored files use date-partitioned, random, unguessable keys; content `sha256` is recorded separately, so the same owner uploading identical content is deduplicated automatically, while different owners each hold an independent object
+- **Original filenames preserved**: the storage layer uses randomly named files, while the database separately records the original filename, stored filename, and hash
+- **Multiple image processing drivers**: pure Go (default), libvips (`-tags libvips`), and ImageMagick (the `magick` command), selected by configuration at runtime with fallback when unavailable
+- **On-the-fly image processing**: real-time resize, crop, rotate, flip, grayscale, blur, sharpen, text watermark, and transcode via URL query parameters, with ETag caching
+- **Multiple storage backends**: local filesystem, S3-compatible object storage (AWS S3 / MinIO / Cloudflare R2), Alibaba Cloud OSS, Tencent Cloud COS, and Qiniu Cloud Kodo
+- **Hot storage switching at runtime**: switch the default storage at any time from the admin console; existing images are automatically routed back to their original storage for reads, with no restart required
+- **Storage pools**: combine multiple storage backends into a pool and place new objects using weighted round-robin or priority policies; pools only affect writes, while existing images are still read from their records
+- **Optional database**: SQLite (default, works out of the box), PostgreSQL, or MySQL 5.7+ (MariaDB compatible)
+- **Albums and the Image Plaza**: organize images into albums; both images and albums can be made public, appearing in the cross-user Image Plaza and public album listings, with public user profile pages
+- **Role groups and multiple policies**: role groups control a user's storage quota, upload limits, rate limits, image processing capabilities, and feature toggles; policies are reusable and overridable by type, and newly registered users automatically join the default role group
+- **Account system**: admins and regular users are managed in separate tables; JWT sessions + long-lived API tokens
+- **Separated interfaces and setup mode**: a public landing page + user center (`/user`) separated from the admin console (`/admin`); a built-in low-privilege Guest visitor and a setup mode entered manually at `/install`
+- **UI internationalization**: the frontend provides Chinese and English via vue-i18n; Element Plus built-in strings, page titles, and the language preference switch together
+- **Quotas and rate limiting**: per-user storage quotas and per-user/guest/IP rate limits
+- **Security**: secrets encrypted at rest with AES-256-GCM, bcrypt passwords, and defense-in-depth response headers
 
-## 技术栈
+## Tech stack
 
-| 层 | 技术 |
-|----|------|
-| 后端 | Go 1.26、chi 路由、GORM |
-| 数据库 | SQLite（纯 Go 驱动） / PostgreSQL / MySQL 5.7+（MariaDB 兼容） |
-| 图片处理 | 纯 Go（`disintegration/imaging`），可选 libvips（`-tags libvips`） |
-| 对象存储 | 本地 / S3 兼容（minio-go） / 阿里云 OSS SDK / 腾讯云 COS SDK / 七牛云 SDK |
-| 支付 | 微信支付官方 SDK（`wechatpay-apiv3/wechatpay-go`）、支付宝 RSA2（原生）、易支付（原生） |
-| 前端 | Vue 3、Pinia、Vue Router、Element Plus、TypeScript、Vite |
+| Layer | Technology |
+|-------|------------|
+| Backend | Go 1.26, chi router, GORM |
+| Database | SQLite (pure Go driver) / PostgreSQL / MySQL 5.7+ (MariaDB compatible) |
+| Image processing | Pure Go (`disintegration/imaging`), optional libvips (`-tags libvips`) |
+| Object storage | Local / S3-compatible (minio-go) / Alibaba Cloud OSS SDK / Tencent Cloud COS SDK / Qiniu SDK |
+| Payments | Official WeChat Pay SDK (`wechatpay-apiv3/wechatpay-go`), Alipay RSA2 (native), YiPay (native) |
+| Frontend | Vue 3, Pinia, Vue Router, Element Plus, TypeScript, Vite |
 
-## 快速开始
+## Quick start
 
-### 环境要求
+### Requirements
 
-- Go 1.26 或更高版本
-- Node.js 22+ 与 pnpm 9（构建前端需要；也可使用 Docker/CI 已内置前端产物的二进制）
+- Go 1.26 or later
+- Node.js 22+ and pnpm 9 (required to build the frontend; alternatively use a Docker/CI binary with the frontend already embedded)
 
-前端产物**不提交到仓库**，而是构建时生成到 `internal/webui/dist`：`make build` 会先构建前端再编译后端。若只想构建后端（无 Node 环境），可先准备一份 `internal/webui/dist`（例如 CI/Release 产物），再执行 `make build-go`。
+Frontend assets are **not committed to the repository**; they are generated into `internal/webui/dist` during the build. `make build` builds the frontend and then compiles the backend. To build only the backend (with no Node environment), prepare an `internal/webui/dist` directory first (for example from a CI/release artifact) and run `make build-go`.
 
-### 构建与运行
+### Build and run
 
 ```bash
-# 完整构建（前端 + 后端），产物位于 bin/axmipic
+# Full build (frontend + backend), output at bin/axmipic
 make build
 
-# 仅构建后端（复用已有的 internal/webui/dist；无前端时网页返回 503）
+# Build backend only (reuse existing internal/webui/dist; the web UI returns 503 without it)
 # make build-go
 
-# 仅构建前端
+# Build frontend only
 # make web
 
-# 使用示例配置运行
+# Run with the example configuration
 cp configs/config.example.yaml configs/config.yaml
 ./bin/axmipic -config configs/config.yaml
 ```
 
-或直接运行：
+Or run directly:
 
 ```bash
-make run            # 先构建前端，再 go run ./cmd/axmipic -config configs/config.example.yaml
+make run            # build the frontend, then go run ./cmd/axmipic -config configs/config.example.yaml
 ```
 
-默认监听 `0.0.0.0:8080`，访问 `http://localhost:8080` 打开控制台。
+It listens on `0.0.0.0:8080` by default; open `http://localhost:8080` to access the console.
 
-本地开发前端时可开启 HMR 热更新（默认关闭）：先在 `web/` 运行 `pnpm dev`，再在配置文件中设置 `web.hot_reload.enabled: true`（`target` 默认 `http://127.0.0.1:5173`），之后访问 `http://localhost:8080` 即可获得前端热更新，无需重新构建。详见[配置说明](https://axmipic.gpcn.cc/guide/configuration#前端热更新-开发)。
+For local frontend development, you can enable HMR (disabled by default): run `pnpm dev` in `web/`, set `web.hot_reload.enabled: true` in the configuration file (`target` defaults to `http://127.0.0.1:5173`), then open `http://localhost:8080` to get frontend hot reload without rebuilding. See [Configuration](https://axmipic.gpcn.cc/guide/configuration#frontend-hot-reload-development) for details.
 
-### 创建管理员
+### Create an administrator
 
-有两种方式：
+There are two ways:
 
-1. **配置文件播种**（推荐）：在 `configs/config.yaml` 中设置 `auth.bootstrap_admin: "用户名:密码"`，仅当 admins 表为空时生效：
+1. **Seed from configuration (recommended)**: set `auth.bootstrap_admin: "username:password"` in `configs/config.yaml`. It only takes effect when the admins table is empty:
 
    ```yaml
    auth:
-     bootstrap_admin: "admin:你的强密码"
+     bootstrap_admin: "admin:your-strong-password"
    ```
 
-2. **后台创建**：以已有管理员登录后，在「用户管理 → 管理员」标签页新建管理员。
+2. **Create in the admin console**: sign in with an existing administrator and create one under **Users → Administrators**.
 
-> 首次部署建议先配置 `auth.bootstrap_admin` 再启动，避免无管理员可用。注册入口只创建普通用户。
+> For the first deployment, configure `auth.bootstrap_admin` before starting to avoid having no administrator available. The registration entry only creates regular users.
 
-## 文档
+## Documentation
 
-完整文档已迁移至在线文档站（VitePress 构建，源码位于 [`docs/`](docs/)）：
+The full documentation has moved to the online docs site (built with VitePress, source in [`docs/`](docs/)):
 
-| 文档 | 内容 |
-|------|------|
-| [快速开始](https://axmipic.gpcn.cc/guide/getting-started) | 环境要求、构建运行、创建管理员 |
-| [配置说明](https://axmipic.gpcn.cc/guide/configuration) | 服务器、数据库、存储、上传、认证与限流 |
-| [图片处理](https://axmipic.gpcn.cc/guide/image-processing) | URL 处理参数、libvips 与处理驱动 |
-| [界面与路由](https://axmipic.gpcn.cc/guide/ui-and-routes) | 用户中心 / 管理台路由、Guest 访客、初始化模式 |
-| [Docker 部署](https://axmipic.gpcn.cc/guide/deployment) | 镜像构建、GHCR、Docker Compose |
-| [API 参考](https://axmipic.gpcn.cc/api/) | 全部 `/api/v1` 接口 |
-| [开发指南](https://axmipic.gpcn.cc/dev/) | 本地开发、SDK、持续集成、目录结构 |
+| Document | Contents |
+|----------|----------|
+| [Getting started](https://axmipic.gpcn.cc/guide/getting-started) | Requirements, build and run, creating an administrator |
+| [Configuration](https://axmipic.gpcn.cc/guide/configuration) | Server, database, storage, upload, authentication, and rate limiting |
+| [Image processing](https://axmipic.gpcn.cc/guide/image-processing) | URL processing parameters, libvips, and processing drivers |
+| [UI and routes](https://axmipic.gpcn.cc/guide/ui-and-routes) | User center / admin routes, Guest visitors, setup mode |
+| [Docker deployment](https://axmipic.gpcn.cc/guide/deployment) | Image builds, GHCR, Docker Compose |
+| [API reference](https://axmipic.gpcn.cc/api/) | All `/api/v1` endpoints |
+| [Development guide](https://axmipic.gpcn.cc/dev/) | Local development, SDKs, CI, directory structure |
 
-本地预览文档站：
+To preview the docs locally:
 
 ```bash
 cd docs
 pnpm install
-pnpm dev        # http://localhost:5173/AXmiPic/
+pnpm dev        # http://localhost:5173/
 ```
 
-## Docker 快速运行
+## Run with Docker
 
 ```bash
 docker run -d --name axmipic \
   -p 8080:8080 \
   -v axmipic-data:/app/data \
   -e AXMIPIC_SERVER_BASE_URL=http://localhost:8080 \
-  -e AXMIPIC_AUTH_BOOTSTRAP_ADMIN="admin:你的强密码" \
+  -e AXMIPIC_AUTH_BOOTSTRAP_ADMIN="admin:your-strong-password" \
   ghcr.io/axmishell/axmipic:latest
 ```
 
-完整说明（镜像构建、GHCR、Docker Compose、初始化模式）见 [Docker 部署](https://axmipic.gpcn.cc/guide/deployment)。
+For full instructions (image builds, GHCR, Docker Compose, setup mode), see [Docker deployment](https://axmipic.gpcn.cc/guide/deployment).
 
-## 许可证
+## License
 
-本项目基于 [MIT 许可证](LICENSE) 开源。
+This project is released under the [MIT License](LICENSE).
