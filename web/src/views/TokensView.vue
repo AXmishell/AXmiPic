@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import type { FormInstance, FormRules } from 'element-plus'
 import { Delete, Key, Plus, Refresh } from '@element-plus/icons-vue'
 
@@ -12,6 +13,8 @@ import EmptyState from '@/components/EmptyState.vue'
 import ErrorState from '@/components/ErrorState.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { formatDateTime } from '@/utils/format'
+
+const { t } = useI18n()
 
 const tokens = ref<Token[]>([])
 const loading = ref(false)
@@ -31,12 +34,12 @@ const plaintextOpen = computed({
   },
 })
 
-const createRules: FormRules = {
+const createRules = computed<FormRules>(() => ({
   name: [
-    { required: true, message: '请输入令牌名称', trigger: 'blur' },
-    { min: 1, max: 40, message: '名称长度为 1 到 40 个字符', trigger: 'blur' },
+    { required: true, message: t('tokens.validation.nameRequired'), trigger: 'blur' },
+    { min: 1, max: 40, message: t('tokens.validation.nameLength'), trigger: 'blur' },
   ],
-}
+}))
 
 async function load(): Promise<void> {
   loading.value = true
@@ -70,7 +73,7 @@ async function submitCreate(): Promise<void> {
   try {
     createdToken.value = await createToken(createForm.name.trim())
     createOpen.value = false
-    ElMessage.success('令牌创建成功')
+    ElMessage.success(t('tokens.messages.created'))
     await load()
   } catch (error) {
     ElMessage.error(toApiError(error).message)
@@ -82,11 +85,11 @@ async function submitCreate(): Promise<void> {
 async function revoke(token: Token): Promise<void> {
   try {
     await ElMessageBox.confirm(
-      `撤销后，使用「${token.name}」的请求将立即失效，且无法恢复。`,
-      '撤销访问令牌',
+      t('tokens.confirm.revokeMessage', { name: token.name }),
+      t('tokens.confirm.revokeTitle'),
       {
-        confirmButtonText: '撤销',
-        cancelButtonText: '取消',
+        confirmButtonText: t('tokens.confirm.revoke'),
+        cancelButtonText: t('common.cancel'),
         type: 'warning',
         confirmButtonClass: 'el-button--danger',
       },
@@ -98,7 +101,7 @@ async function revoke(token: Token): Promise<void> {
   revokingId.value = token.id
   try {
     await revokeToken(token.id)
-    ElMessage.success('令牌已撤销')
+    ElMessage.success(t('tokens.messages.revoked'))
     await load()
   } catch (error) {
     ElMessage.error(toApiError(error).message)
@@ -112,10 +115,10 @@ onMounted(load)
 
 <template>
   <div class="ax-page">
-    <PageHeader title="访问令牌" description="用于通过 API 上传图片的凭证，创建后仅显示一次明文。">
+    <PageHeader :title="t('tokens.title')" :description="t('tokens.description')">
       <template #actions>
-        <el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button>
-        <el-button type="primary" :icon="Plus" @click="openCreate">新建 Token</el-button>
+        <el-button :icon="Refresh" :loading="loading" @click="load">{{ t('common.refresh') }}</el-button>
+        <el-button type="primary" :icon="Plus" @click="openCreate">{{ t('tokens.create') }}</el-button>
       </template>
     </PageHeader>
 
@@ -127,16 +130,16 @@ onMounted(load)
 
     <EmptyState
       v-else-if="tokens.length === 0"
-      title="还没有访问令牌"
-      description="创建令牌后即可通过 API 上传图片，令牌明文仅在创建时展示一次。"
+      :title="t('tokens.empty.title')"
+      :description="t('tokens.empty.description')"
     >
-      <el-button type="primary" :icon="Plus" @click="openCreate">新建 Token</el-button>
+      <el-button type="primary" :icon="Plus" @click="openCreate">{{ t('tokens.create') }}</el-button>
     </EmptyState>
 
     <div v-else class="ax-card table-card">
       <div class="ax-table-scroll">
         <el-table :data="tokens" style="width: 100%">
-          <el-table-column prop="name" label="名称" min-width="160">
+          <el-table-column prop="name" :label="t('tokens.columns.name')" min-width="160">
             <template #default="{ row }">
               <span class="token-name">
                 <el-icon :size="14"><Key /></el-icon>
@@ -144,21 +147,21 @@ onMounted(load)
               </span>
             </template>
           </el-table-column>
-          <el-table-column label="令牌前缀" min-width="190">
+          <el-table-column :label="t('tokens.columns.prefix')" min-width="190">
             <template #default="{ row }">
               <code class="ax-mono">{{ row.prefix }}</code>
             </template>
           </el-table-column>
-          <el-table-column label="创建时间" min-width="170">
+          <el-table-column :label="t('tokens.columns.createdAt')" min-width="170">
             <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
           </el-table-column>
-          <el-table-column label="最近使用" min-width="170">
+          <el-table-column :label="t('tokens.columns.lastUsed')" min-width="170">
             <template #default="{ row }">
               <span v-if="row.last_used_at">{{ formatDateTime(row.last_used_at) }}</span>
-              <span v-else class="ax-muted">从未使用</span>
+              <span v-else class="ax-muted">{{ t('tokens.neverUsed') }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="130" align="right">
+          <el-table-column :label="t('tokens.columns.actions')" width="130" align="right">
             <template #default="{ row }">
               <div class="ax-row-actions">
                 <el-button
@@ -168,7 +171,7 @@ onMounted(load)
                   :loading="revokingId === row.id"
                   @click="revoke(row)"
                 >
-                  撤销
+                  {{ t('tokens.revoke') }}
                 </el-button>
               </div>
             </template>
@@ -180,7 +183,7 @@ onMounted(load)
     <!-- 新建令牌 -->
     <el-dialog
       v-model="createOpen"
-      title="新建访问令牌"
+      :title="t('tokens.dialog.createTitle')"
       width="min(440px, 92vw)"
       append-to-body
       :close-on-click-modal="false"
@@ -193,10 +196,10 @@ onMounted(load)
         label-position="top"
         @submit.prevent="submitCreate"
       >
-        <el-form-item label="名称" prop="name">
+        <el-form-item :label="t('tokens.dialog.name')" prop="name">
           <el-input
             v-model="createForm.name"
-            placeholder="例如：CI 上传 / 博客配图"
+            :placeholder="t('tokens.dialog.namePlaceholder')"
             maxlength="40"
             show-word-limit
             @keyup.enter="submitCreate"
@@ -204,15 +207,15 @@ onMounted(load)
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="createOpen = false">取消</el-button>
-        <el-button type="primary" :loading="creating" @click="submitCreate">创建</el-button>
+        <el-button @click="createOpen = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="creating" @click="submitCreate">{{ t('tokens.dialog.submit') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 明文令牌（仅显示一次） -->
     <el-dialog
       :model-value="plaintextOpen"
-      title="令牌创建成功"
+      :title="t('tokens.plaintext.title')"
       width="min(520px, 92vw)"
       append-to-body
       :close-on-click-modal="false"
@@ -223,18 +226,18 @@ onMounted(load)
         type="warning"
         :closable="false"
         show-icon
-        title="该令牌仅显示一次"
-        description="请立即复制并妥善保存。关闭此窗口后，将无法再次查看明文令牌。"
+        :title="t('tokens.plaintext.alertTitle')"
+        :description="t('tokens.plaintext.alertDescription')"
       />
       <div class="token-result">
-        <CopyField label="访问令牌" :value="createdToken?.token ?? ''" />
+        <CopyField :label="t('tokens.plaintext.label')" :value="createdToken?.token ?? ''" />
         <p class="token-result__hint">
-          使用方式：请求头
+          {{ t('tokens.plaintext.usageBefore') }}
           <code class="ax-mono">Authorization: Bearer &lt;token&gt;</code>
         </p>
       </div>
       <template #footer>
-        <el-button type="primary" @click="closePlaintext">我已保存，关闭</el-button>
+        <el-button type="primary" @click="closePlaintext">{{ t('tokens.plaintext.close') }}</el-button>
       </template>
     </el-dialog>
   </div>

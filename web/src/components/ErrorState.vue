@@ -1,5 +1,8 @@
 <script setup lang="ts">
 import { WarningFilled } from '@element-plus/icons-vue'
+import { useI18n } from 'vue-i18n'
+
+const { t } = useI18n()
 
 defineProps<{
   message: string
@@ -15,10 +18,10 @@ defineEmits<{ (event: 'retry'): void }>()
       <el-icon :size="18"><WarningFilled /></el-icon>
     </span>
     <div class="error-state__text">
-      <h3 class="error-state__title">{{ title ?? '加载失败' }}</h3>
+      <h3 class="error-state__title">{{ title ?? t('errorState.loadFailed') }}</h3>
       <p class="error-state__message">{{ message }}</p>
     </div>
-    <el-button @click="$emit('retry')">重试</el-button>
+    <el-button @click="$emit('retry')">{{ t('errorState.retry') }}</el-button>
   </div>
 </template>
 

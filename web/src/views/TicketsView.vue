@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import type { FormInstance, FormRules } from 'element-plus'
 import { Plus, Refresh, View } from '@element-plus/icons-vue'
 
@@ -11,6 +12,8 @@ import EmptyState from '@/components/EmptyState.vue'
 import ErrorState from '@/components/ErrorState.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { formatDateTime } from '@/utils/format'
+
+const { t } = useI18n()
 
 const tickets = ref<Ticket[]>([])
 const loading = ref(false)
@@ -26,34 +29,34 @@ const form = reactive<{ subject: string; category: string; body: string; priorit
   body: '',
   priority: 'normal',
 })
-const rules: FormRules = {
-  subject: [{ required: true, message: '请输入标题', trigger: 'blur' }],
-  body: [{ required: true, message: '请输入问题描述', trigger: 'blur' }],
-}
+const rules = computed<FormRules>(() => ({
+  subject: [{ required: true, message: t('tickets.validation.subjectRequired'), trigger: 'blur' }],
+  body: [{ required: true, message: t('tickets.validation.bodyRequired'), trigger: 'blur' }],
+}))
 
 const detailOpen = ref(false)
 const detail = ref<Ticket | null>(null)
 const replyBody = ref('')
 const replying = ref(false)
 
-const statusOptions: { value: TicketStatus; label: string; tag: string }[] = [
-  { value: 'open', label: '待处理', tag: 'warning' },
-  { value: 'answered', label: '已回复', tag: 'success' },
-  { value: 'closed', label: '已关闭', tag: 'info' },
-]
+const statusOptions = computed<{ value: TicketStatus; label: string; tag: string }[]>(() => [
+  { value: 'open', label: t('tickets.status.open'), tag: 'warning' },
+  { value: 'answered', label: t('tickets.status.answered'), tag: 'success' },
+  { value: 'closed', label: t('tickets.status.closed'), tag: 'info' },
+])
 
-const priorityOptions: { value: TicketPriority; label: string }[] = [
-  { value: 'low', label: '低' },
-  { value: 'normal', label: '普通' },
-  { value: 'high', label: '高' },
-]
+const priorityOptions = computed<{ value: TicketPriority; label: string }[]>(() => [
+  { value: 'low', label: t('tickets.priority.low') },
+  { value: 'normal', label: t('tickets.priority.normal') },
+  { value: 'high', label: t('tickets.priority.high') },
+])
 
 const filtered = computed(() =>
   statusFilter.value ? tickets.value.filter((t) => t.status === statusFilter.value) : tickets.value,
 )
 
 function statusMeta(status: TicketStatus) {
-  return statusOptions.find((s) => s.value === status) ?? statusOptions[0]!
+  return statusOptions.value.find((s) => s.value === status) ?? statusOptions.value[0]!
 }
 
 async function load(): Promise<void> {
@@ -81,7 +84,7 @@ async function submitCreate(): Promise<void> {
   creating.value = true
   try {
     await createTicket({ ...form, subject: form.subject.trim(), body: form.body.trim() })
-    ElMessage.success('工单已提交')
+    ElMessage.success(t('tickets.messages.created'))
     createOpen.value = false
     await load()
   } catch (error) {
@@ -104,7 +107,7 @@ async function submitReply(): Promise<void> {
   try {
     detail.value = await replyTicket(ticket.id, replyBody.value.trim())
     replyBody.value = ''
-    ElMessage.success('回复已提交')
+    ElMessage.success(t('tickets.messages.replied'))
     await load()
   } catch (error) {
     ElMessage.error(toApiError(error).message)
@@ -118,14 +121,14 @@ onMounted(load)
 
 <template>
   <div class="ax-page">
-    <PageHeader title="工单" description="提交问题并跟踪处理进度。">
+    <PageHeader :title="t('tickets.title')" :description="t('tickets.description')">
       <template #actions>
-        <el-select v-model="statusFilter" placeholder="全部状态" class="ticket-filter">
-          <el-option label="全部状态" value="" />
+        <el-select v-model="statusFilter" :placeholder="t('tickets.filterPlaceholder')" class="ticket-filter">
+          <el-option :label="t('tickets.allStatuses')" value="" />
           <el-option v-for="s in statusOptions" :key="s.value" :label="s.label" :value="s.value" />
         </el-select>
-        <el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button>
-        <el-button type="primary" :icon="Plus" @click="openCreate">新建工单</el-button>
+        <el-button :icon="Refresh" :loading="loading" @click="load">{{ t('common.refresh') }}</el-button>
+        <el-button type="primary" :icon="Plus" @click="openCreate">{{ t('tickets.actions.create') }}</el-button>
       </template>
     </PageHeader>
 
@@ -137,32 +140,32 @@ onMounted(load)
 
     <EmptyState
       v-else-if="filtered.length === 0"
-      title="暂无工单"
-      description="遇到问题时可点击「新建工单」反馈。"
+      :title="t('tickets.empty.title')"
+      :description="t('tickets.empty.description')"
     />
 
     <div v-else class="ax-card table-card">
       <div class="ax-table-scroll">
         <el-table :data="filtered" style="width: 100%">
-          <el-table-column label="标题" min-width="240">
+          <el-table-column :label="t('tickets.columns.subject')" min-width="240">
             <template #default="{ row }">
               <el-button link type="primary" @click="openDetail(row)">{{ row.subject }}</el-button>
             </template>
           </el-table-column>
-          <el-table-column label="状态" width="100">
+          <el-table-column :label="t('tickets.columns.status')" width="100">
             <template #default="{ row }">
               <el-tag size="small" :type="(statusMeta(row.status).tag as any)" effect="plain">
                 {{ statusMeta(row.status).label }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="更新时间" min-width="170">
+          <el-table-column :label="t('tickets.columns.updatedAt')" min-width="170">
             <template #default="{ row }">{{ formatDateTime(row.updated_at) }}</template>
           </el-table-column>
-          <el-table-column label="操作" width="120" align="right">
+          <el-table-column :label="t('tickets.columns.actions')" width="120" align="right">
             <template #default="{ row }">
               <div class="ax-row-actions">
-                <el-button link type="primary" :icon="View" @click="openDetail(row)">查看</el-button>
+                <el-button link type="primary" :icon="View" @click="openDetail(row)">{{ t('common.view') }}</el-button>
               </div>
             </template>
           </el-table-column>
@@ -171,31 +174,31 @@ onMounted(load)
     </div>
 
     <!-- 新建工单 -->
-    <el-dialog v-model="createOpen" title="新建工单" width="min(520px, 92vw)" append-to-body>
+    <el-dialog v-model="createOpen" :title="t('tickets.create.title')" width="min(520px, 92vw)" append-to-body>
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
-        <el-form-item label="标题" prop="subject">
+        <el-form-item :label="t('tickets.create.subject')" prop="subject">
           <el-input v-model="form.subject" maxlength="200" />
         </el-form-item>
-        <el-form-item label="分类">
-          <el-input v-model="form.category" placeholder="例如：上传问题、账号问题" maxlength="32" />
+        <el-form-item :label="t('tickets.create.category')">
+          <el-input v-model="form.category" :placeholder="t('tickets.create.categoryPlaceholder')" maxlength="32" />
         </el-form-item>
-        <el-form-item label="优先级">
+        <el-form-item :label="t('tickets.create.priority')">
           <el-select v-model="form.priority" style="width: 100%">
             <el-option v-for="p in priorityOptions" :key="p.value" :label="p.label" :value="p.value" />
           </el-select>
         </el-form-item>
-        <el-form-item label="问题描述" prop="body">
+        <el-form-item :label="t('tickets.create.body')" prop="body">
           <el-input v-model="form.body" type="textarea" :rows="5" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="createOpen = false">取消</el-button>
-        <el-button type="primary" :loading="creating" @click="submitCreate">提交</el-button>
+        <el-button @click="createOpen = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="creating" @click="submitCreate">{{ t('common.submit') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 工单详情 -->
-    <el-drawer v-model="detailOpen" :title="detail?.subject ?? '工单详情'" size="min(520px, 92vw)" append-to-body>
+    <el-drawer v-model="detailOpen" :title="detail?.subject ?? t('tickets.detail.title')" size="min(520px, 92vw)" append-to-body>
       <div v-if="detail" class="ticket-detail">
         <div class="ticket-detail__meta">
           <el-tag size="small" :type="(statusMeta(detail.status).tag as any)" effect="plain">
@@ -211,15 +214,15 @@ onMounted(load)
             :class="{ 'is-admin': message.author_role === 'admin' }"
           >
             <div class="ticket-message__head">
-              <strong>{{ message.author_role === 'admin' ? '客服' : '我' }}</strong>
+              <strong>{{ message.author_role === 'admin' ? t('tickets.detail.agent') : t('tickets.detail.me') }}</strong>
               <span class="ax-muted">{{ formatDateTime(message.created_at) }}</span>
             </div>
             <p class="ticket-message__body">{{ message.body }}</p>
           </li>
         </ul>
         <div class="ticket-reply">
-          <el-input v-model="replyBody" type="textarea" :rows="3" placeholder="输入回复内容" />
-          <el-button type="primary" :loading="replying" @click="submitReply">回复</el-button>
+          <el-input v-model="replyBody" type="textarea" :rows="3" :placeholder="t('tickets.detail.replyPlaceholder')" />
+          <el-button type="primary" :loading="replying" @click="submitReply">{{ t('tickets.detail.reply') }}</el-button>
         </div>
       </div>
     </el-drawer>

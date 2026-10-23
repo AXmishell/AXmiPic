@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 import { formatBytes, usagePercent } from '@/utils/format'
 
+const { t } = useI18n()
 const props = withDefaults(
   defineProps<{
     used: number | null | undefined
@@ -22,11 +24,11 @@ const fillStyle = computed(() => ({ transform: `scaleX(${percent.value / 100})` 
 <template>
   <div class="quota" :class="{ 'quota--compact': compact }">
     <div class="quota__head">
-      <span class="quota__label">存储用量</span>
+      <span class="quota__label">{{ t('quotaMeter.label') }}</span>
       <span class="quota__numbers">
         <strong>{{ formatBytes(used) }}</strong>
         <span class="quota__sep">/</span>
-        <span>{{ unlimited ? '不限' : formatBytes(quota) }}</span>
+        <span>{{ unlimited ? t('quotaMeter.unlimited') : formatBytes(quota) }}</span>
       </span>
     </div>
     <div
@@ -36,14 +38,14 @@ const fillStyle = computed(() => ({ transform: `scaleX(${percent.value / 100})` 
       :aria-valuenow="percent"
       aria-valuemin="0"
       aria-valuemax="100"
-      aria-label="存储用量"
+      :aria-label="t('quotaMeter.ariaLabel')"
     >
       <div class="quota__fill" :class="`quota__fill--${tone}`" :style="fillStyle" />
     </div>
     <p v-if="!compact && !unlimited" class="quota__hint">
-      剩余 {{ formatBytes(remaining) }}，已使用 {{ percent }}%
+      {{ t('quotaMeter.remaining', { remaining: formatBytes(remaining), percent }) }}
     </p>
-    <p v-else-if="!compact" class="quota__hint">当前账号未设置存储配额</p>
+    <p v-else-if="!compact" class="quota__hint">{{ t('quotaMeter.noQuota') }}</p>
   </div>
 </template>
 

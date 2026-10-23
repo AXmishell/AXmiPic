@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import type { FormInstance, FormRules } from 'element-plus'
 import { Check, Close, Delete, EditPen, Plus, Refresh } from '@element-plus/icons-vue'
 
@@ -37,24 +38,26 @@ type Tab = 'announcements' | 'reports' | 'pages'
 const SITE_TABS: readonly Tab[] = ['announcements', 'reports', 'pages']
 const activeTab = useTabQuery<Tab>('tab', 'announcements', SITE_TABS)
 
+const { t } = useI18n()
+
 const announcements = ref<Announcement[]>([])
 const reports = ref<Report[]>([])
 const pages = ref<Page[]>([])
 const loading = ref(false)
 const errorMessage = ref('')
 
-const levelOptions: { value: AnnouncementLevel; label: string; tag: string }[] = [
-  { value: 'info', label: '信息', tag: 'info' },
-  { value: 'success', label: '成功', tag: 'success' },
-  { value: 'warning', label: '警告', tag: 'warning' },
-  { value: 'danger', label: '紧急', tag: 'danger' },
-]
+const levelOptions = computed<{ value: AnnouncementLevel; label: string; tag: string }[]>(() => [
+  { value: 'info', label: t('site.levels.info'), tag: 'info' },
+  { value: 'success', label: t('site.levels.success'), tag: 'success' },
+  { value: 'warning', label: t('site.levels.warning'), tag: 'warning' },
+  { value: 'danger', label: t('site.levels.danger'), tag: 'danger' },
+])
 
-const reportStatusOptions: { value: ReportStatus; label: string; tag: string }[] = [
-  { value: 'pending', label: '待处理', tag: 'warning' },
-  { value: 'resolved', label: '已处理', tag: 'success' },
-  { value: 'rejected', label: '已驳回', tag: 'info' },
-]
+const reportStatusOptions = computed<{ value: ReportStatus; label: string; tag: string }[]>(() => [
+  { value: 'pending', label: t('site.reportStatus.pending'), tag: 'warning' },
+  { value: 'resolved', label: t('site.reportStatus.resolved'), tag: 'success' },
+  { value: 'rejected', label: t('site.reportStatus.rejected'), tag: 'info' },
+])
 
 const reportFilter = ref<'' | ReportStatus>('')
 const reportPage = ref(1)
@@ -136,12 +139,12 @@ const annSaving = ref(false)
 const annFormRef = ref<FormInstance>()
 const editingAnnId = ref('')
 const annForm = reactive<AnnouncementInput>({ title: '', content: '', level: 'info', pinned: false, published: true })
-const annRules: FormRules = {
+const annRules = computed<FormRules>(() => ({
   title: [
-    { required: true, message: '请输入标题', trigger: 'blur' },
-    { max: 200, message: '标题最多 200 个字符', trigger: 'blur' },
+    { required: true, message: t('site.announcement.validation.titleRequired'), trigger: 'blur' },
+    { max: 200, message: t('site.announcement.validation.titleMax'), trigger: 'blur' },
   ],
-}
+}))
 const annSnapshot = ref('')
 
 function annState(): string {
@@ -155,9 +158,9 @@ async function closeAnnDialog(done: () => void): Promise<void> {
     return
   }
   try {
-    await ElMessageBox.confirm('关闭后未保存的修改将丢失。', '放弃修改？', {
-      confirmButtonText: '放弃修改',
-      cancelButtonText: '继续编辑',
+    await ElMessageBox.confirm(t('site.discard.message'), t('site.discard.title'), {
+      confirmButtonText: t('site.discard.confirm'),
+      cancelButtonText: t('site.discard.cancel'),
       type: 'warning',
       confirmButtonClass: 'el-button--danger',
     })
@@ -203,10 +206,10 @@ async function submitAnnouncement(): Promise<void> {
     }
     if (editingAnnId.value) {
       await updateAnnouncement(editingAnnId.value, payload)
-      ElMessage.success('公告已更新')
+      ElMessage.success(t('site.announcement.updated'))
     } else {
       await createAnnouncement(payload)
-      ElMessage.success('公告已创建')
+      ElMessage.success(t('site.announcement.created'))
     }
     annSnapshot.value = annState()
     annOpen.value = false
@@ -220,9 +223,9 @@ async function submitAnnouncement(): Promise<void> {
 
 async function removeAnnouncement(item: Announcement): Promise<void> {
   try {
-    await ElMessageBox.confirm(`将删除公告「${item.title}」。`, '删除公告', {
-      confirmButtonText: '删除',
-      cancelButtonText: '取消',
+    await ElMessageBox.confirm(t('site.announcement.deleteConfirm', { title: item.title }), t('site.announcement.deleteTitle'), {
+      confirmButtonText: t('common.delete'),
+      cancelButtonText: t('common.cancel'),
       type: 'warning',
       confirmButtonClass: 'el-button--danger',
     })
@@ -231,7 +234,7 @@ async function removeAnnouncement(item: Announcement): Promise<void> {
   }
   try {
     await deleteAnnouncement(item.id)
-    ElMessage.success('公告已删除')
+    ElMessage.success(t('site.announcement.deleted'))
     await load()
   } catch (error) {
     ElMessage.error(toApiError(error).message)
@@ -244,13 +247,13 @@ const pageSaving = ref(false)
 const pageFormRef = ref<FormInstance>()
 const editingPageId = ref('')
 const pageForm = reactive<PageInput>({ slug: '', title: '', content: '', published: true })
-const pageRules: FormRules = {
+const pageRules = computed<FormRules>(() => ({
   slug: [
-    { required: true, message: '请输入 slug', trigger: 'blur' },
-    { pattern: /^[a-z0-9][a-z0-9-]*$/, message: '仅小写字母、数字与连字符', trigger: 'blur' },
+    { required: true, message: t('site.pageForm.validation.slugRequired'), trigger: 'blur' },
+    { pattern: /^[a-z0-9][a-z0-9-]*$/, message: t('site.pageForm.validation.slugPattern'), trigger: 'blur' },
   ],
-  title: [{ required: true, message: '请输入标题', trigger: 'blur' }],
-}
+  title: [{ required: true, message: t('site.pageForm.validation.titleRequired'), trigger: 'blur' }],
+}))
 const pageSnapshot = ref('')
 
 function pageState(): string {
@@ -264,9 +267,9 @@ async function closePageDialog(done: () => void): Promise<void> {
     return
   }
   try {
-    await ElMessageBox.confirm('关闭后未保存的修改将丢失。', '放弃修改？', {
-      confirmButtonText: '放弃修改',
-      cancelButtonText: '继续编辑',
+    await ElMessageBox.confirm(t('site.discard.message'), t('site.discard.title'), {
+      confirmButtonText: t('site.discard.confirm'),
+      cancelButtonText: t('site.discard.cancel'),
       type: 'warning',
       confirmButtonClass: 'el-button--danger',
     })
@@ -305,10 +308,10 @@ async function submitPage(): Promise<void> {
     }
     if (editingPageId.value) {
       await updatePage(editingPageId.value, payload)
-      ElMessage.success('页面已更新')
+      ElMessage.success(t('site.pageForm.updated'))
     } else {
       await createPage(payload)
-      ElMessage.success('页面已创建')
+      ElMessage.success(t('site.pageForm.created'))
     }
     pageSnapshot.value = pageState()
     pageOpen.value = false
@@ -322,9 +325,9 @@ async function submitPage(): Promise<void> {
 
 async function removePage(page: Page): Promise<void> {
   try {
-    await ElMessageBox.confirm(`将删除页面「${page.title}」。`, '删除页面', {
-      confirmButtonText: '删除',
-      cancelButtonText: '取消',
+    await ElMessageBox.confirm(t('site.pageForm.deleteConfirm', { title: page.title }), t('site.pageForm.deleteTitle'), {
+      confirmButtonText: t('common.delete'),
+      cancelButtonText: t('common.cancel'),
       type: 'warning',
       confirmButtonClass: 'el-button--danger',
     })
@@ -333,7 +336,7 @@ async function removePage(page: Page): Promise<void> {
   }
   try {
     await deletePage(page.id)
-    ElMessage.success('页面已删除')
+    ElMessage.success(t('site.pageForm.deleted'))
     await load()
   } catch (error) {
     ElMessage.error(toApiError(error).message)
@@ -350,10 +353,10 @@ function openReportDetail(report: Report): void {
 }
 
 async function handleReport(report: Report, status: ReportStatus): Promise<void> {
-  const note = status === 'rejected' ? '举报不成立' : '已处理'
+  const note = status === 'rejected' ? t('site.report.noteRejected') : t('site.report.noteResolved')
   try {
     const updated = await updateReport(report.id, status, note)
-    ElMessage.success('举报已更新')
+    ElMessage.success(t('site.report.updated'))
     if (detailReport.value?.id === updated.id) detailReport.value = updated
     await loadReports()
   } catch (error) {
@@ -366,14 +369,14 @@ onMounted(load)
 
 <template>
   <div class="ax-page">
-    <PageHeader title="站点内容" description="维护站内公告、处理用户举报、管理独立页面。">
+    <PageHeader :title="t('site.page.title')" :description="t('site.page.description')">
       <template #actions>
-        <el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button>
+        <el-button :icon="Refresh" :loading="loading" @click="load">{{ t('common.refresh') }}</el-button>
         <el-button v-if="activeTab === 'announcements'" type="primary" :icon="Plus" @click="openCreateAnnouncement">
-          新建公告
+          {{ t('site.actions.createAnnouncement') }}
         </el-button>
         <el-button v-else-if="activeTab === 'pages'" type="primary" :icon="Plus" @click="openCreatePage">
-          新建页面
+          {{ t('site.actions.createPage') }}
         </el-button>
       </template>
     </PageHeader>
@@ -384,45 +387,49 @@ onMounted(load)
       v-else-if="loading && announcements.length === 0 && reports.length === 0 && pages.length === 0"
       :rows="8"
       :columns="4"
-      title="正在加载站点内容"
+      :title="t('site.loading')"
     />
 
     <el-tabs v-else v-model="activeTab" class="site-tabs">
-      <el-tab-pane :label="`公告 (${announcements.length})`" name="announcements">
-        <EmptyState v-if="announcements.length === 0" title="暂无公告" description="点击「新建公告」发布站内公告。" />
+      <el-tab-pane :label="t('site.tabs.announcements', { count: announcements.length })" name="announcements">
+        <EmptyState
+          v-if="announcements.length === 0"
+          :title="t('site.empty.announcements.title')"
+          :description="t('site.empty.announcements.description')"
+        />
         <div v-else class="ax-card table-card">
           <div class="ax-table-scroll">
             <el-table :data="announcements" style="width: 100%">
-              <el-table-column label="标题" min-width="220">
+              <el-table-column :label="t('site.columns.title')" min-width="220">
                 <template #default="{ row }">
                   <span class="site-title">
-                    <el-tag v-if="row.pinned" size="small" type="danger" effect="plain">置顶</el-tag>
+                    <el-tag v-if="row.pinned" size="small" type="danger" effect="plain">{{ t('site.pinned') }}</el-tag>
                     {{ row.title }}
                   </span>
                 </template>
               </el-table-column>
-              <el-table-column label="级别" width="100">
+              <el-table-column :label="t('site.columns.level')" width="100">
                 <template #default="{ row }">
                   <el-tag size="small" :type="(levelOptions.find((l) => l.value === row.level)?.tag as any)" effect="plain">
                     {{ levelOptions.find((l) => l.value === row.level)?.label ?? row.level }}
                   </el-tag>
                 </template>
               </el-table-column>
-              <el-table-column label="状态" width="100">
+              <el-table-column :label="t('common.status')" width="100">
                 <template #default="{ row }">
                   <el-tag size="small" :type="row.published ? 'success' : 'info'" effect="plain">
-                    {{ row.published ? '已发布' : '草稿' }}
+                    {{ row.published ? t('site.publishState.published') : t('site.publishState.draft') }}
                   </el-tag>
                 </template>
               </el-table-column>
-              <el-table-column label="更新时间" min-width="170">
+              <el-table-column :label="t('site.columns.updatedAt')" min-width="170">
                 <template #default="{ row }">{{ formatDateTime(row.updated_at) }}</template>
               </el-table-column>
-              <el-table-column label="操作" fixed="right" width="170" align="right">
+              <el-table-column :label="t('common.actions')" fixed="right" width="170" align="right">
                 <template #default="{ row }">
                   <div class="ax-row-actions">
-                    <el-button link type="primary" :icon="EditPen" @click="openEditAnnouncement(row)">编辑</el-button>
-                    <el-button link type="danger" :icon="Delete" @click="removeAnnouncement(row)">删除</el-button>
+                    <el-button link type="primary" :icon="EditPen" @click="openEditAnnouncement(row)">{{ t('common.edit') }}</el-button>
+                    <el-button link type="danger" :icon="Delete" @click="removeAnnouncement(row)">{{ t('common.delete') }}</el-button>
                   </div>
                 </template>
               </el-table-column>
@@ -431,29 +438,29 @@ onMounted(load)
         </div>
       </el-tab-pane>
 
-      <el-tab-pane :label="`举报 (${reportTotal})`" name="reports">
+      <el-tab-pane :label="t('site.tabs.reports', { count: reportTotal })" name="reports">
         <div class="site-toolbar">
           <el-radio-group
             :model-value="reportFilter"
             @update:model-value="(v: any) => onReportFilterChange(v)"
           >
-            <el-radio-button value="">全部</el-radio-button>
-            <el-radio-button value="pending">待处理</el-radio-button>
-            <el-radio-button value="resolved">已处理</el-radio-button>
-            <el-radio-button value="rejected">已驳回</el-radio-button>
+            <el-radio-button value="">{{ t('site.filters.all') }}</el-radio-button>
+            <el-radio-button value="pending">{{ t('site.reportStatus.pending') }}</el-radio-button>
+            <el-radio-button value="resolved">{{ t('site.reportStatus.resolved') }}</el-radio-button>
+            <el-radio-button value="rejected">{{ t('site.reportStatus.rejected') }}</el-radio-button>
           </el-radio-group>
         </div>
         <EmptyState
           v-if="reportTotal === 0 && !reportsLoading"
-          :title="reportFilter ? '没有符合条件的举报' : '暂无举报'"
-          :description="reportFilter ? '当前状态筛选下没有举报记录。' : '用户举报会显示在这里。'"
+          :title="reportFilter ? t('site.empty.reports.filteredTitle') : t('site.empty.reports.title')"
+          :description="reportFilter ? t('site.empty.reports.filteredDescription') : t('site.empty.reports.description')"
         >
-          <el-button v-if="reportFilter" @click="clearReportFilter">清空筛选</el-button>
+          <el-button v-if="reportFilter" @click="clearReportFilter">{{ t('site.empty.reports.clearFilter') }}</el-button>
         </EmptyState>
         <div v-else class="ax-card table-card">
           <div class="ax-table-scroll">
             <el-table v-loading="reportsLoading" :data="reports" style="width: 100%">
-              <el-table-column label="原因" min-width="180">
+              <el-table-column :label="t('site.columns.reason')" min-width="180">
                 <template #default="{ row }">
                   <div class="site-cell">
                     <span>{{ row.reason }}</span>
@@ -461,28 +468,28 @@ onMounted(load)
                   </div>
                 </template>
               </el-table-column>
-              <el-table-column label="举报人" width="140">
-                <template #default="{ row }">{{ row.reporter_name || '匿名' }}</template>
+              <el-table-column :label="t('site.columns.reporter')" width="140">
+                <template #default="{ row }">{{ row.reporter_name || t('site.anonymous') }}</template>
               </el-table-column>
-              <el-table-column label="状态" width="100">
+              <el-table-column :label="t('common.status')" width="100">
                 <template #default="{ row }">
                   <el-tag size="small" :type="(reportStatusOptions.find((s) => s.value === row.status)?.tag as any)" effect="plain">
                     {{ reportStatusOptions.find((s) => s.value === row.status)?.label ?? row.status }}
                   </el-tag>
                 </template>
               </el-table-column>
-              <el-table-column label="提交时间" min-width="170">
+              <el-table-column :label="t('site.columns.submittedAt')" min-width="170">
                 <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
               </el-table-column>
-              <el-table-column label="操作" fixed="right" width="240" align="right">
+              <el-table-column :label="t('common.actions')" fixed="right" width="240" align="right">
                 <template #default="{ row }">
                   <div class="ax-row-actions">
-                    <el-button link type="primary" @click="openReportDetail(row)">详情</el-button>
+                    <el-button link type="primary" @click="openReportDetail(row)">{{ t('site.tableActions.detail') }}</el-button>
                     <el-button link type="primary" :icon="Check" :disabled="row.status === 'resolved'" @click="handleReport(row, 'resolved')">
-                      处理
+                      {{ t('site.tableActions.resolve') }}
                     </el-button>
                     <el-button link type="info" :icon="Close" :disabled="row.status === 'rejected'" @click="handleReport(row, 'rejected')">
-                      驳回
+                      {{ t('site.tableActions.reject') }}
                     </el-button>
                   </div>
                 </template>
@@ -504,32 +511,36 @@ onMounted(load)
         </div>
       </el-tab-pane>
 
-      <el-tab-pane :label="`页面 (${pages.length})`" name="pages">
-        <EmptyState v-if="pages.length === 0" title="暂无独立页面" description="创建后可经 /p/{slug} 公开访问。" />
+      <el-tab-pane :label="t('site.tabs.pages', { count: pages.length })" name="pages">
+        <EmptyState
+          v-if="pages.length === 0"
+          :title="t('site.empty.pages.title')"
+          :description="t('site.empty.pages.description', { path: '/p/{slug}' })"
+        />
         <div v-else class="ax-card table-card">
           <div class="ax-table-scroll">
             <el-table :data="pages" style="width: 100%">
-              <el-table-column label="标题" min-width="200">
+              <el-table-column :label="t('site.columns.title')" min-width="200">
                 <template #default="{ row }">{{ row.title }}</template>
               </el-table-column>
-              <el-table-column label="Slug" width="180">
+              <el-table-column :label="t('site.columns.slug')" width="180">
                 <template #default="{ row }"><code class="ax-mono">/p/{{ row.slug }}</code></template>
               </el-table-column>
-              <el-table-column label="状态" width="100">
+              <el-table-column :label="t('common.status')" width="100">
                 <template #default="{ row }">
                   <el-tag size="small" :type="row.published ? 'success' : 'info'" effect="plain">
-                    {{ row.published ? '已发布' : '草稿' }}
+                    {{ row.published ? t('site.publishState.published') : t('site.publishState.draft') }}
                   </el-tag>
                 </template>
               </el-table-column>
-              <el-table-column label="更新时间" min-width="170">
+              <el-table-column :label="t('site.columns.updatedAt')" min-width="170">
                 <template #default="{ row }">{{ formatDateTime(row.updated_at) }}</template>
               </el-table-column>
-              <el-table-column label="操作" fixed="right" width="170" align="right">
+              <el-table-column :label="t('common.actions')" fixed="right" width="170" align="right">
                 <template #default="{ row }">
                   <div class="ax-row-actions">
-                    <el-button link type="primary" :icon="EditPen" @click="openEditPage(row)">编辑</el-button>
-                    <el-button link type="danger" :icon="Delete" @click="removePage(row)">删除</el-button>
+                    <el-button link type="primary" :icon="EditPen" @click="openEditPage(row)">{{ t('common.edit') }}</el-button>
+                    <el-button link type="danger" :icon="Delete" @click="removePage(row)">{{ t('common.delete') }}</el-button>
                   </div>
                 </template>
               </el-table-column>
@@ -542,7 +553,7 @@ onMounted(load)
     <!-- 公告编辑 -->
     <el-dialog
       v-model="annOpen"
-      :title="editingAnnId ? '编辑公告' : '新建公告'"
+      :title="editingAnnId ? t('site.announcement.editTitle') : t('site.announcement.createTitle')"
       width="min(560px, 92vw)"
       append-to-body
       :close-on-click-modal="false"
@@ -550,32 +561,32 @@ onMounted(load)
       @closed="annFormRef?.clearValidate()"
     >
       <el-form ref="annFormRef" :model="annForm" :rules="annRules" label-position="top">
-        <el-form-item label="标题" prop="title">
+        <el-form-item :label="t('site.announcement.title')" prop="title">
           <el-input v-model="annForm.title" maxlength="200" show-word-limit />
         </el-form-item>
-        <el-form-item label="内容">
+        <el-form-item :label="t('site.announcement.content')">
           <el-input v-model="annForm.content" type="textarea" :rows="5" maxlength="20000" />
         </el-form-item>
-        <el-form-item label="级别">
+        <el-form-item :label="t('site.announcement.level')">
           <el-select v-model="annForm.level" style="width: 100%">
             <el-option v-for="l in levelOptions" :key="l.value" :label="l.label" :value="l.value" />
           </el-select>
         </el-form-item>
-        <el-form-item label="选项">
-          <el-checkbox v-model="annForm.pinned">置顶</el-checkbox>
-          <el-checkbox v-model="annForm.published">发布</el-checkbox>
+        <el-form-item :label="t('site.announcement.options')">
+          <el-checkbox v-model="annForm.pinned">{{ t('site.announcement.pinned') }}</el-checkbox>
+          <el-checkbox v-model="annForm.published">{{ t('site.announcement.publish') }}</el-checkbox>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="annOpen = false">取消</el-button>
-        <el-button type="primary" :loading="annSaving" @click="submitAnnouncement">保存</el-button>
+        <el-button @click="annOpen = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="annSaving" @click="submitAnnouncement">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 页面编辑 -->
     <el-dialog
       v-model="pageOpen"
-      :title="editingPageId ? '编辑页面' : '新建页面'"
+      :title="editingPageId ? t('site.pageForm.editTitle') : t('site.pageForm.createTitle')"
       width="min(640px, 92vw)"
       append-to-body
       :close-on-click-modal="false"
@@ -583,29 +594,29 @@ onMounted(load)
       @closed="pageFormRef?.clearValidate()"
     >
       <el-form ref="pageFormRef" :model="pageForm" :rules="pageRules" label-position="top">
-        <el-form-item label="标题" prop="title">
+        <el-form-item :label="t('site.pageForm.title')" prop="title">
           <el-input v-model="pageForm.title" maxlength="200" />
         </el-form-item>
-        <el-form-item label="Slug" prop="slug">
-          <el-input v-model="pageForm.slug" placeholder="例如 about" maxlength="100" />
-          <div class="form-hint">公开地址：/p/{{ pageForm.slug || 'slug' }}</div>
+        <el-form-item :label="t('site.pageForm.slug')" prop="slug">
+          <el-input v-model="pageForm.slug" :placeholder="t('site.pageForm.slugPlaceholder')" maxlength="100" />
+          <div class="form-hint">{{ t('site.pageForm.publicUrl', { slug: pageForm.slug || 'slug' }) }}</div>
         </el-form-item>
-        <el-form-item label="内容（支持 Markdown 文本）">
+        <el-form-item :label="t('site.pageForm.content')">
           <el-input v-model="pageForm.content" type="textarea" :rows="10" maxlength="100000" />
         </el-form-item>
-        <el-form-item label="发布">
+        <el-form-item :label="t('site.pageForm.publish')">
           <el-switch v-model="pageForm.published" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="pageOpen = false">取消</el-button>
-        <el-button type="primary" :loading="pageSaving" @click="submitPage">保存</el-button>
+        <el-button @click="pageOpen = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="pageSaving" @click="submitPage">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
 
     <el-drawer
       v-model="reportDetailOpen"
-      title="举报详情"
+      :title="t('site.report.detailTitle')"
       size="min(460px, 92vw)"
       append-to-body
     >
@@ -613,7 +624,7 @@ onMounted(load)
         <div class="report-detail__head">
           <div>
             <p class="report-detail__reason">{{ detailReport.reason }}</p>
-            <p class="report-detail__hint">举报编号 {{ detailReport.id }}</p>
+            <p class="report-detail__hint">{{ t('site.report.idHint', { id: detailReport.id }) }}</p>
           </div>
           <el-tag
             size="small"
@@ -626,39 +637,39 @@ onMounted(load)
 
         <dl class="report-detail__list">
           <div class="report-detail__row">
-            <dt>补充说明</dt>
+            <dt>{{ t('site.report.detail') }}</dt>
             <dd class="report-detail__multiline">{{ detailReport.detail || '—' }}</dd>
           </div>
           <div class="report-detail__row">
-            <dt>举报人</dt>
-            <dd>{{ detailReport.reporter_name || '匿名' }}</dd>
+            <dt>{{ t('site.report.reporter') }}</dt>
+            <dd>{{ detailReport.reporter_name || t('site.anonymous') }}</dd>
           </div>
           <div class="report-detail__row">
-            <dt>图片 ID</dt>
+            <dt>{{ t('site.report.imageId') }}</dt>
             <dd class="ax-mono">{{ detailReport.image_id || '—' }}</dd>
           </div>
           <div class="report-detail__row">
-            <dt>处理备注</dt>
+            <dt>{{ t('site.report.handlerNote') }}</dt>
             <dd>{{ detailReport.handler_note || '—' }}</dd>
           </div>
           <div class="report-detail__row">
-            <dt>提交时间</dt>
+            <dt>{{ t('site.report.submittedAt') }}</dt>
             <dd>{{ formatDateTime(detailReport.created_at) }}</dd>
           </div>
           <div class="report-detail__row">
-            <dt>更新时间</dt>
+            <dt>{{ t('site.report.updatedAt') }}</dt>
             <dd>{{ formatDateTime(detailReport.updated_at) }}</dd>
           </div>
         </dl>
 
         <div class="report-detail__actions">
           <template v-if="detailReport.status === 'pending'">
-            <el-button @click="handleReport(detailReport, 'rejected')">驳回</el-button>
+            <el-button @click="handleReport(detailReport, 'rejected')">{{ t('site.report.reject') }}</el-button>
             <el-button type="primary" @click="handleReport(detailReport, 'resolved')">
-              标记已处理
+              {{ t('site.report.markResolved') }}
             </el-button>
           </template>
-          <el-button v-else @click="reportDetailOpen = false">关闭</el-button>
+          <el-button v-else @click="reportDetailOpen = false">{{ t('site.report.close') }}</el-button>
         </div>
       </template>
     </el-drawer>

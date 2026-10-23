@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowDown, Expand, Fold, Management, Moon, Search, Setting, Sunny, SwitchButton, User } from '@element-plus/icons-vue'
 
+import LocaleSwitcher from '@/components/LocaleSwitcher.vue'
 import UserAvatar from '@/components/UserAvatar.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
@@ -16,15 +18,16 @@ const emit = defineEmits<{
   (event: 'open-search'): void
 }>()
 
+const { t } = useI18n()
 const auth = useAuthStore()
 const theme = useThemeStore()
 const route = useRoute()
 const router = useRouter()
 
-const pageTitle = computed(() => route.meta.title ?? '')
+const pageTitle = computed(() => (route.meta.title ? t(route.meta.title) : ''))
 const inAdminArea = computed(() => route.path.startsWith('/admin'))
 const breadcrumbRoot = computed(() => (inAdminArea.value ? '/admin' : '/user'))
-const breadcrumbGroup = computed(() => route.meta.group ?? '')
+const breadcrumbGroup = computed(() => (route.meta.group ? t(route.meta.group) : ''))
 const shortcutLabel = navigator.userAgent.includes('Mac') ? '⌘K' : 'Ctrl K'
 
 async function handleCommand(command: string | number | object): Promise<void> {
@@ -46,16 +49,20 @@ async function handleCommand(command: string | number | object): Promise<void> {
   }
   if (command === 'logout') {
     try {
-      await ElMessageBox.confirm('退出后需要重新登录才能继续管理图片。', '确定退出登录吗？', {
-        confirmButtonText: '退出登录',
-        cancelButtonText: '取消',
-        type: 'warning',
-      })
+      await ElMessageBox.confirm(
+        t('topbar.logoutConfirmMessage'),
+        t('topbar.logoutConfirmTitle'),
+        {
+          confirmButtonText: t('topbar.logout'),
+          cancelButtonText: t('common.cancel'),
+          type: 'warning',
+        },
+      )
     } catch {
       return
     }
     auth.logout()
-    ElMessage.success('已退出登录')
+    ElMessage.success(t('topbar.loggedOut'))
     await router.replace('/login')
   }
 }
@@ -66,7 +73,7 @@ async function handleCommand(command: string | number | object): Promise<void> {
     <button
       class="topbar__menu"
       type="button"
-      aria-label="打开导航菜单"
+      :aria-label="t('topbar.openMenu')"
       @click="emit('toggle-menu')"
     >
       <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
@@ -83,8 +90,8 @@ async function handleCommand(command: string | number | object): Promise<void> {
     <button
       class="topbar__collapse"
       type="button"
-      :aria-label="sidebarCollapsed ? '展开侧栏' : '折叠侧栏'"
-      :title="sidebarCollapsed ? '展开侧栏' : '折叠侧栏'"
+      :aria-label="sidebarCollapsed ? t('topbar.expandSidebar') : t('topbar.collapseSidebar')"
+      :title="sidebarCollapsed ? t('topbar.expandSidebar') : t('topbar.collapseSidebar')"
       @click="emit('toggle-sidebar')"
     >
       <el-icon :size="16">
@@ -92,7 +99,7 @@ async function handleCommand(command: string | number | object): Promise<void> {
       </el-icon>
     </button>
 
-    <nav class="topbar__crumbs" aria-label="面包屑">
+    <nav class="topbar__crumbs" :aria-label="t('topbar.breadcrumb')">
       <router-link class="topbar__crumb-root" :to="breadcrumbRoot">AXmiPic</router-link>
       <span class="topbar__crumb-sep" aria-hidden="true">/</span>
       <template v-if="breadcrumbGroup">
@@ -107,20 +114,22 @@ async function handleCommand(command: string | number | object): Promise<void> {
     <button
       class="topbar__search"
       type="button"
-      aria-label="全局搜索"
-      :title="`全局搜索（${shortcutLabel}）`"
+      :aria-label="t('topbar.globalSearch')"
+      :title="t('topbar.globalSearchShortcut', { shortcut: shortcutLabel })"
       @click="emit('open-search')"
     >
       <el-icon :size="15"><Search /></el-icon>
-      <span class="topbar__search-label">搜索</span>
+      <span class="topbar__search-label">{{ t('topbar.search') }}</span>
       <kbd class="topbar__search-kbd">{{ shortcutLabel }}</kbd>
     </button>
+
+    <LocaleSwitcher />
 
     <button
       class="topbar__theme"
       type="button"
-      :aria-label="theme.isDark ? '切换到浅色主题' : '切换到深色主题'"
-      :title="theme.isDark ? '切换到浅色主题' : '切换到深色主题'"
+      :aria-label="theme.isDark ? t('topbar.switchToLight') : t('topbar.switchToDark')"
+      :title="theme.isDark ? t('topbar.switchToLight') : t('topbar.switchToDark')"
       @click="theme.toggle()"
     >
       <el-icon :size="16">
@@ -129,30 +138,30 @@ async function handleCommand(command: string | number | object): Promise<void> {
     </button>
 
     <el-dropdown trigger="click" placement="bottom-end" @command="handleCommand">
-      <button class="topbar__user" type="button" aria-label="账号菜单">
+      <button class="topbar__user" type="button" :aria-label="t('topbar.accountMenu')">
         <UserAvatar :name="auth.username" size="sm" />
         <span class="topbar__user-meta">
           <span class="topbar__username">{{ auth.username }}</span>
-          <span class="topbar__role">{{ auth.isAdmin ? '管理员' : '用户' }}</span>
+          <span class="topbar__role">{{ auth.isAdmin ? t('topbar.roleAdmin') : t('topbar.roleUser') }}</span>
         </span>
         <el-icon :size="12" class="topbar__caret"><ArrowDown /></el-icon>
       </button>
       <template #dropdown>
         <el-dropdown-menu>
           <el-dropdown-item command="home">
-            <el-icon><Setting /></el-icon>返回首页
+            <el-icon><Setting /></el-icon>{{ t('topbar.returnHome') }}
           </el-dropdown-item>
           <el-dropdown-item v-if="auth.isAdmin && inAdminArea" command="user-center">
-            <el-icon><User /></el-icon>用户中心
+            <el-icon><User /></el-icon>{{ t('topbar.userCenter') }}
           </el-dropdown-item>
           <el-dropdown-item v-if="auth.isAdmin && !inAdminArea" command="admin-console">
-            <el-icon><Management /></el-icon>管理控制台
+            <el-icon><Management /></el-icon>{{ t('topbar.adminConsole') }}
           </el-dropdown-item>
           <el-dropdown-item command="settings">
-            <el-icon><Setting /></el-icon>账号设置
+            <el-icon><Setting /></el-icon>{{ t('topbar.accountSettings') }}
           </el-dropdown-item>
           <el-dropdown-item command="logout" divided>
-            <el-icon><SwitchButton /></el-icon>退出登录
+            <el-icon><SwitchButton /></el-icon>{{ t('topbar.logout') }}
           </el-dropdown-item>
         </el-dropdown-menu>
       </template>

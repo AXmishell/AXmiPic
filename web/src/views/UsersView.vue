@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import type { FormInstance, FormRules } from 'element-plus'
 import { Delete, EditPen, Plus, Refresh, Search } from '@element-plus/icons-vue'
 
@@ -24,8 +25,9 @@ import UserAvatar from '@/components/UserAvatar.vue'
 import { useAuthStore } from '@/stores/auth'
 import { formatBytes, formatDateTime, usagePercent } from '@/utils/format'
 import { useTabQuery } from '@/utils/useTabQuery'
-import { USERNAME_PATTERN, USERNAME_RULE_MESSAGE, usernameRules } from '@/utils/validate'
+import { USERNAME_PATTERN, usernameRuleMessage, usernameRules } from '@/utils/validate'
 
+const { t } = useI18n()
 const auth = useAuthStore()
 
 type Tab = 'customers' | 'admins'
@@ -64,13 +66,13 @@ const hasCustomerFilters = computed(
     sort.value !== 'newest',
 )
 
-const sortLabels: Record<'newest' | 'oldest' | 'username' | 'usage', string> = {
-  newest: '注册时间（新→旧）',
-  oldest: '注册时间（旧→新）',
-  username: '用户名 A→Z',
-  usage: '用量（高→低）',
-}
-const sortLabel = computed(() => sortLabels[sort.value])
+const sortLabels = computed<Record<'newest' | 'oldest' | 'username' | 'usage', string>>(() => ({
+  newest: t('users.sort.newest'),
+  oldest: t('users.sort.oldest'),
+  username: t('users.sort.username'),
+  usage: t('users.sort.usage'),
+}))
+const sortLabel = computed(() => sortLabels.value[sort.value])
 
 // 编辑用户资料
 const editOpen = ref(false)
@@ -84,18 +86,18 @@ const createOpen = ref(false)
 const creating = ref(false)
 const createFormRef = ref<FormInstance>()
 const createForm = ref({ username: '', password: '', confirmPassword: '' })
-const createRules: FormRules = {
-  username: usernameRules('请输入用户名'),
+const createRules = computed<FormRules>(() => ({
+  username: usernameRules(t('validation.usernameRequired')),
   password: [
-    { required: true, message: '请输入密码', trigger: 'blur' },
-    { min: 8, max: 72, message: '密码长度为 8 到 72 个字符', trigger: 'blur' },
+    { required: true, message: t('users.validation.passwordRequired'), trigger: 'blur' },
+    { min: 8, max: 72, message: t('users.validation.passwordLength'), trigger: 'blur' },
   ],
   confirmPassword: [
-    { required: true, message: '请再次输入密码', trigger: 'blur' },
+    { required: true, message: t('validation.passwordConfirmRequired'), trigger: 'blur' },
     {
       validator: (_rule, value: string, callback) => {
         if (value !== createForm.value.password) {
-          callback(new Error('两次输入的密码不一致'))
+          callback(new Error(t('validation.passwordMismatch')))
           return
         }
         callback()
@@ -103,7 +105,7 @@ const createRules: FormRules = {
       trigger: 'blur',
     },
   ],
-}
+}))
 
 function filter(list: UserModel[]): UserModel[] {
   const keyword = search.value.trim().toLowerCase()
@@ -123,8 +125,8 @@ function isSelf(user: UserModel): boolean {
 }
 
 function roleGroupLabel(id?: string): string {
-  if (!id) return '默认角色组'
-  return roleGroups.value.find((group) => group.id === id)?.name ?? '未知角色组'
+  if (!id) return t('users.roleGroup.default')
+  return roleGroups.value.find((group) => group.id === id)?.name ?? t('users.roleGroup.unknown')
 }
 
 const detailOpen = ref(false)
@@ -271,11 +273,11 @@ async function submitEdit(): Promise<void> {
   if (!target || editing.value) return
   const username = editForm.username.trim()
   if (!USERNAME_PATTERN.test(username)) {
-    ElMessage.warning(USERNAME_RULE_MESSAGE)
+    ElMessage.warning(usernameRuleMessage())
     return
   }
   if (editForm.password && editForm.password.length < 8) {
-    ElMessage.warning('新密码至少 8 位')
+    ElMessage.warning(t('users.messages.newPasswordMin'))
     return
   }
   const payload: UserUpdate = {
@@ -293,7 +295,7 @@ async function submitEdit(): Promise<void> {
     list.value = list.value.map((user) => (user.id === updated.id ? updated : user))
     if (isSelf(target)) await auth.refreshUser()
     editOpen.value = false
-    ElMessage.success('用户信息已更新')
+    ElMessage.success(t('users.messages.updated'))
   } catch (error) {
     ElMessage.error(toApiError(error).message)
   } finally {
@@ -312,7 +314,7 @@ async function submitCreate(): Promise<void> {
       username: createForm.value.username.trim(),
       password: createForm.value.password,
     })
-    ElMessage.success('管理员已创建')
+    ElMessage.success(t('users.messages.adminCreated'))
     createOpen.value = false
     await load()
   } catch (error) {
@@ -332,7 +334,7 @@ async function patch(
   try {
     const updated = await run(target.id, payload)
     list.value = list.value.map((user) => (user.id === updated.id ? updated : user))
-    ElMessage.success('用户信息已更新')
+    ElMessage.success(t('users.messages.updated'))
     // 状态/角色组筛选生效时，变更后需重新取当前页，避免残留不匹配的行。
     if (list === customers && (statusFilter.value || roleGroupFilter.value)) {
       await loadCustomers()
@@ -355,11 +357,11 @@ async function applyDisabled(target: UserModel, disabled: boolean, isAdmin: bool
   if (disabled) {
     try {
       await ElMessageBox.confirm(
-        `禁用后「${target.username}」将无法登录，确定要禁用该账号吗？`,
-        '禁用账号',
+        t('users.confirm.disableMessage', { name: target.username }),
+        t('users.confirm.disableTitle'),
         {
-          confirmButtonText: '禁用',
-          cancelButtonText: '取消',
+          confirmButtonText: t('users.confirm.disable'),
+          cancelButtonText: t('common.cancel'),
           type: 'warning',
           confirmButtonClass: 'el-button--danger',
         },
@@ -377,9 +379,16 @@ async function onRoleGroupChange(target: UserModel, value: unknown): Promise<voi
   if (roleGroupID === (target.role_group_id ?? '')) return
   try {
     await ElMessageBox.confirm(
-      `将「${target.username}」的角色组调整为「${roleGroupLabel(roleGroupID)}」？这会立即改变其配额与功能权限。`,
-      '调整角色组',
-      { confirmButtonText: '调整', cancelButtonText: '取消', type: 'warning' },
+      t('users.confirm.roleGroupMessage', {
+        name: target.username,
+        role: roleGroupLabel(roleGroupID),
+      }),
+      t('users.confirm.roleGroupTitle'),
+      {
+        confirmButtonText: t('users.confirm.roleGroup'),
+        cancelButtonText: t('common.cancel'),
+        type: 'warning',
+      },
     )
   } catch {
     return
@@ -419,10 +428,15 @@ async function runBatch(
     ElMessage.error(toApiError(error).message)
   }
   if (errors.length === 0) {
-    ElMessage.success(`${label}完成，共处理 ${ids.length} 位用户`)
+    ElMessage.success(t('users.batch.success', { label, count: ids.length }))
   } else {
     ElMessage.error(
-      `${label}完成：成功 ${ids.length - errors.length} 位，失败 ${errors.length} 位。${errors[0] ?? ''}`,
+      t('users.batch.partial', {
+        label,
+        success: ids.length - errors.length,
+        failed: errors.length,
+        reason: errors[0] ?? '',
+      }),
     )
   }
 }
@@ -432,18 +446,18 @@ async function batchDisable(): Promise<void> {
   if (ids.length === 0 || batchBusy.value) return
   try {
     await ElMessageBox.confirm(
-      `将禁用选中的 ${ids.length} 位用户，禁用后他们将无法登录。`,
-      '批量禁用用户',
+      t('users.confirm.batchDisableMessage', { count: ids.length }),
+      t('users.confirm.batchDisableTitle'),
       {
-        confirmButtonText: '批量禁用',
-        cancelButtonText: '取消',
+        confirmButtonText: t('users.confirm.batchDisable'),
+        cancelButtonText: t('common.cancel'),
         type: 'warning',
       },
     )
   } catch {
     return
   }
-  await runBatch(ids, (id) => updateCustomer(id, { disabled: true }), '批量禁用')
+  await runBatch(ids, (id) => updateCustomer(id, { disabled: true }), t('users.batch.disableLabel'))
 }
 
 async function batchRemove(): Promise<void> {
@@ -451,34 +465,34 @@ async function batchRemove(): Promise<void> {
   if (ids.length === 0 || batchBusy.value) return
   try {
     await ElMessageBox.prompt(
-      `将永久删除选中的 ${ids.length} 位用户，其账号数据不可恢复。请输入 DELETE 以确认。`,
-      '批量删除用户',
+      t('users.confirm.batchRemoveMessage', { count: ids.length }),
+      t('users.confirm.batchRemoveTitle'),
       {
-        confirmButtonText: '批量删除',
-        cancelButtonText: '取消',
+        confirmButtonText: t('users.confirm.batchRemove'),
+        cancelButtonText: t('common.cancel'),
         type: 'warning',
         inputPlaceholder: 'DELETE',
-        inputValidator: (value) => value === 'DELETE' || '请输入大写的 DELETE',
+        inputValidator: (value) => value === 'DELETE' || t('users.confirm.deleteKeywordHint'),
         confirmButtonClass: 'el-button--danger',
       },
     )
   } catch {
     return
   }
-  await runBatch(ids, (id) => deleteCustomer(id), '批量删除')
+  await runBatch(ids, (id) => deleteCustomer(id), t('users.batch.removeLabel'))
 }
 
 async function removeUser(target: UserModel, isAdmin: boolean): Promise<void> {
   try {
     await ElMessageBox.prompt(
-      `将永久删除「${target.username}」，该操作不可恢复。请输入用户名以确认。`,
-      isAdmin ? '删除管理员' : '删除用户',
+      t('users.confirm.deleteMessage', { name: target.username }),
+      isAdmin ? t('users.confirm.deleteAdminTitle') : t('users.confirm.deleteUserTitle'),
       {
-        confirmButtonText: '删除',
-        cancelButtonText: '取消',
+        confirmButtonText: t('common.delete'),
+        cancelButtonText: t('common.cancel'),
         type: 'warning',
         inputPlaceholder: target.username,
-        inputValidator: (value) => value === target.username || '输入的用户名不匹配',
+        inputValidator: (value) => value === target.username || t('users.confirm.usernameMismatch'),
         confirmButtonClass: 'el-button--danger',
       },
     )
@@ -495,7 +509,7 @@ async function removeUser(target: UserModel, isAdmin: boolean): Promise<void> {
       if (customers.value.length === 1 && page.value > 1) page.value -= 1
       await loadCustomers()
     }
-    ElMessage.success('账号已删除')
+    ElMessage.success(t('users.messages.deleted'))
   } catch (error) {
     ElMessage.error(toApiError(error).message)
   } finally {
@@ -508,23 +522,23 @@ onMounted(load)
 
 <template>
   <div class="ax-page">
-    <PageHeader title="用户管理" description="管理员与普通用户分页签管理：调整状态或删除账号。">
+    <PageHeader :title="t('users.title')" :description="t('users.description')">
       <template #actions>
-        <el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button>
+        <el-button :icon="Refresh" :loading="loading" @click="load">{{ t('common.refresh') }}</el-button>
         <el-button
           v-if="activeTab === 'admins'"
           type="primary"
           :icon="Plus"
           @click="openCreate"
         >
-          新建管理员
+          {{ t('users.actions.createAdmin') }}
         </el-button>
       </template>
       <template #toolbar>
         <el-input
           v-model="search"
           class="user-search"
-          placeholder="搜索用户名 / 邮箱"
+          :placeholder="t('users.searchPlaceholder')"
           clearable
           :prefix-icon="Search"
         />
@@ -534,17 +548,27 @@ onMounted(load)
     <ErrorState v-if="errorMessage" :message="errorMessage" @retry="load" />
 
     <div v-else-if="loading && totalCount === 0">
-      <TableSkeleton :rows="8" :columns="6" title="正在加载用户" />
+      <TableSkeleton :rows="8" :columns="6" :title="t('users.loading')" />
     </div>
 
     <el-tabs v-else v-model="activeTab" class="user-tabs">
-      <el-tab-pane :label="`普通用户 (${customerTotal})`" name="customers">
+      <el-tab-pane :label="t('users.tabs.customers', { count: customerTotal })" name="customers">
         <div class="user-toolbar">
-          <el-select v-model="statusFilter" placeholder="全部状态" clearable class="user-toolbar__select">
-            <el-option label="正常" value="enabled" />
-            <el-option label="已禁用" value="disabled" />
+          <el-select
+            v-model="statusFilter"
+            :placeholder="t('users.filters.statusPlaceholder')"
+            clearable
+            class="user-toolbar__select"
+          >
+            <el-option :label="t('users.status.enabled')" value="enabled" />
+            <el-option :label="t('users.status.disabled')" value="disabled" />
           </el-select>
-          <el-select v-model="roleGroupFilter" placeholder="全部角色组" clearable class="user-toolbar__select">
+          <el-select
+            v-model="roleGroupFilter"
+            :placeholder="t('users.filters.roleGroupPlaceholder')"
+            clearable
+            class="user-toolbar__select"
+          >
             <el-option
               v-for="group in roleGroups"
               :key="group.id"
@@ -553,54 +577,62 @@ onMounted(load)
             />
           </el-select>
           <el-select v-model="sort" class="user-toolbar__sort">
-            <el-option label="注册时间（新→旧）" value="newest" />
-            <el-option label="注册时间（旧→新）" value="oldest" />
-            <el-option label="用户名 A→Z" value="username" />
-            <el-option label="用量（高→低）" value="usage" />
+            <el-option :label="t('users.sort.newest')" value="newest" />
+            <el-option :label="t('users.sort.oldest')" value="oldest" />
+            <el-option :label="t('users.sort.username')" value="username" />
+            <el-option :label="t('users.sort.usage')" value="usage" />
           </el-select>
-          <span class="user-toolbar__total">共 {{ customerTotal }} 位用户</span>
+          <span class="user-toolbar__total">{{ t('users.total', { count: customerTotal }) }}</span>
         </div>
 
         <div v-if="hasCustomerFilters" class="user-filter-tags">
-          <span class="user-filter-tags__label">已选条件</span>
+          <span class="user-filter-tags__label">{{ t('users.filterTags.label') }}</span>
           <el-tag v-if="search.trim()" type="info" closable @close="search = ''">
-            关键词：{{ search.trim() }}
+            {{ t('users.filterTags.keyword', { keyword: search.trim() }) }}
           </el-tag>
           <el-tag v-if="statusFilter" type="info" closable @close="statusFilter = ''">
-            {{ statusFilter === 'enabled' ? '正常' : '已禁用' }}
+            {{ statusFilter === 'enabled' ? t('users.status.enabled') : t('users.status.disabled') }}
           </el-tag>
           <el-tag v-if="roleGroupFilter" type="info" closable @close="roleGroupFilter = ''">
-            角色组：{{ roleGroupLabel(roleGroupFilter) }}
+            {{ t('users.filterTags.roleGroup', { name: roleGroupLabel(roleGroupFilter) }) }}
           </el-tag>
           <el-tag v-if="sort !== 'newest'" type="info" closable @close="sort = 'newest'">
-            排序：{{ sortLabel }}
+            {{ t('users.sort.tag', { label: sortLabel }) }}
           </el-tag>
-          <el-button link type="primary" @click="clearFilters">清空全部</el-button>
+          <el-button link type="primary" @click="clearFilters">{{ t('users.filterTags.clearAll') }}</el-button>
         </div>
 
         <div v-if="selectedIds.length > 0" class="user-selection-bar">
-          <span class="user-selection-bar__text">已选择 {{ selectedIds.length }} 位用户</span>
+          <span class="user-selection-bar__text">
+            {{ t('users.selection.count', { count: selectedIds.length }) }}
+          </span>
           <div class="user-selection-bar__actions">
-            <el-button size="small" :loading="batchBusy" @click="batchDisable">批量禁用</el-button>
+            <el-button size="small" :loading="batchBusy" @click="batchDisable">
+              {{ t('users.selection.disable') }}
+            </el-button>
             <el-button size="small" type="danger" plain :loading="batchBusy" @click="batchRemove">
-              批量删除
+              {{ t('users.selection.remove') }}
             </el-button>
             <el-button size="small" text :disabled="batchBusy" @click="clearCustomerSelection">
-              取消选择
+              {{ t('users.selection.clear') }}
             </el-button>
           </div>
         </div>
 
         <EmptyState
           v-if="customers.length === 0"
-          :title="hasCustomerFilters ? '没有符合条件的用户' : '暂无普通用户'"
+          :title="
+            hasCustomerFilters ? t('users.empty.customers.filteredTitle') : t('users.empty.customers.title')
+          "
           :description="
             hasCustomerFilters
-              ? '试试调整关键词或筛选条件。'
-              : '用户注册后会显示在这里。'
+              ? t('users.empty.customers.filteredDescription')
+              : t('users.empty.customers.description')
           "
         >
-          <el-button v-if="hasCustomerFilters" @click="clearFilters">清空筛选</el-button>
+          <el-button v-if="hasCustomerFilters" @click="clearFilters">
+            {{ t('users.empty.customers.clearFilters') }}
+          </el-button>
         </EmptyState>
         <div v-else class="ax-card table-card">
           <div class="ax-table-scroll">
@@ -614,7 +646,7 @@ onMounted(load)
               @sort-change="onCustomerSortChange"
             >
               <el-table-column type="selection" width="44" />
-              <el-table-column label="用户" min-width="200">
+              <el-table-column :label="t('users.columns.user')" min-width="200">
                 <template #default="{ row }">
                   <div class="user-cell">
                     <UserAvatar :name="row.username" size="sm" />
@@ -622,7 +654,7 @@ onMounted(load)
                       <span class="user-cell__name">
                         {{ row.username }}
                         <el-tag v-if="isSelf(row)" size="small" type="primary" effect="plain">
-                          当前账号
+                          {{ t('users.currentAccount') }}
                         </el-tag>
                       </span>
                       <span class="user-cell__id">ID {{ row.id }}</span>
@@ -630,13 +662,14 @@ onMounted(load)
                   </div>
                 </template>
               </el-table-column>
-              <el-table-column label="用量" min-width="200">
+              <el-table-column :label="t('users.columns.usage')" min-width="200">
                 <template #default="{ row }">
                   <div class="user-usage">
                     <span class="user-usage__text">
                       {{ formatBytes(row.used_bytes) }}
                       <span class="ax-muted">
-                        / {{ row.quota_bytes > 0 ? formatBytes(row.quota_bytes) : '不限' }}
+                        /
+                        {{ row.quota_bytes > 0 ? formatBytes(row.quota_bytes) : t('quotaMeter.unlimited') }}
                       </span>
                     </span>
                     <div
@@ -657,31 +690,31 @@ onMounted(load)
                   </div>
                 </template>
               </el-table-column>
-              <el-table-column label="状态" width="150">
+              <el-table-column :label="t('users.columns.status')" width="150">
                 <template #default="{ row }">
                   <div class="user-status">
                     <el-switch
                       :model-value="!row.disabled"
                       :loading="pendingIds.has(row.id)"
-                      :aria-label="`${row.username} 的账号状态`"
+                      :aria-label="t('users.status.aria', { name: row.username })"
                       @change="onDisabledChange(row, $event, false)"
                     />
                     <span :class="row.disabled ? 'user-status__off' : 'user-status__on'">
-                      {{ row.disabled ? '已禁用' : '正常' }}
+                      {{ row.disabled ? t('users.status.disabled') : t('users.status.enabled') }}
                     </span>
                   </div>
                 </template>
               </el-table-column>
-              <el-table-column label="角色组" min-width="170">
+              <el-table-column :label="t('users.columns.roleGroup')" min-width="170">
                 <template #default="{ row }">
                   <el-select
                     :model-value="row.role_group_id ?? ''"
                     :loading="pendingIds.has(row.id)"
-                    :aria-label="`${row.username} 的角色组`"
+                    :aria-label="t('users.roleGroup.aria', { name: row.username })"
                     style="width: 100%"
                     @change="onRoleGroupChange(row, $event)"
                   >
-                    <el-option label="默认角色组" value="" />
+                    <el-option :label="t('users.roleGroup.default')" value="" />
                     <el-option
                       v-for="group in roleGroups"
                       :key="group.id"
@@ -691,16 +724,28 @@ onMounted(load)
                   </el-select>
                 </template>
               </el-table-column>
-              <el-table-column prop="created_at" label="注册时间" min-width="170" sortable="custom">
+              <el-table-column
+                prop="created_at"
+                :label="t('users.columns.createdAt')"
+                min-width="170"
+                sortable="custom"
+              >
                 <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
               </el-table-column>
-              <el-table-column label="操作" fixed="right" width="230" align="right">
+              <el-table-column
+                :label="t('users.columns.actions')"
+                fixed="right"
+                width="230"
+                align="right"
+              >
                 <template #default="{ row }">
                   <div class="ax-row-actions">
                     <el-button link type="primary" :icon="EditPen" @click="openEdit(row, false)">
-                      编辑
+                      {{ t('common.edit') }}
                     </el-button>
-                    <el-button link type="primary" @click="openDetail(row)">详情</el-button>
+                    <el-button link type="primary" @click="openDetail(row)">
+                      {{ t('users.actions.detail') }}
+                    </el-button>
                     <el-button
                       link
                       type="danger"
@@ -708,7 +753,7 @@ onMounted(load)
                       :loading="pendingIds.has(row.id)"
                       @click="removeUser(row, false)"
                     >
-                      删除
+                      {{ t('common.delete') }}
                     </el-button>
                   </div>
                 </template>
@@ -730,31 +775,37 @@ onMounted(load)
         </div>
       </el-tab-pane>
 
-      <el-tab-pane :label="`管理员 (${filteredAdmins.length})`" name="admins">
+      <el-tab-pane :label="t('users.tabs.admins', { count: filteredAdmins.length })" name="admins">
         <EmptyState
           v-if="filteredAdmins.length === 0"
-          :title="search.trim() ? '没有匹配的管理员' : '暂无管理员'"
+          :title="
+            search.trim() ? t('users.empty.admins.filteredTitle') : t('users.empty.admins.title')
+          "
           :description="
             search.trim()
-              ? '当前搜索条件下没有管理员账号。'
-              : '点击「新建管理员」创建特权账号。'
+              ? t('users.empty.admins.filteredDescription')
+              : t('users.empty.admins.description')
           "
         >
-          <el-button v-if="search.trim()" @click="search = ''">清空搜索</el-button>
+          <el-button v-if="search.trim()" @click="search = ''">
+            {{ t('users.empty.admins.clearSearch') }}
+          </el-button>
         </EmptyState>
         <div v-else class="ax-card table-card">
           <div class="ax-table-scroll">
             <el-table :data="filteredAdmins" style="width: 100%">
-              <el-table-column label="管理员" min-width="220">
+              <el-table-column :label="t('users.columns.admin')" min-width="220">
                 <template #default="{ row }">
                   <div class="user-cell">
                     <UserAvatar :name="row.username" size="sm" />
                     <div class="user-cell__meta">
                       <span class="user-cell__name">
                         {{ row.username }}
-                        <el-tag size="small" type="primary" effect="plain">管理员</el-tag>
+                        <el-tag size="small" type="primary" effect="plain">
+                          {{ t('topbar.roleAdmin') }}
+                        </el-tag>
                         <el-tag v-if="isSelf(row)" size="small" type="info" effect="plain">
-                          当前账号
+                          {{ t('users.currentAccount') }}
                         </el-tag>
                       </span>
                       <span class="user-cell__id">ID {{ row.id }}</span>
@@ -762,30 +813,38 @@ onMounted(load)
                   </div>
                 </template>
               </el-table-column>
-              <el-table-column label="状态" width="150">
+              <el-table-column :label="t('users.columns.status')" width="150">
                 <template #default="{ row }">
-                  <div class="user-status" :title="isSelf(row) ? '不能禁用当前登录账号' : undefined">
+                  <div
+                    class="user-status"
+                    :title="isSelf(row) ? t('users.disableSelfHint') : undefined"
+                  >
                     <el-switch
                       :model-value="!row.disabled"
                       :loading="pendingIds.has(row.id)"
                       :disabled="isSelf(row)"
-                      :aria-label="`${row.username} 的账号状态`"
+                      :aria-label="t('users.status.aria', { name: row.username })"
                       @change="onDisabledChange(row, $event, true)"
                     />
                     <span :class="row.disabled ? 'user-status__off' : 'user-status__on'">
-                      {{ row.disabled ? '已禁用' : '正常' }}
+                      {{ row.disabled ? t('users.status.disabled') : t('users.status.enabled') }}
                     </span>
                   </div>
                 </template>
               </el-table-column>
-              <el-table-column label="创建时间" min-width="170">
+              <el-table-column :label="t('users.columns.created')" min-width="170">
                 <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
               </el-table-column>
-              <el-table-column label="操作" fixed="right" width="200" align="right">
+              <el-table-column
+                :label="t('users.columns.actions')"
+                fixed="right"
+                width="200"
+                align="right"
+              >
                 <template #default="{ row }">
                   <div class="ax-row-actions">
                     <el-button link type="primary" :icon="EditPen" @click="openEdit(row, true)">
-                      编辑
+                      {{ t('common.edit') }}
                     </el-button>
                     <el-button
                       link
@@ -795,7 +854,7 @@ onMounted(load)
                       :loading="pendingIds.has(row.id)"
                       @click="removeUser(row, true)"
                     >
-                      删除
+                      {{ t('common.delete') }}
                     </el-button>
                   </div>
                 </template>
@@ -808,40 +867,48 @@ onMounted(load)
 
     <el-dialog
       v-model="editOpen"
-      :title="editIsAdmin ? '编辑管理员' : '编辑用户'"
+      :title="editIsAdmin ? t('users.dialogs.edit.titleAdmin') : t('users.dialogs.edit.titleUser')"
       width="min(440px, 92vw)"
       append-to-body
       :close-on-click-modal="false"
     >
       <el-form label-position="top" @submit.prevent="submitEdit">
-        <el-form-item label="用户名">
-          <el-input v-model="editForm.username" maxlength="64" placeholder="用户名" />
+        <el-form-item :label="t('users.dialogs.edit.username')">
+          <el-input
+            v-model="editForm.username"
+            maxlength="64"
+            :placeholder="t('users.dialogs.edit.usernamePlaceholder')"
+          />
         </el-form-item>
-        <el-form-item label="邮箱">
-          <el-input v-model="editForm.email" placeholder="留空表示未绑定" autocomplete="email" />
-          <p class="user-edit__hint">修改邮箱后验证状态会重置，需要用户重新验证。</p>
+        <el-form-item :label="t('users.dialogs.edit.email')">
+          <el-input
+            v-model="editForm.email"
+            :placeholder="t('users.dialogs.edit.emailPlaceholder')"
+            autocomplete="email"
+          />
+          <p class="user-edit__hint">{{ t('users.dialogs.edit.emailHint') }}</p>
         </el-form-item>
-        <el-form-item label="新密码">
+        <el-form-item :label="t('users.dialogs.edit.newPassword')">
           <el-input
             v-model="editForm.password"
             type="password"
             show-password
             maxlength="72"
-            placeholder="留空则不修改"
+            :placeholder="t('users.dialogs.edit.newPasswordPlaceholder')"
             autocomplete="new-password"
           />
-          <p class="user-edit__hint">重置密码不会使当前已登录会话立即失效。</p>
+          <p class="user-edit__hint">{{ t('users.dialogs.edit.passwordHint') }}</p>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="editOpen = false">取消</el-button>
-        <el-button type="primary" :loading="editing" @click="submitEdit">保存</el-button>
+        <el-button @click="editOpen = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="editing" @click="submitEdit">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
 
     <el-dialog
       v-model="createOpen"
-      title="新建管理员"
+      :title="t('users.dialogs.create.title')"
       width="min(440px, 92vw)"
       append-to-body
       :close-on-click-modal="false"
@@ -854,38 +921,44 @@ onMounted(load)
         label-position="top"
         @submit.prevent="submitCreate"
       >
-        <el-form-item label="用户名" prop="username">
-          <el-input v-model="createForm.username" placeholder="管理员用户名" maxlength="64" />
+        <el-form-item :label="t('users.dialogs.create.username')" prop="username">
+          <el-input
+            v-model="createForm.username"
+            :placeholder="t('users.dialogs.create.usernamePlaceholder')"
+            maxlength="64"
+          />
         </el-form-item>
-        <el-form-item label="密码" prop="password">
+        <el-form-item :label="t('users.dialogs.create.password')" prop="password">
           <el-input
             v-model="createForm.password"
             type="password"
             show-password
-            placeholder="至少 8 位"
+            :placeholder="t('users.dialogs.create.passwordPlaceholder')"
             maxlength="72"
           />
         </el-form-item>
-        <el-form-item label="确认密码" prop="confirmPassword">
+        <el-form-item :label="t('users.dialogs.create.confirmPassword')" prop="confirmPassword">
           <el-input
             v-model="createForm.confirmPassword"
             type="password"
             show-password
-            placeholder="再次输入密码"
+            :placeholder="t('users.dialogs.create.confirmPasswordPlaceholder')"
             maxlength="72"
             @keyup.enter="submitCreate"
           />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="createOpen = false">取消</el-button>
-        <el-button type="primary" :loading="creating" @click="submitCreate">创建</el-button>
+        <el-button @click="createOpen = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="creating" @click="submitCreate">
+          {{ t('users.dialogs.create.submit') }}
+        </el-button>
       </template>
     </el-dialog>
 
     <el-drawer
       v-model="detailOpen"
-      title="用户详情"
+      :title="t('users.dialogs.detail.title')"
       size="min(420px, 92vw)"
       append-to-body
     >
@@ -896,10 +969,10 @@ onMounted(load)
             <p class="user-detail__name">{{ detailUser.username }}</p>
             <div class="ax-cluster">
               <el-tag size="small" :type="detailUser.disabled ? 'info' : 'success'" effect="plain">
-                {{ detailUser.disabled ? '已禁用' : '正常' }}
+                {{ detailUser.disabled ? t('users.status.disabled') : t('users.status.enabled') }}
               </el-tag>
               <el-tag v-if="isSelf(detailUser)" size="small" type="primary" effect="plain">
-                当前账号
+                {{ t('users.currentAccount') }}
               </el-tag>
             </div>
           </div>
@@ -907,40 +980,54 @@ onMounted(load)
 
         <dl class="user-detail__list">
           <div class="user-detail__row">
-            <dt>用户 ID</dt>
+            <dt>{{ t('users.dialogs.detail.userId') }}</dt>
             <dd class="ax-mono">{{ detailUser.id }}</dd>
           </div>
           <div class="user-detail__row">
-            <dt>邮箱</dt>
-            <dd>{{ detailUser.email || '未绑定' }}</dd>
+            <dt>{{ t('users.dialogs.detail.email') }}</dt>
+            <dd>{{ detailUser.email || t('users.dialogs.detail.emailUnbound') }}</dd>
           </div>
           <div class="user-detail__row">
-            <dt>角色组</dt>
+            <dt>{{ t('users.dialogs.detail.roleGroup') }}</dt>
             <dd>{{ roleGroupLabel(detailUser.role_group_id) }}</dd>
           </div>
           <div class="user-detail__row">
-            <dt>存储用量</dt>
+            <dt>{{ t('users.dialogs.detail.usage') }}</dt>
             <dd>
               {{ formatBytes(detailUser.used_bytes) }} /
-              {{ detailUser.quota_bytes > 0 ? formatBytes(detailUser.quota_bytes) : '不限' }}
+              {{
+                detailUser.quota_bytes > 0 ? formatBytes(detailUser.quota_bytes) : t('quotaMeter.unlimited')
+              }}
             </dd>
           </div>
           <div class="user-detail__row">
-            <dt>套餐到期</dt>
-            <dd>{{ detailUser.plan_expires_at ? formatDateTime(detailUser.plan_expires_at) : '无套餐 / 永久' }}</dd>
+            <dt>{{ t('users.dialogs.detail.planExpires') }}</dt>
+            <dd>
+              {{
+                detailUser.plan_expires_at
+                  ? formatDateTime(detailUser.plan_expires_at)
+                  : t('users.dialogs.detail.planNone')
+              }}
+            </dd>
           </div>
           <div class="user-detail__row">
-            <dt>二次验证</dt>
-            <dd>{{ detailUser.totp_enabled ? '已启用' : '未启用' }}</dd>
+            <dt>{{ t('users.dialogs.detail.totp') }}</dt>
+            <dd>
+              {{
+                detailUser.totp_enabled
+                  ? t('users.dialogs.detail.totpEnabled')
+                  : t('users.dialogs.detail.totpDisabled')
+              }}
+            </dd>
           </div>
           <div class="user-detail__row">
-            <dt>注册时间</dt>
+            <dt>{{ t('users.dialogs.detail.createdAt') }}</dt>
             <dd>{{ formatDateTime(detailUser.created_at) }}</dd>
           </div>
         </dl>
 
         <div class="user-detail__actions">
-          <el-button @click="detailOpen = false">关闭</el-button>
+          <el-button @click="detailOpen = false">{{ t('common.close') }}</el-button>
         </div>
       </template>
     </el-drawer>

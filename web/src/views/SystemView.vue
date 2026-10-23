@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRouter, onBeforeRouteLeave } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import { CopyDocument, DataLine, Monitor, Odometer, Refresh, SetUp } from '@element-plus/icons-vue'
 
 import { fetchStats } from '@/api/admin'
@@ -55,6 +56,8 @@ import { copyText } from '@/utils/clipboard'
 import { formatBytes, formatDateTime, formatNumber } from '@/utils/format'
 import { useTabQuery } from '@/utils/useTabQuery'
 
+const { t } = useI18n()
+
 type SettingsTab = 'overview' | 'notify' | 'payment' | 'moderation' | 'integration' | 'runtime'
 const SETTINGS_TABS: readonly SettingsTab[] = [
   'overview',
@@ -98,16 +101,16 @@ const processRows = computed(() => {
   const p = process.value
   if (!p) return []
   return [
-    { label: 'Goroutine 数量', value: formatNumber(p.goroutines) },
-    { label: '已分配堆内存', value: formatBytes(p.heap_alloc_bytes) },
-    { label: '正在使用的堆内存', value: formatBytes(p.heap_inuse_bytes) },
-    { label: '堆对象数', value: formatNumber(p.heap_objects) },
-    { label: '运行时保留内存', value: formatBytes(p.heap_sys_bytes) },
-    { label: '虚拟内存总量', value: formatBytes(p.sys_bytes) },
-    { label: '栈内存使用', value: formatBytes(p.stack_inuse_bytes) },
-    { label: 'GC 次数', value: formatNumber(p.gc_count) },
-    { label: '逻辑 CPU', value: `${p.num_cpu} 核` },
-    { label: '运行时长', value: formatDuration(p.uptime_seconds) },
+    { label: t('system.processRows.goroutines'), value: formatNumber(p.goroutines) },
+    { label: t('system.processRows.heapAlloc'), value: formatBytes(p.heap_alloc_bytes) },
+    { label: t('system.processRows.heapInuse'), value: formatBytes(p.heap_inuse_bytes) },
+    { label: t('system.processRows.heapObjects'), value: formatNumber(p.heap_objects) },
+    { label: t('system.processRows.heapSys'), value: formatBytes(p.heap_sys_bytes) },
+    { label: t('system.processRows.sys'), value: formatBytes(p.sys_bytes) },
+    { label: t('system.processRows.stackInuse'), value: formatBytes(p.stack_inuse_bytes) },
+    { label: t('system.processRows.gcCount'), value: formatNumber(p.gc_count) },
+    { label: t('system.processRows.logicalCpu'), value: t('system.processRows.cpuCores', { count: p.num_cpu }) },
+    { label: t('system.processRows.uptime'), value: formatDuration(p.uptime_seconds) },
   ]
 })
 
@@ -115,12 +118,15 @@ const runtimeRows = computed(() => {
   const info = runtime.value
   if (!info) return []
   return [
-    { label: '站点地址', value: info.base_url },
-    { label: '数据库', value: info.database_driver },
-    { label: '默认存储驱动', value: info.storage_driver },
-    { label: '图片处理器', value: info.processor },
-    { label: '运行环境', value: `${info.go_version} · ${info.platform}` },
-    { label: '初始化状态', value: info.installed ? '已安装' : '未安装' },
+    { label: t('system.runtimeRows.siteUrl'), value: info.base_url },
+    { label: t('system.runtimeRows.database'), value: info.database_driver },
+    { label: t('system.runtimeRows.storageDriver'), value: info.storage_driver },
+    { label: t('system.runtimeRows.processor'), value: info.processor },
+    { label: t('system.runtimeRows.environment'), value: `${info.go_version} · ${info.platform}` },
+    {
+      label: t('system.runtimeRows.installStatus'),
+      value: info.installed ? t('system.runtimeRows.installed') : t('system.runtimeRows.notInstalled'),
+    },
   ]
 })
 
@@ -128,27 +134,27 @@ const policyRows = computed(() => {
   const info = runtime.value
   if (!info) return []
   return [
-    { label: '默认配额', value: formatMiB(info.default_quota_mb) },
-    { label: '单文件上限', value: formatMiB(info.upload_max_mb) },
-    { label: '访客配额', value: formatMiB(info.guest_quota_mb) },
-    { label: '访客单文件上限', value: formatMiB(info.guest_upload_max_mb) },
-    { label: '会话有效期', value: `${info.session_ttl_hours} 小时` },
-    { label: '客户端真实 IP', value: clientIPSummary(info) },
-    { label: '可信代理', value: trustedProxySummary(info) },
+    { label: t('system.policyRows.defaultQuota'), value: formatMiB(info.default_quota_mb) },
+    { label: t('system.policyRows.fileLimit'), value: formatMiB(info.upload_max_mb) },
+    { label: t('system.policyRows.guestQuota'), value: formatMiB(info.guest_quota_mb) },
+    { label: t('system.policyRows.guestFileLimit'), value: formatMiB(info.guest_upload_max_mb) },
+    { label: t('system.policyRows.sessionTtl'), value: t('system.duration.hours', { count: info.session_ttl_hours }) },
+    { label: t('system.policyRows.clientIp'), value: clientIPSummary(info) },
+    { label: t('system.policyRows.trustedProxies'), value: trustedProxySummary(info) },
   ]
 })
 
 /** 概览里展示当前生效的客户端 IP 解析方式。 */
 function clientIPSummary(info: RuntimeInfo): string {
   const source = info.client_ip_source
-  if (!source || source === 'remote') return '不信任转发头（remote）'
+  if (!source || source === 'remote') return t('system.clientIpSummary.untrusted')
   const header = source === 'custom' && info.client_ip_header ? info.client_ip_header : source
-  return `信任转发头（${header}）`
+  return t('system.clientIpSummary.trusted', { header })
 }
 
 function trustedProxySummary(info: RuntimeInfo): string {
   const list = info.client_ip_trusted_proxies ?? []
-  return list.length > 0 ? list.join('、') : '未配置'
+  return list.length > 0 ? list.join(t('system.listSeparator')) : t('system.clientIpSummary.notConfigured')
 }
 
 /** 将秒数格式化为「Xd Xh Xm Xs」形式的运行时长。 */
@@ -159,15 +165,15 @@ function formatDuration(seconds: number): string {
   const m = Math.floor((total % 3600) / 60)
   const s = total % 60
   const parts: string[] = []
-  if (d > 0) parts.push(`${d} 天`)
-  if (h > 0 || d > 0) parts.push(`${h} 小时`)
-  if (m > 0 || h > 0 || d > 0) parts.push(`${m} 分`)
-  parts.push(`${s} 秒`)
+  if (d > 0) parts.push(t('system.duration.days', { count: d }))
+  if (h > 0 || d > 0) parts.push(t('system.duration.hours', { count: h }))
+  if (m > 0 || h > 0 || d > 0) parts.push(t('system.duration.minutes', { count: m }))
+  parts.push(t('system.duration.seconds', { count: s }))
   return parts.join(' ')
 }
 
 function formatMiB(mb: number): string {
-  if (mb <= 0) return '不限'
+  if (mb <= 0) return t('quotaMeter.unlimited')
   return formatBytes(mb * 1024 * 1024)
 }
 
@@ -197,7 +203,7 @@ function fillModeration(cfg: ModerationSettings): void {
 
 async function saveModeration(): Promise<void> {
   if (moderationForm.enabled && !moderationForm.base_url.trim()) {
-    ElMessage.warning('请填写接口地址')
+    ElMessage.warning(t('system.moderation.urlRequired'))
     return
   }
   moderationSaving.value = true
@@ -205,7 +211,7 @@ async function saveModeration(): Promise<void> {
     const updated = await updateModerationSettings({ ...moderationForm })
     moderationMeta.value = updated
     fillModeration(updated)
-    ElMessage.success('AI 审查设置已保存并即时生效')
+    ElMessage.success(t('system.moderation.saved'))
   } catch (error) {
     ElMessage.error(toApiError(error).message)
   } finally {
@@ -218,13 +224,13 @@ function resetModeration(): void {
 }
 
 // ---- 支付设置 ----
-const providerLabels: Record<string, string> = {
-  manual: '人工核销',
-  mock: '模拟支付',
-  alipay: '支付宝',
-  wechat: '微信支付',
-  epay: '易支付',
-}
+const providerLabels = computed<Record<string, string>>(() => ({
+  manual: t('system.payment.providers.manual'),
+  mock: t('system.payment.providers.mock'),
+  alipay: t('system.payment.providers.alipay'),
+  wechat: t('system.payment.providers.wechat'),
+  epay: t('system.payment.providers.epay'),
+}))
 
 // knownGateways 是内置渠道，便于在同一次保存中把尚未启用的渠道设为默认。
 const knownGateways = ['manual', 'mock', 'alipay', 'wechat', 'epay']
@@ -257,7 +263,7 @@ const paymentForm = reactive<PaymentSettingsInput>({
   },
 })
 
-const providerLabel = (name: string): string => providerLabels[name] ?? name
+const providerLabel = (name: string): string => providerLabels.value[name] ?? name
 
 /** 可选的默认渠道：内置渠道 ∪ 已注册渠道。 */
 const selectableGateways = computed(() => {
@@ -270,7 +276,9 @@ const selectableGateways = computed(() => {
 
 /** 默认渠道选项标签；未启用时标注，便于理解保存后的回退行为。 */
 const gatewayOptionLabel = (name: string): string =>
-  paymentGateways.value.includes(name) ? providerLabel(name) : `${providerLabel(name)}（未启用）`
+  paymentGateways.value.includes(name)
+    ? providerLabel(name)
+    : t('system.payment.disabledOption', { name: providerLabel(name) })
 
 /** 用服务端返回的配置填充表单，清空密钥输入框（空表示保持不变）。 */
 function fillPayment(cfg: PaymentSettings): void {
@@ -303,7 +311,7 @@ function resetPayment(): void {
 }
 
 const secretPlaceholder = (set: boolean | undefined, label: string): string =>
-  set ? `${label}已设置，留空保持不变` : `请输入${label}`
+  set ? t('system.payment.secretSet', { label }) : t('system.payment.secretEnter', { label })
 
 async function savePayment(): Promise<void> {
   paymentSaving.value = true
@@ -317,7 +325,7 @@ async function savePayment(): Promise<void> {
     paymentMeta.value = updated
     fillPayment(updated)
     paymentGateways.value = await listPaymentGateways().catch(() => paymentGateways.value)
-    ElMessage.success('支付设置已保存并即时生效')
+    ElMessage.success(t('system.payment.saved'))
   } catch (error) {
     ElMessage.error(toApiError(error).message)
   } finally {
@@ -333,7 +341,7 @@ const testing = ref(false)
 
 async function sendTest(): Promise<void> {
   if (!testTo.value.trim() || !testBody.value.trim()) {
-    ElMessage.warning('请填写接收方与内容')
+    ElMessage.warning(t('system.notify.missingFields'))
     return
   }
   testing.value = true
@@ -341,10 +349,10 @@ async function sendTest(): Promise<void> {
     await sendTestNotify({
       channel: testChannel.value,
       to: testTo.value.trim(),
-      subject: testChannel.value === 'email' ? 'AXmiPic 测试邮件' : undefined,
+      subject: testChannel.value === 'email' ? t('system.notify.testSubject') : undefined,
       body: testBody.value.trim(),
     })
-    ElMessage.success('测试通知已发送（未配置服务商时会记录到日志）')
+    ElMessage.success(t('system.notify.testSent'))
   } catch (error) {
     ElMessage.error(toApiError(error).message)
   } finally {
@@ -369,16 +377,18 @@ async function saveAuth(): Promise<void> {
   const previous = runtime.value
   if (previous) {
     const risky: string[] = []
-    if (previous.allow_registration && !allowRegistration.value) risky.push('关闭开放注册')
-    if (!previous.require_auth && requireAuth.value) risky.push('要求登录后上传')
+    if (previous.allow_registration && !allowRegistration.value) {
+      risky.push(t('system.auth.disableRegistration'))
+    }
+    if (!previous.require_auth && requireAuth.value) risky.push(t('system.auth.requireAuth'))
     if (risky.length > 0) {
       try {
         await ElMessageBox.confirm(
-          `将立即${risky.join('、')}，可能影响现有访客的上传流程。确定继续吗？`,
-          '高风险设置变更',
+          t('system.auth.confirmMessage', { actions: risky.join(t('system.listSeparator')) }),
+          t('system.auth.confirmTitle'),
           {
-            confirmButtonText: '继续',
-            cancelButtonText: '取消',
+            confirmButtonText: t('system.auth.continue'),
+            cancelButtonText: t('common.cancel'),
             type: 'warning',
           },
         )
@@ -396,7 +406,7 @@ async function saveAuth(): Promise<void> {
       allow_guest_upload: allowGuestUpload.value,
     })
     applyAuth(updated)
-    ElMessage.success('权限设置已保存')
+    ElMessage.success(t('system.auth.saved'))
   } catch (error) {
     if (runtime.value) {
       applyAuth({
@@ -452,15 +462,15 @@ function isDomainDirty(domain: SettingDomain): boolean {
   return JSON.stringify(domainValue(domain)) !== JSON.stringify(saved)
 }
 
-const DOMAIN_LABELS: Record<string, string> = {
-  upload: '上传限制',
-  processing: '图像处理',
-  security: '安全扫描',
-  client_ip: '客户端真实 IP',
-  limits: '限流',
-  maintenance: '维护任务',
-  site: '站点信息',
-}
+const domainLabels = computed<Record<string, string>>(() => ({
+  upload: t('system.runtime.upload.title'),
+  processing: t('system.runtime.processing.title'),
+  security: t('system.runtime.security.title'),
+  client_ip: t('system.runtime.clientIp.title'),
+  limits: t('system.runtime.limits.title'),
+  maintenance: t('system.runtime.maintenance.title'),
+  site: t('system.runtime.site.title'),
+}))
 
 const DOMAIN_ORDER: SettingDomain[] = [
   'upload',
@@ -626,7 +636,7 @@ async function saveDomain<T>(
   try {
     const updated = await updateSettingDomain<T>(domain, value)
     apply(updated)
-    if (!silent) ElMessage.success('已保存')
+    if (!silent) ElMessage.success(t('system.messages.saved'))
     return true
   } catch (error) {
     ElMessage.error(toApiError(error).message)
@@ -650,15 +660,15 @@ async function saveAllDomains(): Promise<void> {
   try {
     for (const domain of pending) {
       const ok = await persistDomain(domain)
-      if (!ok) failed.push(DOMAIN_LABELS[domain] ?? domain)
+      if (!ok) failed.push(domainLabels.value[domain] ?? domain)
     }
   } finally {
     savingAll.value = false
   }
   if (failed.length === 0) {
-    ElMessage.success(`已保存 ${pending.length} 项设置`)
+    ElMessage.success(t('system.messages.savedCount', { count: pending.length }))
   } else {
-    ElMessage.error(`以下设置保存失败：${failed.join('、')}`)
+    ElMessage.error(t('system.messages.saveFailed', { items: failed.join(t('system.listSeparator')) }))
   }
 }
 
@@ -667,7 +677,7 @@ function discardAllDomains(): void {
     const saved = savedDomains[domain]
     if (saved !== undefined) applyDomainValue(domain, cloneValue(saved))
   }
-  ElMessage.info('已放弃未保存的修改')
+  ElMessage.info(t('system.messages.discarded'))
 }
 
 function openAdminEntryDialog(action: 'enable' | 'disable' | 'rotate'): void {
@@ -680,21 +690,21 @@ function openAdminEntryDialog(action: 'enable' | 'disable' | 'rotate'): void {
 const adminEntryActionLabel = computed(() => {
   switch (adminEntryAction.value) {
     case 'disable':
-      return '关闭安全入口'
+      return t('system.runtime.adminEntry.disable')
     case 'rotate':
-      return '重新生成入口'
+      return t('system.runtime.adminEntry.rotate')
     default:
-      return '开启安全入口'
+      return t('system.runtime.adminEntry.enable')
   }
 })
 
 async function confirmAdminEntryAction(): Promise<void> {
   if (!adminEntryForm.password) {
-    ElMessage.warning('请输入当前密码')
+    ElMessage.warning(t('system.runtime.adminEntry.passwordRequired'))
     return
   }
   if (adminEntrySecurity.value?.totp_enabled && !/^\d{6}$/.test(adminEntryForm.totpCode.trim())) {
-    ElMessage.warning('请输入 6 位动态验证码')
+    ElMessage.warning(t('system.runtime.adminEntry.totpRequired'))
     return
   }
   const payload = {
@@ -707,10 +717,14 @@ async function confirmAdminEntryAction(): Promise<void> {
   try {
     if (adminEntryAction.value === 'rotate') {
       adminEntry.value = await rotateAdminEntry(payload)
-      ElMessage.success('安全入口已重新生成，旧入口已失效')
+      ElMessage.success(t('system.runtime.adminEntry.rotated'))
     } else {
       adminEntry.value = await updateAdminEntry(adminEntryAction.value === 'enable', payload)
-      ElMessage.success(adminEntryAction.value === 'enable' ? '安全入口已开启' : '安全入口已关闭')
+      ElMessage.success(
+        adminEntryAction.value === 'enable'
+          ? t('system.runtime.adminEntry.enabled')
+          : t('system.runtime.adminEntry.disabled'),
+      )
     }
     adminEntryDialog.value = false
     await appState.checkAdminEntry(true)
@@ -726,9 +740,9 @@ async function copyAdminEntryURL(): Promise<void> {
   if (!url) return
   const copied = await copyText(url)
   if (copied) {
-    ElMessage.success('安全入口地址已复制')
+    ElMessage.success(t('system.runtime.adminEntry.copied'))
   } else {
-    ElMessage.error('复制失败，请手动复制')
+    ElMessage.error(t('system.runtime.adminEntry.copyFailed'))
   }
 }
 
@@ -848,11 +862,15 @@ onBeforeRouteLeave(async () => {
   if (dirtyDomains.value.length === 0) return true
   try {
     await ElMessageBox.confirm(
-      `「${dirtyDomains.value.map((domain) => DOMAIN_LABELS[domain]).join('、')}」还有未保存的修改，离开后将丢失。`,
-      '离开系统设置？',
+      t('system.leave.message', {
+        items: dirtyDomains.value
+          .map((domain) => domainLabels.value[domain])
+          .join(t('system.listSeparator')),
+      }),
+      t('system.leave.title'),
       {
-        confirmButtonText: '放弃并离开',
-        cancelButtonText: '继续编辑',
+        confirmButtonText: t('system.leave.confirm'),
+        cancelButtonText: t('system.leave.cancel'),
         type: 'warning',
         confirmButtonClass: 'el-button--danger',
       },
@@ -866,9 +884,9 @@ onBeforeRouteLeave(async () => {
 
 <template>
   <div class="ax-page">
-    <PageHeader title="系统设置" description="查看实例运行环境，配置通知、支付渠道与系统集成。">
+    <PageHeader :title="t('system.page.title')" :description="t('system.page.description')">
       <template #actions>
-        <el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button>
+        <el-button :icon="Refresh" :loading="loading" @click="load">{{ t('common.refresh') }}</el-button>
       </template>
     </PageHeader>
 
@@ -880,15 +898,15 @@ onBeforeRouteLeave(async () => {
 
     <el-tabs v-else v-model="activeTab" class="settings-tabs">
       <!-- 概览 -->
-      <el-tab-pane label="概览" name="overview">
+      <el-tab-pane :label="t('system.tabs.overview')" name="overview">
         <section class="settings-grid overview-grid">
           <article class="ax-card">
             <header class="ax-card__head">
               <div class="card-head">
                 <span class="card-head__icon"><el-icon><Monitor /></el-icon></span>
                 <div class="card-head__text">
-                  <h2 class="ax-card__title">运行环境</h2>
-                  <p class="card-head__sub">站点地址、数据库与运行平台</p>
+                  <h2 class="ax-card__title">{{ t('system.overview.runtime.title') }}</h2>
+                  <p class="card-head__sub">{{ t('system.overview.runtime.description') }}</p>
                 </div>
               </div>
             </header>
@@ -907,31 +925,33 @@ onBeforeRouteLeave(async () => {
               <div class="card-head">
                 <span class="card-head__icon"><el-icon><SetUp /></el-icon></span>
                 <div class="card-head__text">
-                  <h2 class="ax-card__title">策略概览</h2>
-                  <p class="card-head__sub">注册、上传、配额与限流</p>
+                  <h2 class="ax-card__title">{{ t('system.overview.policy.title') }}</h2>
+                  <p class="card-head__sub">{{ t('system.overview.policy.description') }}</p>
                 </div>
               </div>
-              <el-button size="small" @click="activeTab = 'runtime'">配置客户端真实 IP</el-button>
+              <el-button size="small" @click="activeTab = 'runtime'">
+                {{ t('system.overview.policy.configureClientIp') }}
+              </el-button>
             </header>
             <div class="ax-card__body">
               <div class="policy-switch">
                 <div class="policy-switch__text">
-                  <span class="policy-switch__label">开放注册</span>
-                  <span class="policy-switch__hint">关闭后新用户无法自助注册，已注册用户与管理员不受影响。</span>
+                  <span class="policy-switch__label">{{ t('system.overview.policy.registration') }}</span>
+                  <span class="policy-switch__hint">{{ t('system.overview.policy.registrationHint') }}</span>
                 </div>
                 <el-switch v-model="allowRegistration" :loading="authSaving" @change="saveAuth" />
               </div>
               <div class="policy-switch">
                 <div class="policy-switch__text">
-                  <span class="policy-switch__label">上传需要登录</span>
-                  <span class="policy-switch__hint">开启后未登录访客不能调用上传接口。</span>
+                  <span class="policy-switch__label">{{ t('system.overview.policy.requireAuth') }}</span>
+                  <span class="policy-switch__hint">{{ t('system.overview.policy.requireAuthHint') }}</span>
                 </div>
                 <el-switch v-model="requireAuth" :loading="authSaving" @change="saveAuth" />
               </div>
               <div class="policy-switch">
                 <div class="policy-switch__text">
-                  <span class="policy-switch__label">允许访客上传</span>
-                  <span class="policy-switch__hint">开启后未登录访客以 Guest 角色上传，会覆盖「上传需要登录」。</span>
+                  <span class="policy-switch__label">{{ t('system.overview.policy.guestUpload') }}</span>
+                  <span class="policy-switch__hint">{{ t('system.overview.policy.guestUploadHint') }}</span>
                 </div>
                 <el-switch v-model="allowGuestUpload" :loading="authSaving" @change="saveAuth" />
               </div>
@@ -950,11 +970,11 @@ onBeforeRouteLeave(async () => {
             <div class="card-head">
               <span class="card-head__icon"><el-icon><DataLine /></el-icon></span>
               <div class="card-head__text">
-                <h2 class="ax-card__title">进程概览</h2>
-                <p class="card-head__sub">Goroutine、内存、GC 与运行时长</p>
+                <h2 class="ax-card__title">{{ t('system.overview.process.title') }}</h2>
+                <p class="card-head__sub">{{ t('system.overview.process.description') }}</p>
               </div>
             </div>
-            <span class="process-hint">每 5 秒自动刷新</span>
+            <span class="process-hint">{{ t('system.overview.process.refreshHint') }}</span>
           </header>
           <div class="ax-card__body process-grid">
             <div v-for="row in processRows" :key="row.label" class="process-item">
@@ -969,40 +989,40 @@ onBeforeRouteLeave(async () => {
             <div class="card-head">
               <span class="card-head__icon"><el-icon><Odometer /></el-icon></span>
               <div class="card-head__text">
-                <h2 class="ax-card__title">系统信息</h2>
-                <p class="card-head__sub">规模、用量与能力</p>
+                <h2 class="ax-card__title">{{ t('system.overview.stats.title') }}</h2>
+                <p class="card-head__sub">{{ t('system.overview.stats.description') }}</p>
               </div>
             </div>
           </header>
           <div class="ax-card__body">
             <div class="stat-grid">
               <div class="stat-tile">
-                <span class="stat-tile__label">用户数</span>
+                <span class="stat-tile__label">{{ t('system.overview.stats.users') }}</span>
                 <span class="stat-tile__value">{{ formatNumber(stats.users) }}</span>
-                <span class="stat-tile__meta">管理员 {{ formatNumber(stats.admins) }}</span>
+                <span class="stat-tile__meta">{{ t('system.overview.stats.admins', { count: formatNumber(stats.admins) }) }}</span>
               </div>
               <div class="stat-tile">
-                <span class="stat-tile__label">图片数</span>
+                <span class="stat-tile__label">{{ t('system.overview.stats.images') }}</span>
                 <span class="stat-tile__value">{{ formatNumber(stats.images) }}</span>
-                <span class="stat-tile__meta">已存储图片</span>
+                <span class="stat-tile__meta">{{ t('system.overview.stats.storedImages') }}</span>
               </div>
               <div class="stat-tile">
-                <span class="stat-tile__label">存储总用量</span>
+                <span class="stat-tile__label">{{ t('system.overview.stats.storage') }}</span>
                 <span class="stat-tile__value">{{ formatBytes(stats.total_bytes) }}</span>
-                <span class="stat-tile__meta">全部存储后端</span>
+                <span class="stat-tile__meta">{{ t('system.overview.stats.allBackends') }}</span>
               </div>
             </div>
             <dl class="info-list">
               <div class="info-list__row">
-                <dt>存储驱动</dt>
+                <dt>{{ t('system.overview.stats.storageDriver') }}</dt>
                 <dd><el-tag size="small" effect="plain">{{ stats.storage_driver }}</el-tag></dd>
               </div>
               <div class="info-list__row">
-                <dt>处理器</dt>
+                <dt>{{ t('system.overview.stats.processor') }}</dt>
                 <dd><el-tag size="small" effect="plain">{{ stats.processor }}</el-tag></dd>
               </div>
               <div class="info-list__row">
-                <dt>支持格式</dt>
+                <dt>{{ t('system.overview.stats.formats') }}</dt>
                 <dd>
                   <span v-if="stats.formats && stats.formats.length" class="ax-cluster">
                     <el-tag
@@ -1024,57 +1044,61 @@ onBeforeRouteLeave(async () => {
       </el-tab-pane>
 
       <!-- 通知设置 -->
-      <el-tab-pane label="通知设置" name="notify">
+      <el-tab-pane :label="t('system.tabs.notify')" name="notify">
         <article class="ax-card">
           <header class="ax-card__head">
-            <h2 class="ax-card__title">通知渠道配置</h2>
-            <el-tag size="small" type="success" effect="plain">插件市场统一配置</el-tag>
+            <h2 class="ax-card__title">{{ t('system.notify.channelsTitle') }}</h2>
+            <el-tag size="small" type="success" effect="plain">{{ t('system.notify.pluginTag') }}</el-tag>
           </header>
           <div class="ax-card__body">
             <el-alert
-              title="短信与邮件的配置已迁移到「插件市场」"
+              :title="t('system.notify.migrated')"
               type="info"
               :closable="false"
               show-icon
             />
             <p class="integration__hint" style="margin-top: 12px">
-              内置插件（日志短信、HTTP 短信、日志邮件、SMTP 邮件）默认受信、无需沙箱；
-              外置插件（WASM）在沙箱中运行。请到「插件市场」填写凭据，并将需要的渠道设为当前渠道。
+              {{ t('system.notify.migratedHint') }}
             </p>
-            <el-button type="primary" @click="goPluginMarket">打开插件市场</el-button>
+            <el-button type="primary" @click="goPluginMarket">{{ t('system.notify.openMarket') }}</el-button>
           </div>
         </article>
 
         <article class="ax-card settings-block">
           <header class="ax-card__head">
-            <h2 class="ax-card__title">通知渠道与测试</h2>
+            <h2 class="ax-card__title">{{ t('system.notify.channelsTest') }}</h2>
           </header>
           <div class="ax-card__body integration">
             <dl class="info-list">
               <div class="info-list__row">
-                <dt>短信渠道</dt>
-                <dd>{{ channels.sms || '未配置' }}</dd>
+                <dt>{{ t('system.notify.smsChannel') }}</dt>
+                <dd>{{ channels.sms || t('system.status.notConfigured') }}</dd>
               </div>
               <div class="info-list__row">
-                <dt>邮件渠道</dt>
-                <dd>{{ channels.email || '未配置' }}</dd>
+                <dt>{{ t('system.notify.emailChannel') }}</dt>
+                <dd>{{ channels.email || t('system.status.notConfigured') }}</dd>
               </div>
             </dl>
-            <el-divider content-position="left">发送测试通知</el-divider>
+            <el-divider content-position="left">{{ t('system.notify.testDivider') }}</el-divider>
             <div class="integration__form">
               <el-radio-group v-model="testChannel">
-                <el-radio-button value="sms">短信</el-radio-button>
-                <el-radio-button value="email">邮件</el-radio-button>
+                <el-radio-button value="sms">{{ t('system.notify.sms') }}</el-radio-button>
+                <el-radio-button value="email">{{ t('system.notify.email') }}</el-radio-button>
               </el-radio-group>
               <el-input
                 v-model="testTo"
-                :placeholder="testChannel === 'sms' ? '手机号' : '邮箱地址'"
+                :placeholder="testChannel === 'sms' ? t('system.notify.phonePlaceholder') : t('system.notify.emailPlaceholder')"
               />
-              <el-input v-model="testBody" type="textarea" :rows="2" placeholder="通知内容" />
-              <el-button type="primary" :loading="testing" @click="sendTest">发送测试</el-button>
+              <el-input
+                v-model="testBody"
+                type="textarea"
+                :rows="2"
+                :placeholder="t('system.notify.bodyPlaceholder')"
+              />
+              <el-button type="primary" :loading="testing" @click="sendTest">{{ t('system.notify.sendTest') }}</el-button>
             </div>
             <p class="integration__hint">
-              通知通过当前选中的插件渠道发送；未配置真实服务商时会回退到内置日志渠道并记录到服务端日志。
+              {{ t('system.notify.hint') }}
             </p>
           </div>
         </article>
@@ -1082,15 +1106,15 @@ onBeforeRouteLeave(async () => {
       </el-tab-pane>
 
       <!-- 支付设置 -->
-      <el-tab-pane label="支付设置" name="payment">
+      <el-tab-pane :label="t('system.tabs.payment')" name="payment">
         <article class="ax-card">
           <header class="ax-card__head">
-            <h2 class="ax-card__title">支付设置</h2>
-            <el-tag size="small" type="info" effect="plain">保存后即时生效</el-tag>
+            <h2 class="ax-card__title">{{ t('system.payment.title') }}</h2>
+            <el-tag size="small" type="info" effect="plain">{{ t('system.payment.instant') }}</el-tag>
           </header>
           <div class="ax-card__body">
             <el-form label-position="top" class="smtp-form" @submit.prevent>
-              <el-form-item label="默认支付渠道">
+              <el-form-item :label="t('system.payment.defaultGateway')">
                 <el-select v-model="paymentForm.default_gateway" style="max-width: 260px">
                   <el-option
                     v-for="gateway in selectableGateways"
@@ -1099,15 +1123,17 @@ onBeforeRouteLeave(async () => {
                     :value="gateway"
                   />
                 </el-select>
-                <span class="smtp-form__hint">可选择任意内置渠道；保存后未启用的渠道会自动回退为人工核销</span>
+                <span class="smtp-form__hint">{{ t('system.payment.defaultGatewayHint') }}</span>
               </el-form-item>
             </el-form>
             <div class="smtp-actions">
-              <el-button type="primary" :loading="paymentSaving" @click="savePayment">保存并应用</el-button>
-              <el-button :disabled="paymentSaving" @click="resetPayment">重置</el-button>
+              <el-button type="primary" :loading="paymentSaving" @click="savePayment">
+                {{ t('system.actions.saveApply') }}
+              </el-button>
+              <el-button :disabled="paymentSaving" @click="resetPayment">{{ t('common.reset') }}</el-button>
             </div>
             <p class="integration__hint">
-              密钥以密文保存，接口仅返回是否已设置（留空保持不变）；保存后立即注册或切换支付渠道，无需重启。
+              {{ t('system.payment.securityHint') }}
             </p>
           </div>
         </article>
@@ -1115,40 +1141,43 @@ onBeforeRouteLeave(async () => {
         <section class="settings-grid gateway-grid">
           <article class="ax-card gateway-card">
             <header class="ax-card__head">
-              <h2 class="ax-card__title">支付宝当面付</h2>
+              <h2 class="ax-card__title">{{ t('system.payment.alipay.title') }}</h2>
               <el-tag size="small" :type="paymentForm.alipay.enabled ? 'success' : 'info'" effect="plain">
-                {{ paymentForm.alipay.enabled ? '已启用' : '未启用' }}
+                {{ paymentForm.alipay.enabled ? t('common.enabled') : t('system.status.notEnabled') }}
               </el-tag>
             </header>
             <div class="ax-card__body">
-              <p class="gateway-card__hint">扫码支付，需应用私钥与支付宝公钥，回调自动验签。</p>
+              <p class="gateway-card__hint">{{ t('system.payment.alipay.hint') }}</p>
               <el-form label-position="top" class="smtp-form" @submit.prevent>
                 <div class="smtp-grid">
-                  <el-form-item label="启用">
+                  <el-form-item :label="t('system.payment.enable')">
                     <el-switch v-model="paymentForm.alipay.enabled" />
                   </el-form-item>
-                  <el-form-item label="网关地址" class="smtp-grid__wide">
-                    <el-input v-model="paymentForm.alipay.gateway_url" placeholder="留空使用生产地址" />
+                  <el-form-item :label="t('system.payment.gatewayUrl')" class="smtp-grid__wide">
+                    <el-input
+                      v-model="paymentForm.alipay.gateway_url"
+                      :placeholder="t('system.payment.gatewayUrlPlaceholder')"
+                    />
                   </el-form-item>
-                  <el-form-item label="App ID">
+                  <el-form-item :label="t('system.payment.appId')">
                     <el-input v-model="paymentForm.alipay.app_id" />
                   </el-form-item>
-                  <el-form-item label="应用私钥">
+                  <el-form-item :label="t('system.payment.alipay.privateKey')">
                     <el-input
                       v-model="paymentForm.alipay.private_key"
                       type="password"
                       show-password
                       autocomplete="new-password"
-                      :placeholder="secretPlaceholder(paymentMeta?.alipay.private_key_set, '私钥')"
+                      :placeholder="secretPlaceholder(paymentMeta?.alipay.private_key_set, t('system.payment.secret.privateKey'))"
                     />
                   </el-form-item>
-                  <el-form-item label="支付宝公钥">
+                  <el-form-item :label="t('system.payment.alipay.publicKey')">
                     <el-input
                       v-model="paymentForm.alipay.public_key"
                       type="password"
                       show-password
                       autocomplete="new-password"
-                      :placeholder="secretPlaceholder(paymentMeta?.alipay.public_key_set, '公钥')"
+                      :placeholder="secretPlaceholder(paymentMeta?.alipay.public_key_set, t('system.payment.secret.publicKey'))"
                     />
                   </el-form-item>
                 </div>
@@ -1158,59 +1187,65 @@ onBeforeRouteLeave(async () => {
 
           <article class="ax-card gateway-card">
             <header class="ax-card__head">
-              <h2 class="ax-card__title">微信支付 v3</h2>
+              <h2 class="ax-card__title">{{ t('system.payment.wechat.title') }}</h2>
               <el-tag size="small" :type="paymentForm.wechat.enabled ? 'success' : 'info'" effect="plain">
-                {{ paymentForm.wechat.enabled ? '已启用' : '未启用' }}
+                {{ paymentForm.wechat.enabled ? t('common.enabled') : t('system.status.notEnabled') }}
               </el-tag>
             </header>
             <div class="ax-card__body">
-              <p class="gateway-card__hint">Native 扫码，基于官方 SDK 下单并对回调验签/解密。</p>
+              <p class="gateway-card__hint">{{ t('system.payment.wechat.hint') }}</p>
               <el-form label-position="top" class="smtp-form" @submit.prevent>
                 <div class="smtp-grid">
-                  <el-form-item label="启用">
+                  <el-form-item :label="t('system.payment.enable')">
                     <el-switch v-model="paymentForm.wechat.enabled" />
                   </el-form-item>
-                  <el-form-item label="网关地址" class="smtp-grid__wide">
-                    <el-input v-model="paymentForm.wechat.gateway_url" placeholder="留空使用生产地址" />
+                  <el-form-item :label="t('system.payment.gatewayUrl')" class="smtp-grid__wide">
+                    <el-input
+                      v-model="paymentForm.wechat.gateway_url"
+                      :placeholder="t('system.payment.gatewayUrlPlaceholder')"
+                    />
                   </el-form-item>
-                  <el-form-item label="App ID">
+                  <el-form-item :label="t('system.payment.appId')">
                     <el-input v-model="paymentForm.wechat.app_id" />
                   </el-form-item>
-                  <el-form-item label="商户号">
+                  <el-form-item :label="t('system.payment.wechat.mchId')">
                     <el-input v-model="paymentForm.wechat.mch_id" />
                   </el-form-item>
-                  <el-form-item label="证书序列号">
+                  <el-form-item :label="t('system.payment.wechat.serialNo')">
                     <el-input v-model="paymentForm.wechat.serial_no" />
                   </el-form-item>
-                  <el-form-item label="商户 API 私钥">
+                  <el-form-item :label="t('system.payment.wechat.privateKey')">
                     <el-input
                       v-model="paymentForm.wechat.private_key"
                       type="password"
                       show-password
                       autocomplete="new-password"
-                      :placeholder="secretPlaceholder(paymentMeta?.wechat.private_key_set, '私钥')"
+                      :placeholder="secretPlaceholder(paymentMeta?.wechat.private_key_set, t('system.payment.secret.privateKey'))"
                     />
                   </el-form-item>
-                  <el-form-item label="APIv3 密钥（32 字节）">
+                  <el-form-item :label="t('system.payment.wechat.apiV3Key')">
                     <el-input
                       v-model="paymentForm.wechat.api_v3_key"
                       type="password"
                       show-password
                       autocomplete="new-password"
-                      :placeholder="secretPlaceholder(paymentMeta?.wechat.api_v3_key_set, '密钥')"
+                      :placeholder="secretPlaceholder(paymentMeta?.wechat.api_v3_key_set, t('system.payment.secret.key'))"
                     />
                   </el-form-item>
-                  <el-form-item label="平台公钥">
+                  <el-form-item :label="t('system.payment.wechat.platformPublicKey')">
                     <el-input
                       v-model="paymentForm.wechat.platform_public_key"
                       type="password"
                       show-password
                       autocomplete="new-password"
-                      :placeholder="secretPlaceholder(paymentMeta?.wechat.platform_public_key_set, '公钥')"
+                      :placeholder="secretPlaceholder(paymentMeta?.wechat.platform_public_key_set, t('system.payment.secret.publicKey'))"
                     />
                   </el-form-item>
-                  <el-form-item label="平台证书序列号">
-                    <el-input v-model="paymentForm.wechat.platform_serial_no" placeholder="可选，用于校验回调 serial" />
+                  <el-form-item :label="t('system.payment.wechat.platformSerialNo')">
+                    <el-input
+                      v-model="paymentForm.wechat.platform_serial_no"
+                      :placeholder="t('system.payment.wechat.platformSerialNoPlaceholder')"
+                    />
                   </el-form-item>
                 </div>
               </el-form>
@@ -1219,45 +1254,51 @@ onBeforeRouteLeave(async () => {
 
           <article class="ax-card gateway-card">
             <header class="ax-card__head">
-              <h2 class="ax-card__title">易支付</h2>
+              <h2 class="ax-card__title">{{ t('system.payment.epay.title') }}</h2>
               <el-tag size="small" :type="paymentForm.epay.enabled ? 'success' : 'info'" effect="plain">
-                {{ paymentForm.epay.enabled ? '已启用' : '未启用' }}
+                {{ paymentForm.epay.enabled ? t('common.enabled') : t('system.status.notEnabled') }}
               </el-tag>
             </header>
             <div class="ax-card__body">
-              <p class="gateway-card__hint">彩虹易支付兼容聚合支付，MD5 签名下单与回调验签。</p>
+              <p class="gateway-card__hint">{{ t('system.payment.epay.hint') }}</p>
               <el-form label-position="top" class="smtp-form" @submit.prevent>
                 <div class="smtp-grid">
-                  <el-form-item label="启用">
+                  <el-form-item :label="t('system.payment.enable')">
                     <el-switch v-model="paymentForm.epay.enabled" />
                   </el-form-item>
-                  <el-form-item label="支付通道">
+                  <el-form-item :label="t('system.payment.epay.payType')">
                     <el-select v-model="paymentForm.epay.pay_type" style="width: 100%">
-                      <el-option label="支付宝" value="alipay" />
-                      <el-option label="微信支付" value="wxpay" />
-                      <el-option label="QQ 钱包" value="qqpay" />
+                      <el-option :label="t('system.payment.epay.payAlipay')" value="alipay" />
+                      <el-option :label="t('system.payment.epay.payWechat')" value="wxpay" />
+                      <el-option :label="t('system.payment.epay.payQq')" value="qqpay" />
                     </el-select>
                   </el-form-item>
-                  <el-form-item label="商户号 PID">
+                  <el-form-item :label="t('system.payment.epay.pid')">
                     <el-input v-model="paymentForm.epay.pid" />
                   </el-form-item>
-                  <el-form-item label="商户密钥">
+                  <el-form-item :label="t('system.payment.epay.key')">
                     <el-input
                       v-model="paymentForm.epay.key"
                       type="password"
                       show-password
                       autocomplete="new-password"
-                      :placeholder="secretPlaceholder(paymentMeta?.epay.key_set, '密钥')"
+                      :placeholder="secretPlaceholder(paymentMeta?.epay.key_set, t('system.payment.secret.key'))"
                     />
                   </el-form-item>
-                  <el-form-item label="站点地址" class="smtp-grid__wide">
+                  <el-form-item :label="t('system.payment.epay.siteUrl')" class="smtp-grid__wide">
                     <el-input v-model="paymentForm.epay.gateway_url" placeholder="https://pay.example.com" />
                   </el-form-item>
-                  <el-form-item label="下单接口">
-                    <el-input v-model="paymentForm.epay.api_url" placeholder="默认 /mapi.php" />
+                  <el-form-item :label="t('system.payment.epay.apiUrl')">
+                    <el-input
+                      v-model="paymentForm.epay.api_url"
+                      :placeholder="t('system.payment.epay.apiUrlPlaceholder')"
+                    />
                   </el-form-item>
-                  <el-form-item label="收银台地址">
-                    <el-input v-model="paymentForm.epay.submit_url" placeholder="默认 /submit.php" />
+                  <el-form-item :label="t('system.payment.epay.submitUrl')">
+                    <el-input
+                      v-model="paymentForm.epay.submit_url"
+                      :placeholder="t('system.payment.epay.submitUrlPlaceholder')"
+                    />
                   </el-form-item>
                 </div>
               </el-form>
@@ -1267,56 +1308,61 @@ onBeforeRouteLeave(async () => {
       </el-tab-pane>
 
       <!-- AI 审查 -->
-      <el-tab-pane label="AI 审查" name="moderation">
+      <el-tab-pane :label="t('system.tabs.moderation')" name="moderation">
         <article class="ax-card">
           <header class="ax-card__head">
-            <h2 class="ax-card__title">图片广场 AI 审查</h2>
-            <el-tag v-if="moderationMeta?.enabled" size="small" type="success" effect="plain">已启用</el-tag>
-            <el-tag v-else size="small" type="info" effect="plain">未启用</el-tag>
+            <h2 class="ax-card__title">{{ t('system.moderation.title') }}</h2>
+            <el-tag v-if="moderationMeta?.enabled" size="small" type="success" effect="plain">
+              {{ t('common.enabled') }}
+            </el-tag>
+            <el-tag v-else size="small" type="info" effect="plain">{{ t('system.status.notEnabled') }}</el-tag>
           </header>
           <div class="ax-card__body">
             <el-form :model="moderationForm" label-position="top" class="smtp-form" @submit.prevent>
               <div class="smtp-grid">
-                <el-form-item label="启用 AI 审查">
+                <el-form-item :label="t('system.moderation.enable')">
                   <el-switch v-model="moderationForm.enabled" />
                 </el-form-item>
-                <el-form-item label="接口地址" class="smtp-grid__wide">
+                <el-form-item :label="t('system.moderation.baseUrl')" class="smtp-grid__wide">
                   <el-input v-model="moderationForm.base_url" placeholder="https://api.openai.com/v1" />
                 </el-form-item>
-                <el-form-item label="模型">
+                <el-form-item :label="t('system.moderation.model')">
                   <el-input v-model="moderationForm.model" placeholder="gpt-4o-mini" />
                 </el-form-item>
-                <el-form-item label="API 密钥">
+                <el-form-item :label="t('system.moderation.apiKey')">
                   <el-input
                     v-model="moderationForm.api_key"
                     type="password"
                     show-password
                     autocomplete="new-password"
-                    :placeholder="moderationMeta?.api_key_set ? '已设置，留空保持不变' : '请输入 API 密钥'"
+                    :placeholder="moderationMeta?.api_key_set ? t('system.moderation.apiKeySet') : t('system.moderation.apiKeyPlaceholder')"
                   />
                 </el-form-item>
-                <el-form-item label="超时（秒）">
+                <el-form-item :label="t('system.moderation.timeout')">
                   <el-input-number v-model="moderationForm.timeout_sec" :min="1" :max="300" controls-position="right" />
                 </el-form-item>
-                <el-form-item label="送审体积上限 (MiB)">
+                <el-form-item :label="t('system.moderation.maxImage')">
                   <el-input-number v-model="moderationForm.max_image_mb" :min="1" :max="100" controls-position="right" />
                 </el-form-item>
-                <el-form-item label="审查提示词" class="smtp-grid__wide">
+                <el-form-item :label="t('system.moderation.prompt')" class="smtp-grid__wide">
                   <el-input
                     v-model="moderationForm.prompt"
                     type="textarea"
                     :rows="4"
-                    placeholder="留空将恢复内置默认提示词（要求模型只回答 SAFE 或 UNSAFE）"
+                    :placeholder="t('system.moderation.promptPlaceholder')"
                   />
                 </el-form-item>
               </div>
               <p class="smtp-form__hint">
-                仅作用于图片广场：图片「设为公开」时调用标准 OpenAI 兼容视觉接口审查，
-                未通过（含模型无返回、调用失败）则保持私有。保存后即时生效，无需重启。
+                {{ t('system.moderation.hint') }}
               </p>
               <div class="smtp-actions">
-                <el-button type="primary" :loading="moderationSaving" @click="saveModeration">保存并应用</el-button>
-                <el-button :disabled="moderationSaving || !moderationMeta" @click="resetModeration">重置</el-button>
+                <el-button type="primary" :loading="moderationSaving" @click="saveModeration">
+                  {{ t('system.actions.saveApply') }}
+                </el-button>
+                <el-button :disabled="moderationSaving || !moderationMeta" @click="resetModeration">
+                  {{ t('common.reset') }}
+                </el-button>
               </div>
             </el-form>
           </div>
@@ -1324,21 +1370,21 @@ onBeforeRouteLeave(async () => {
       </el-tab-pane>
 
       <!-- 系统集成 -->
-      <el-tab-pane label="系统集成" name="integration">
+      <el-tab-pane :label="t('system.tabs.integration')" name="integration">
         <article class="ax-card">
           <header class="ax-card__head">
-            <h2 class="ax-card__title">系统集成</h2>
+            <h2 class="ax-card__title">{{ t('system.integration.title') }}</h2>
           </header>
           <div class="ax-card__body">
             <dl class="info-list">
               <div class="info-list__row">
-                <dt>内容扫描器</dt>
-                <dd>{{ scannerName || '未配置' }}</dd>
+                <dt>{{ t('system.integration.scanner') }}</dt>
+                <dd>{{ scannerName || t('system.status.notConfigured') }}</dd>
               </div>
               <div class="info-list__row">
-                <dt>处理驱动</dt>
+                <dt>{{ t('system.integration.driver') }}</dt>
                 <dd>
-                  {{ drivers.active || '—' }}<span class="ax-muted">（可用：{{ drivers.available.join('、') || '—' }}）</span>
+                  {{ drivers.active || '—' }}<span class="ax-muted">{{ t('system.integration.available', { list: drivers.available.join(t('system.listSeparator')) || '—' }) }}</span>
                 </dd>
               </div>
             </dl>
@@ -1349,18 +1395,22 @@ onBeforeRouteLeave(async () => {
       <el-tab-pane name="runtime">
         <template #label>
           <span class="settings-tab-label">
-            运行设置
-            <span v-if="dirtyDomains.length > 0" class="settings-tab-dot" aria-label="有未保存的修改" />
+            {{ t('system.tabs.runtime') }}
+            <span
+              v-if="dirtyDomains.length > 0"
+              class="settings-tab-dot"
+              :aria-label="t('system.runtime.unsavedBadge')"
+            />
           </span>
         </template>
         <div v-if="dirtyDomains.length > 0" class="settings-savebar" role="status">
           <div class="settings-savebar__text">
-            <strong>{{ dirtyDomains.length }} 项设置未保存</strong>
-            <span>{{ dirtyDomains.map((domain) => DOMAIN_LABELS[domain]).join('、') }}</span>
+            <strong>{{ t('system.runtime.unsavedCount', { count: dirtyDomains.length }) }}</strong>
+            <span>{{ dirtyDomains.map((domain) => domainLabels[domain]).join(t('system.listSeparator')) }}</span>
           </div>
           <div class="settings-savebar__actions">
             <el-button :disabled="savingAll || Boolean(savingDomain)" @click="discardAllDomains">
-              放弃修改
+              {{ t('system.actions.discard') }}
             </el-button>
             <el-button
               type="primary"
@@ -1368,23 +1418,23 @@ onBeforeRouteLeave(async () => {
               :disabled="Boolean(savingDomain)"
               @click="saveAllDomains"
             >
-              保存全部
+              {{ t('system.actions.saveAll') }}
             </el-button>
           </div>
         </div>
 
         <article class="ax-card">
           <header class="ax-card__head">
-            <h2 class="ax-card__title">上传限制</h2>
-            <el-tag size="small" type="success" effect="plain">即时生效</el-tag>
+            <h2 class="ax-card__title">{{ t('system.runtime.upload.title') }}</h2>
+            <el-tag size="small" type="success" effect="plain">{{ t('system.runtime.instant') }}</el-tag>
           </header>
           <div class="ax-card__body">
             <el-form label-position="top" class="smtp-form" @submit.prevent>
               <div class="smtp-grid">
-                <el-form-item label="单文件上限 (MiB)">
+                <el-form-item :label="t('system.runtime.upload.maxSize')">
                   <el-input-number v-model="uploadForm.max_size_mb" :min="1" :max="10240" controls-position="right" />
                 </el-form-item>
-                <el-form-item label="允许的媒体类型" class="smtp-grid__wide">
+                <el-form-item :label="t('system.runtime.upload.mimeTypes')" class="smtp-grid__wide">
                   <el-select v-model="uploadForm.allowed_mime_types" multiple style="width: 100%">
                     <el-option v-for="m in mimeOptions" :key="m" :label="m" :value="m" />
                   </el-select>
@@ -1395,10 +1445,10 @@ onBeforeRouteLeave(async () => {
                   type="primary"
                   :loading="savingDomain === 'upload'"
                   :disabled="!isDomainDirty('upload')"
-                  :title="isDomainDirty('upload') ? '保存并应用' : '没有未保存的修改'"
+                  :title="isDomainDirty('upload') ? t('system.actions.saveApply') : t('system.actions.noChanges')"
                   @click="saveDomain('upload', { ...uploadForm }, fillUpload)"
                 >
-                  保存并应用
+                  {{ t('system.actions.saveApply') }}
                 </el-button>
               </div>
             </el-form>
@@ -1407,52 +1457,55 @@ onBeforeRouteLeave(async () => {
 
         <article class="ax-card">
           <header class="ax-card__head">
-            <h2 class="ax-card__title">图像处理</h2>
-            <el-tag size="small" type="success" effect="plain">即时生效</el-tag>
+            <h2 class="ax-card__title">{{ t('system.runtime.processing.title') }}</h2>
+            <el-tag size="small" type="success" effect="plain">{{ t('system.runtime.instant') }}</el-tag>
           </header>
           <div class="ax-card__body">
             <el-form label-position="top" class="smtp-form" @submit.prevent>
               <div class="smtp-grid">
-                <el-form-item label="启用即时处理">
+                <el-form-item :label="t('system.runtime.processing.enable')">
                   <el-switch v-model="imagingForm.enabled" />
                 </el-form-item>
-                <el-form-item label="最大宽度">
+                <el-form-item :label="t('system.runtime.processing.maxWidth')">
                   <el-input-number v-model="imagingForm.max_width" :min="1" :max="20000" controls-position="right" />
                 </el-form-item>
-                <el-form-item label="最大高度">
+                <el-form-item :label="t('system.runtime.processing.maxHeight')">
                   <el-input-number v-model="imagingForm.max_height" :min="1" :max="20000" controls-position="right" />
                 </el-form-item>
-                <el-form-item label="默认质量">
+                <el-form-item :label="t('system.runtime.processing.quality')">
                   <el-input-number v-model="imagingForm.default_quality" :min="1" :max="100" controls-position="right" />
                 </el-form-item>
-                <el-form-item label="允许的输出格式" class="smtp-grid__wide">
+                <el-form-item :label="t('system.runtime.processing.formats')" class="smtp-grid__wide">
                   <el-select v-model="imagingForm.allowed_formats" multiple style="width: 100%">
                     <el-option v-for="f in formatOptions" :key="f" :label="f" :value="f" />
                   </el-select>
                 </el-form-item>
-                <el-form-item label="允许放大">
+                <el-form-item :label="t('system.runtime.processing.allowEnlarge')">
                   <el-switch v-model="imagingForm.allow_enlarge" />
                 </el-form-item>
-                <el-form-item label="允许滤镜">
+                <el-form-item :label="t('system.runtime.processing.allowEffects')">
                   <el-switch v-model="imagingForm.allow_effects" />
                 </el-form-item>
-                <el-form-item label="允许水印">
+                <el-form-item :label="t('system.runtime.processing.allowWatermark')">
                   <el-switch v-model="imagingForm.allow_watermark" />
                 </el-form-item>
-                <el-form-item label="强制水印文字" class="smtp-grid__wide">
-                  <el-input v-model="imagingForm.watermark_text" placeholder="留空表示不强制" />
+                <el-form-item :label="t('system.runtime.processing.watermarkText')" class="smtp-grid__wide">
+                  <el-input
+                    v-model="imagingForm.watermark_text"
+                    :placeholder="t('system.runtime.processing.watermarkPlaceholder')"
+                  />
                 </el-form-item>
               </div>
-              <p class="smtp-form__hint">处理驱动（purego/libvips/magick）在启动时选定，修改驱动需重启。</p>
+              <p class="smtp-form__hint">{{ t('system.runtime.processing.hint') }}</p>
               <div class="smtp-actions">
                 <el-button
                   type="primary"
                   :loading="savingDomain === 'processing'"
                   :disabled="!isDomainDirty('processing')"
-                  :title="isDomainDirty('processing') ? '保存并应用' : '没有未保存的修改'"
+                  :title="isDomainDirty('processing') ? t('system.actions.saveApply') : t('system.actions.noChanges')"
                   @click="saveDomain('processing', { ...imagingForm }, fillImaging)"
                 >
-                  保存并应用
+                  {{ t('system.actions.saveApply') }}
                 </el-button>
               </div>
             </el-form>
@@ -1461,21 +1514,21 @@ onBeforeRouteLeave(async () => {
 
         <article class="ax-card">
           <header class="ax-card__head">
-            <h2 class="ax-card__title">安全扫描</h2>
-            <el-tag size="small" type="success" effect="plain">即时生效</el-tag>
+            <h2 class="ax-card__title">{{ t('system.runtime.security.title') }}</h2>
+            <el-tag size="small" type="success" effect="plain">{{ t('system.runtime.instant') }}</el-tag>
           </header>
           <div class="ax-card__body">
             <el-form label-position="top" class="smtp-form" @submit.prevent>
               <div class="smtp-grid">
-                <el-form-item label="内容扫描器">
+                <el-form-item :label="t('system.runtime.security.scanner')">
                   <el-select v-model="securityForm.scanner" style="width: 100%">
-                    <el-option label="关闭（none）" value="none" />
-                    <el-option label="内置（白名单+魔数）" value="builtin" />
+                    <el-option :label="t('system.runtime.security.scannerOff')" value="none" />
+                    <el-option :label="t('system.runtime.security.scannerBuiltin')" value="builtin" />
                   </el-select>
                 </el-form-item>
-                <el-form-item label="云处理">
+                <el-form-item :label="t('system.runtime.security.cloud')">
                   <el-select v-model="securityForm.cloud_processor" style="width: 100%">
-                    <el-option label="本地（local）" value="local" />
+                    <el-option :label="t('system.runtime.security.cloudLocal')" value="local" />
                   </el-select>
                 </el-form-item>
               </div>
@@ -1484,10 +1537,10 @@ onBeforeRouteLeave(async () => {
                   type="primary"
                   :loading="savingDomain === 'security'"
                   :disabled="!isDomainDirty('security')"
-                  :title="isDomainDirty('security') ? '保存并应用' : '没有未保存的修改'"
+                  :title="isDomainDirty('security') ? t('system.actions.saveApply') : t('system.actions.noChanges')"
                   @click="saveDomain('security', { ...securityForm }, fillSecurity)"
                 >
-                  保存并应用
+                  {{ t('system.actions.saveApply') }}
                 </el-button>
               </div>
             </el-form>
@@ -1496,41 +1549,40 @@ onBeforeRouteLeave(async () => {
 
         <article class="ax-card">
           <header class="ax-card__head">
-            <h2 class="ax-card__title">管理员安全入口</h2>
+            <h2 class="ax-card__title">{{ t('system.runtime.adminEntry.title') }}</h2>
             <el-tag
               size="small"
               :type="adminEntry?.enabled ? 'success' : 'info'"
               effect="plain"
             >
-              {{ adminEntry?.enabled ? '已开启' : '未开启' }}
+              {{ adminEntry?.enabled ? t('system.status.on') : t('system.status.off') }}
             </el-tag>
           </header>
           <div class="ax-card__body">
             <p class="security-card__desc">
-              开启后普通 /admin/login 将返回 404，必须通过专属入口访问管理员登录页。
-              安全入口仍然需要管理员密码，已启用 TOTP 时还需要动态验证码。
+              {{ t('system.runtime.adminEntry.description') }}
             </p>
             <dl class="info-list">
               <div class="info-list__row">
-                <dt>状态</dt>
-                <dd>{{ adminEntry?.enabled ? '已开启' : '未开启' }}</dd>
+                <dt>{{ t('system.runtime.adminEntry.status') }}</dt>
+                <dd>{{ adminEntry?.enabled ? t('system.status.on') : t('system.status.off') }}</dd>
               </div>
               <div v-if="adminEntry?.enabled" class="info-list__row">
-                <dt>入口地址</dt>
+                <dt>{{ t('system.runtime.adminEntry.url') }}</dt>
                 <dd class="admin-entry-url">
                   <span class="ax-mono">{{ adminEntry.url }}</span>
                   <el-button
                     size="small"
                     :icon="CopyDocument"
-                    title="复制安全入口"
+                    :title="t('system.runtime.adminEntry.copyTitle')"
                     @click="copyAdminEntryURL"
                   >
-                    复制
+                    {{ t('common.copy') }}
                   </el-button>
                 </dd>
               </div>
               <div v-if="adminEntry?.updated_at" class="info-list__row">
-                <dt>最近更新</dt>
+                <dt>{{ t('system.runtime.adminEntry.updatedAt') }}</dt>
                 <dd>{{ formatDateTime(adminEntry.updated_at) }}</dd>
               </div>
             </dl>
@@ -1540,12 +1592,14 @@ onBeforeRouteLeave(async () => {
                 type="primary"
                 @click="openAdminEntryDialog('enable')"
               >
-                开启安全入口
+                {{ t('system.runtime.adminEntry.enable') }}
               </el-button>
               <template v-else>
-                <el-button @click="openAdminEntryDialog('rotate')">重新生成入口</el-button>
+                <el-button @click="openAdminEntryDialog('rotate')">
+                  {{ t('system.runtime.adminEntry.rotate') }}
+                </el-button>
                 <el-button type="danger" plain @click="openAdminEntryDialog('disable')">
-                  关闭安全入口
+                  {{ t('system.runtime.adminEntry.disable') }}
                 </el-button>
               </template>
             </div>
@@ -1554,38 +1608,41 @@ onBeforeRouteLeave(async () => {
 
         <article class="ax-card">
           <header class="ax-card__head">
-            <h2 class="ax-card__title">客户端真实 IP</h2>
-            <el-tag size="small" type="success" effect="plain">即时生效</el-tag>
+            <h2 class="ax-card__title">{{ t('system.runtime.clientIp.title') }}</h2>
+            <el-tag size="small" type="success" effect="plain">{{ t('system.runtime.instant') }}</el-tag>
           </header>
           <div class="ax-card__body">
             <el-form label-position="top" class="smtp-form" @submit.prevent>
               <div class="smtp-grid">
-                <el-form-item label="来源">
+                <el-form-item :label="t('system.runtime.clientIp.source')">
                   <el-select v-model="clientIPForm.source" style="width: 100%">
-                    <el-option label="remote（忽略转发头）" value="remote" />
+                    <el-option :label="t('system.runtime.clientIp.sourceRemote')" value="remote" />
                     <el-option label="X-Forwarded-For" value="x-forwarded-for" />
                     <el-option label="X-Real-IP" value="x-real-ip" />
                     <el-option label="CF-Connecting-IP" value="cf-connecting-ip" />
                     <el-option label="True-Client-IP" value="true-client-ip" />
                     <el-option label="X-Client-IP" value="x-client-ip" />
-                    <el-option label="Forwarded（RFC 7239）" value="forwarded" />
-                    <el-option label="自定义头" value="custom" />
+                    <el-option label="Forwarded (RFC 7239)" value="forwarded" />
+                    <el-option :label="t('system.runtime.clientIp.sourceCustom')" value="custom" />
                   </el-select>
                 </el-form-item>
-                <el-form-item v-if="clientIPForm.source === 'custom'" label="自定义头名">
-                  <el-input v-model="clientIPForm.header" placeholder="例如 X-Real-Client" />
+                <el-form-item v-if="clientIPForm.source === 'custom'" :label="t('system.runtime.clientIp.headerName')">
+                  <el-input
+                    v-model="clientIPForm.header"
+                    :placeholder="t('system.runtime.clientIp.headerPlaceholder')"
+                  />
                 </el-form-item>
-                <el-form-item label="XFF 右侧跳过数（0=右起第一个不可信）">
+                <el-form-item :label="t('system.runtime.clientIp.xffDepth')">
                   <el-input-number v-model="clientIPForm.xff_depth" :min="0" controls-position="right" />
                 </el-form-item>
-                <el-form-item label="可信代理 CIDR" class="smtp-grid__wide">
+                <el-form-item :label="t('system.runtime.clientIp.trustedProxies')" class="smtp-grid__wide">
                   <el-select
                     v-model="clientIPForm.trusted_proxies"
                     multiple
                     filterable
                     allow-create
                     default-first-option
-                    placeholder="输入 CIDR 后回车，如 10.0.0.0/8"
+                    :placeholder="t('system.runtime.clientIp.trustedProxiesPlaceholder')"
                     style="width: 100%"
                   >
                     <el-option
@@ -1598,34 +1655,36 @@ onBeforeRouteLeave(async () => {
                 </el-form-item>
               </div>
               <p class="smtp-form__hint">
-                选择代理来源时必须配置可信代理 CIDR：仅当直接对端在可信网段内才解析转发头，否则回退对端地址（防伪造）。
+                {{ t('system.runtime.clientIp.hint') }}
               </p>
               <div class="smtp-actions">
                 <el-button
                   type="primary"
                   :loading="savingDomain === 'client_ip'"
                   :disabled="!isDomainDirty('client_ip')"
-                  :title="isDomainDirty('client_ip') ? '保存并应用' : '没有未保存的修改'"
+                  :title="isDomainDirty('client_ip') ? t('system.actions.saveApply') : t('system.actions.noChanges')"
                   @click="saveDomain('client_ip', { ...clientIPForm }, fillClientIP)"
                 >
-                  保存并应用
+                  {{ t('system.actions.saveApply') }}
                 </el-button>
-                <el-button :loading="clientIPChecking" @click="checkClientIP">校验当前请求</el-button>
+                <el-button :loading="clientIPChecking" @click="checkClientIP">
+                  {{ t('system.runtime.clientIp.check') }}
+                </el-button>
               </div>
             </el-form>
 
             <dl v-if="clientIPInfo" class="info-list">
               <div class="info-list__row">
-                <dt>解析到的 IP</dt>
+                <dt>{{ t('system.runtime.clientIp.resolvedIp') }}</dt>
                 <dd>{{ clientIPInfo.resolved || '—' }}</dd>
               </div>
               <div class="info-list__row">
-                <dt>直接对端</dt>
+                <dt>{{ t('system.runtime.clientIp.peer') }}</dt>
                 <dd>{{ clientIPInfo.peer || '—' }}</dd>
               </div>
               <div class="info-list__row">
-                <dt>来源 / 命中可信代理</dt>
-                <dd>{{ clientIPInfo.source }} · {{ clientIPInfo.trusted_peer ? '是' : '否' }}</dd>
+                <dt>{{ t('system.runtime.clientIp.sourceTrusted') }}</dt>
+                <dd>{{ clientIPInfo.source }} · {{ clientIPInfo.trusted_peer ? t('common.yes') : t('common.no') }}</dd>
               </div>
               <div class="info-list__row">
                 <dt>X-Forwarded-For</dt>
@@ -1637,37 +1696,39 @@ onBeforeRouteLeave(async () => {
               </div>
             </dl>
 
-            <el-divider content-position="left">模拟解析（验证规则）</el-divider>
+            <el-divider content-position="left">{{ t('system.runtime.clientIp.simulateDivider') }}</el-divider>
             <el-form label-position="top" class="smtp-form" @submit.prevent>
               <div class="smtp-grid">
-                <el-form-item label="对端地址（RemoteAddr）">
-                  <el-input v-model="simulateRemote" placeholder="10.0.0.5:1234" />
+                <el-form-item :label="t('system.runtime.clientIp.remoteAddr')">
+                  <el-input v-model="simulateRemote" :placeholder="t('system.runtime.clientIp.remotePlaceholder')" />
                 </el-form-item>
-                <el-form-item label="请求头（每行 Key: Value）" class="smtp-grid__wide">
+                <el-form-item :label="t('system.runtime.clientIp.headers')" class="smtp-grid__wide">
                   <el-input
                     v-model="simulateHeaders"
                     type="textarea"
                     :rows="2"
-                    placeholder="X-Forwarded-For: 1.2.3.4, 10.0.0.7"
+                    :placeholder="t('system.runtime.clientIp.headersPlaceholder')"
                   />
                 </el-form-item>
               </div>
               <div class="smtp-actions">
-                <el-button :loading="simulating" @click="simulateClientIP">模拟解析</el-button>
+                <el-button :loading="simulating" @click="simulateClientIP">
+                  {{ t('system.runtime.clientIp.simulate') }}
+                </el-button>
               </div>
             </el-form>
             <dl v-if="simulateResult" class="info-list">
               <div class="info-list__row">
-                <dt>解析到的 IP</dt>
+                <dt>{{ t('system.runtime.clientIp.resolvedIp') }}</dt>
                 <dd>{{ simulateResult.resolved || '—' }}</dd>
               </div>
               <div class="info-list__row">
-                <dt>直接对端</dt>
+                <dt>{{ t('system.runtime.clientIp.peer') }}</dt>
                 <dd>{{ simulateResult.peer || '—' }}</dd>
               </div>
               <div class="info-list__row">
-                <dt>来源 / 命中可信代理</dt>
-                <dd>{{ simulateResult.source }} · {{ simulateResult.trusted_peer ? '是' : '否' }}</dd>
+                <dt>{{ t('system.runtime.clientIp.sourceTrusted') }}</dt>
+                <dd>{{ simulateResult.source }} · {{ simulateResult.trusted_peer ? t('common.yes') : t('common.no') }}</dd>
               </div>
             </dl>
           </div>
@@ -1675,34 +1736,34 @@ onBeforeRouteLeave(async () => {
 
         <article class="ax-card">
           <header class="ax-card__head">
-            <h2 class="ax-card__title">限流</h2>
-            <el-tag size="small" type="info" effect="plain">重启后生效</el-tag>
+            <h2 class="ax-card__title">{{ t('system.runtime.limits.title') }}</h2>
+            <el-tag size="small" type="info" effect="plain">{{ t('system.runtime.restart') }}</el-tag>
           </header>
           <div class="ax-card__body">
             <el-form label-position="top" class="smtp-form" @submit.prevent>
               <div class="smtp-grid">
-                <el-form-item label="上传/分钟">
+                <el-form-item :label="t('system.runtime.limits.uploadPerMinute')">
                   <el-input-number v-model="limitsForm.upload_per_minute" :min="0" controls-position="right" />
                 </el-form-item>
-                <el-form-item label="上传突发">
+                <el-form-item :label="t('system.runtime.limits.uploadBurst')">
                   <el-input-number v-model="limitsForm.upload_burst" :min="0" controls-position="right" />
                 </el-form-item>
-                <el-form-item label="访客/分钟">
+                <el-form-item :label="t('system.runtime.limits.guestPerMinute')">
                   <el-input-number v-model="limitsForm.guest_per_minute" :min="0" controls-position="right" />
                 </el-form-item>
-                <el-form-item label="访客突发">
+                <el-form-item :label="t('system.runtime.limits.guestBurst')">
                   <el-input-number v-model="limitsForm.guest_burst" :min="0" controls-position="right" />
                 </el-form-item>
-                <el-form-item label="图片读取/分钟">
+                <el-form-item :label="t('system.runtime.limits.imagePerMinute')">
                   <el-input-number v-model="limitsForm.image_per_minute" :min="0" controls-position="right" />
                 </el-form-item>
-                <el-form-item label="图片读取突发">
+                <el-form-item :label="t('system.runtime.limits.imageBurst')">
                   <el-input-number v-model="limitsForm.image_burst" :min="0" controls-position="right" />
                 </el-form-item>
-                <el-form-item label="分享访问/分钟">
+                <el-form-item :label="t('system.runtime.limits.sharePerMinute')">
                   <el-input-number v-model="limitsForm.share_per_minute" :min="0" controls-position="right" />
                 </el-form-item>
-                <el-form-item label="分享访问突发">
+                <el-form-item :label="t('system.runtime.limits.shareBurst')">
                   <el-input-number v-model="limitsForm.share_burst" :min="0" controls-position="right" />
                 </el-form-item>
               </div>
@@ -1711,10 +1772,10 @@ onBeforeRouteLeave(async () => {
                   type="primary"
                   :loading="savingDomain === 'limits'"
                   :disabled="!isDomainDirty('limits')"
-                  :title="isDomainDirty('limits') ? '保存并应用' : '没有未保存的修改'"
+                  :title="isDomainDirty('limits') ? t('system.actions.saveApply') : t('system.actions.noChanges')"
                   @click="saveDomain('limits', { ...limitsForm }, fillLimits)"
                 >
-                  保存
+                  {{ t('common.save') }}
                 </el-button>
               </div>
             </el-form>
@@ -1723,19 +1784,19 @@ onBeforeRouteLeave(async () => {
 
         <article class="ax-card">
           <header class="ax-card__head">
-            <h2 class="ax-card__title">维护任务</h2>
-            <el-tag size="small" type="info" effect="plain">重启后生效</el-tag>
+            <h2 class="ax-card__title">{{ t('system.runtime.maintenance.title') }}</h2>
+            <el-tag size="small" type="info" effect="plain">{{ t('system.runtime.restart') }}</el-tag>
           </header>
           <div class="ax-card__body">
             <el-form label-position="top" class="smtp-form" @submit.prevent>
               <div class="smtp-grid">
-                <el-form-item label="启用孤儿对象对账">
+                <el-form-item :label="t('system.runtime.maintenance.orphan')">
                   <el-switch v-model="maintenanceForm.orphan_cleanup" />
                 </el-form-item>
-                <el-form-item label="保留时长（小时）">
+                <el-form-item :label="t('system.runtime.maintenance.grace')">
                   <el-input-number v-model="maintenanceForm.orphan_grace_hours" :min="0" controls-position="right" />
                 </el-form-item>
-                <el-form-item label="执行间隔（小时）">
+                <el-form-item :label="t('system.runtime.maintenance.interval')">
                   <el-input-number v-model="maintenanceForm.orphan_interval_hours" :min="1" controls-position="right" />
                 </el-form-item>
               </div>
@@ -1744,10 +1805,10 @@ onBeforeRouteLeave(async () => {
                   type="primary"
                   :loading="savingDomain === 'maintenance'"
                   :disabled="!isDomainDirty('maintenance')"
-                  :title="isDomainDirty('maintenance') ? '保存并应用' : '没有未保存的修改'"
+                  :title="isDomainDirty('maintenance') ? t('system.actions.saveApply') : t('system.actions.noChanges')"
                   @click="saveDomain('maintenance', { ...maintenanceForm }, fillMaintenance)"
                 >
-                  保存
+                  {{ t('common.save') }}
                 </el-button>
               </div>
             </el-form>
@@ -1756,15 +1817,15 @@ onBeforeRouteLeave(async () => {
 
         <article class="ax-card">
           <header class="ax-card__head">
-            <h2 class="ax-card__title">站点信息</h2>
+            <h2 class="ax-card__title">{{ t('system.runtime.site.title') }}</h2>
           </header>
           <div class="ax-card__body">
             <el-form label-position="top" class="smtp-form" @submit.prevent>
               <div class="smtp-grid">
-                <el-form-item label="站点名称">
+                <el-form-item :label="t('system.runtime.site.name')">
                   <el-input v-model="siteForm.name" />
                 </el-form-item>
-                <el-form-item label="站点描述" class="smtp-grid__wide">
+                <el-form-item :label="t('system.runtime.site.description')" class="smtp-grid__wide">
                   <el-input v-model="siteForm.description" type="textarea" :rows="2" />
                 </el-form-item>
               </div>
@@ -1773,10 +1834,10 @@ onBeforeRouteLeave(async () => {
                   type="primary"
                   :loading="savingDomain === 'site'"
                   :disabled="!isDomainDirty('site')"
-                  :title="isDomainDirty('site') ? '保存并应用' : '没有未保存的修改'"
+                  :title="isDomainDirty('site') ? t('system.actions.saveApply') : t('system.actions.noChanges')"
                   @click="saveDomain('site', { ...siteForm }, fillSite)"
                 >
-                  保存
+                  {{ t('common.save') }}
                 </el-button>
               </div>
             </el-form>
@@ -1795,17 +1856,17 @@ onBeforeRouteLeave(async () => {
     >
       <p class="security-card__desc">
         {{ adminEntryAction === 'rotate'
-          ? '重新生成后旧入口地址立即失效，请及时保存新地址。'
+          ? t('system.runtime.adminEntry.dialog.rotate')
           : adminEntryAction === 'disable'
-            ? '关闭后将恢复普通 /admin/login 登录入口。'
-            : '开启后必须通过专属入口访问管理员登录页。' }}
+            ? t('system.runtime.adminEntry.dialog.disable')
+            : t('system.runtime.adminEntry.dialog.enable') }}
       </p>
       <div class="email-form">
         <el-input
           v-model="adminEntryForm.password"
           type="password"
           show-password
-          placeholder="当前密码"
+          :placeholder="t('system.runtime.adminEntry.dialog.passwordPlaceholder')"
           autocomplete="current-password"
         />
         <el-input
@@ -1813,18 +1874,22 @@ onBeforeRouteLeave(async () => {
           v-model="adminEntryForm.totpCode"
           maxlength="6"
           inputmode="numeric"
-          placeholder="6 位动态验证码"
+          :placeholder="t('system.runtime.adminEntry.dialog.totpPlaceholder')"
           autocomplete="one-time-code"
         />
       </div>
       <template #footer>
-        <el-button @click="adminEntryDialog = false">取消</el-button>
+        <el-button @click="adminEntryDialog = false">{{ t('common.cancel') }}</el-button>
         <el-button
           type="primary"
           :loading="adminEntryBusy"
           @click="confirmAdminEntryAction"
         >
-          确认{{ adminEntryActionLabel }}
+          {{ adminEntryAction === 'rotate'
+            ? t('system.runtime.adminEntry.dialog.confirmRotate')
+            : adminEntryAction === 'disable'
+              ? t('system.runtime.adminEntry.dialog.confirmDisable')
+              : t('system.runtime.adminEntry.dialog.confirmEnable') }}
         </el-button>
       </template>
     </el-dialog>

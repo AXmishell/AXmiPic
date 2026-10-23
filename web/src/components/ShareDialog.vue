@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 
 import { toApiError } from '@/api/client'
 import { createShare } from '@/api/shares'
@@ -17,6 +18,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{ (event: 'update:modelValue', value: boolean): void }>()
 
+const { t } = useI18n()
 const auth = useAuthStore()
 const form = reactive({ password: '', expiresInHours: 0, maxViews: 0 })
 const creating = ref(false)
@@ -27,7 +29,9 @@ const open = computed({
   set: (value: boolean) => emit('update:modelValue', value),
 })
 const allowPassword = computed(() => auth.hasFeature('share_password'))
-const targetName = computed(() => (props.targetType === 'album' ? '相册' : '图片'))
+const targetName = computed(() =>
+  props.targetType === 'album' ? t('shareDialog.album') : t('shareDialog.image'),
+)
 
 watch(
   () => props.modelValue,
@@ -52,7 +56,7 @@ async function submit(): Promise<void> {
       expires_in_hours: form.expiresInHours > 0 ? form.expiresInHours : undefined,
       max_views: form.maxViews > 0 ? form.maxViews : undefined,
     })
-    ElMessage.success('分享链接已创建')
+    ElMessage.success(t('shareDialog.created'))
   } catch (error) {
     ElMessage.error(toApiError(error).message)
   } finally {
@@ -62,41 +66,41 @@ async function submit(): Promise<void> {
 </script>
 
 <template>
-  <el-dialog v-model="open" title="创建分享链接" width="min(520px, 92vw)" append-to-body>
+  <el-dialog v-model="open" :title="t('shareDialog.title')" width="min(520px, 92vw)" append-to-body>
     <p class="share-target">
-      分享{{ targetName }}：<strong>{{ targetLabel || targetId }}</strong>
+      {{ t('shareDialog.sharing', { type: targetName }) }}<strong>{{ targetLabel || targetId }}</strong>
     </p>
 
     <template v-if="!result">
       <el-form label-position="top">
-        <el-form-item v-if="allowPassword" label="访问密码（可选）">
-          <el-input v-model="form.password" type="password" show-password placeholder="留空表示无需密码" />
+        <el-form-item v-if="allowPassword" :label="t('shareDialog.passwordLabel')">
+          <el-input v-model="form.password" type="password" show-password :placeholder="t('shareDialog.passwordPlaceholder')" />
         </el-form-item>
-        <el-form-item label="有效期（小时，可选）">
+        <el-form-item :label="t('shareDialog.expiresLabel')">
           <el-input-number v-model="form.expiresInHours" :min="0" :max="8760" />
-          <span class="form-hint">0 表示长期有效</span>
+          <span class="form-hint">{{ t('shareDialog.expiresHint') }}</span>
         </el-form-item>
-        <el-form-item label="最大访问次数（可选）">
+        <el-form-item :label="t('shareDialog.maxViewsLabel')">
           <el-input-number v-model="form.maxViews" :min="0" />
-          <span class="form-hint">0 表示不限次数</span>
+          <span class="form-hint">{{ t('shareDialog.maxViewsHint') }}</span>
         </el-form-item>
       </el-form>
     </template>
 
     <template v-else>
-      <CopyField label="分享链接" :value="result.url" />
+      <CopyField :label="t('shareDialog.linkLabel')" :value="result.url" />
       <div class="share-meta">
-        <el-tag v-if="result.has_password" size="small" type="warning" effect="plain">需要密码</el-tag>
-        <el-tag v-else size="small" type="info" effect="plain">无需密码</el-tag>
-        <el-tag v-if="result.expires_at" size="small" effect="plain">到期时间 {{ result.expires_at }}</el-tag>
-        <el-tag v-if="result.max_views > 0" size="small" effect="plain">最多 {{ result.max_views }} 次</el-tag>
+        <el-tag v-if="result.has_password" size="small" type="warning" effect="plain">{{ t('shareDialog.needsPassword') }}</el-tag>
+        <el-tag v-else size="small" type="info" effect="plain">{{ t('shareDialog.noPassword') }}</el-tag>
+        <el-tag v-if="result.expires_at" size="small" effect="plain">{{ t('shareDialog.expiresAt', { time: result.expires_at }) }}</el-tag>
+        <el-tag v-if="result.max_views > 0" size="small" effect="plain">{{ t('shareDialog.maxViews', { count: result.max_views }) }}</el-tag>
       </div>
     </template>
 
     <template #footer>
-      <el-button @click="open = false">关闭</el-button>
-      <el-button v-if="!result" type="primary" :loading="creating" @click="submit">创建分享</el-button>
-      <el-button v-else type="primary" @click="submit">再创建一个</el-button>
+      <el-button @click="open = false">{{ t('shareDialog.close') }}</el-button>
+      <el-button v-if="!result" type="primary" :loading="creating" @click="submit">{{ t('shareDialog.create') }}</el-button>
+      <el-button v-else type="primary" @click="submit">{{ t('shareDialog.createAnother') }}</el-button>
     </template>
   </el-dialog>
 </template>

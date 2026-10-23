@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { Moon, Sunny, User } from '@element-plus/icons-vue'
 
 import BrandMark from '@/components/BrandMark.vue'
@@ -7,6 +8,7 @@ import PlazaMasonry from '@/components/PlazaMasonry.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
 
+const { t } = useI18n()
 const router = useRouter()
 const auth = useAuthStore()
 const theme = useThemeStore()
@@ -23,7 +25,7 @@ function goAuth(): void {
 <template>
   <div class="pp">
     <header class="pp__topbar">
-      <router-link to="/" class="pp__brand" aria-label="AXmiPic 首页">
+      <router-link to="/" class="pp__brand" :aria-label="t('publicPlaza.aria.brandHome')">
         <span class="pp__mark" aria-hidden="true">
           <BrandMark :size="18" />
         </span>
@@ -34,25 +36,25 @@ function goAuth(): void {
         <button
           class="pp__icon-btn"
           type="button"
-          :aria-label="theme.isDark ? '切换到浅色主题' : '切换到深色主题'"
+          :aria-label="theme.isDark ? t('topbar.switchToLight') : t('topbar.switchToDark')"
           @click="theme.toggle()"
         >
           <el-icon :size="16"><component :is="theme.isDark ? Sunny : Moon" /></el-icon>
         </button>
         <el-button v-if="auth.isAuthenticated" :icon="User" @click="goAuth">
-          {{ auth.isAdmin ? '管理控制台' : '用户中心' }}
+          {{ auth.isAdmin ? t('topbar.adminConsole') : t('topbar.userCenter') }}
         </el-button>
         <template v-else>
-          <el-button @click="router.push('/login')">登录</el-button>
-          <el-button type="primary" @click="router.push('/login')">注册 / 登录</el-button>
+          <el-button @click="router.push('/login')">{{ t('publicPlaza.login') }}</el-button>
+          <el-button type="primary" @click="router.push('/login')">{{ t('publicPlaza.registerLogin') }}</el-button>
         </template>
       </div>
     </header>
 
     <main class="pp__main">
       <div class="pp__head">
-        <h1 class="pp__title">图片广场</h1>
-        <p class="pp__desc">所有用户公开分享的图片，瀑布流浏览。</p>
+        <h1 class="pp__title">{{ t('publicPlaza.title') }}</h1>
+        <p class="pp__desc">{{ t('publicPlaza.desc') }}</p>
       </div>
       <PlazaMasonry />
     </main>

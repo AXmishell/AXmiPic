@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import type { FormInstance, FormRules } from 'element-plus'
 import { Close, Delete, EditPen, Plus, Refresh } from '@element-plus/icons-vue'
 
@@ -39,6 +40,8 @@ import TableSkeleton from '@/components/TableSkeleton.vue'
 import { formatDateTime } from '@/utils/format'
 import { useTabQuery } from '@/utils/useTabQuery'
 
+const { t } = useI18n()
+
 type Tab = 'plans' | 'coupons' | 'orders' | 'tickets'
 const BILLING_TABS: readonly Tab[] = ['plans', 'coupons', 'orders', 'tickets']
 const activeTab = useTabQuery<Tab>('tab', 'plans', BILLING_TABS)
@@ -60,7 +63,7 @@ const ticketPageSize = ref(20)
 const ticketTotal = ref(0)
 const ticketsLoading = ref(false)
 
-const priceLabel = (cents: number): string => (cents === 0 ? '免费' : `¥${(cents / 100).toFixed(2)}`)
+const priceLabel = (cents: number): string => (cents === 0 ? t('billing.free') : `¥${(cents / 100).toFixed(2)}`)
 
 const orderDetailOpen = ref(false)
 const detailOrder = ref<Order | null>(null)
@@ -71,11 +74,19 @@ function openOrderDetail(order: Order): void {
 }
 
 function orderStatusLabel(status: Order['status']): string {
-  return status === 'paid' ? '已支付' : status === 'cancelled' ? '已取消' : '待支付'
+  return status === 'paid'
+    ? t('billing.orderStatus.paid')
+    : status === 'cancelled'
+      ? t('billing.orderStatus.cancelled')
+      : t('billing.orderStatus.pending')
 }
 
 function ticketStatusLabel(status: Ticket['status']): string {
-  return status === 'open' ? '待处理' : status === 'answered' ? '已回复' : '已关闭'
+  return status === 'open'
+    ? t('billing.ticketStatus.open')
+    : status === 'answered'
+      ? t('billing.ticketStatus.answered')
+      : t('billing.ticketStatus.closed')
 }
 
 async function fetchOrders(): Promise<void> {
@@ -155,8 +166,11 @@ async function load(): Promise<void> {
 async function confirmOrder(row: Order): Promise<void> {
   try {
     await ElMessageBox.confirm(
-      `确认已收到「${row.plan_name}」的 ${priceLabel(row.amount_cents)} 款项并核销该订单？`,
-      '核销订单',
+      t('billing.confirm.verifyMessage', {
+        plan: row.plan_name,
+        amount: priceLabel(row.amount_cents),
+      }),
+      t('billing.confirm.verifyTitle'),
       { type: 'warning' },
     )
   } catch {
@@ -164,7 +178,7 @@ async function confirmOrder(row: Order): Promise<void> {
   }
   try {
     await payOrder(row.id)
-    ElMessage.success('订单已核销')
+    ElMessage.success(t('billing.messages.orderVerified'))
     if (detailOrder.value?.id === row.id) {
       detailOrder.value = { ...detailOrder.value, status: 'paid', paid_at: new Date().toISOString() }
     }
@@ -189,7 +203,9 @@ const planForm = reactive<PlanInput>({
   active: true,
   sort_order: 0,
 })
-const planRules: FormRules = { name: [{ required: true, message: '请输入套餐名称', trigger: 'blur' }] }
+const planRules = computed<FormRules>(() => ({
+  name: [{ required: true, message: t('billing.validation.planNameRequired'), trigger: 'blur' }],
+}))
 const planSnapshot = ref('')
 
 function planState(): string {
@@ -203,9 +219,9 @@ async function closePlanDialog(done: () => void): Promise<void> {
     return
   }
   try {
-    await ElMessageBox.confirm('关闭后未保存的修改将丢失。', '放弃修改？', {
-      confirmButtonText: '放弃修改',
-      cancelButtonText: '继续编辑',
+    await ElMessageBox.confirm(t('billing.confirm.discardMessage'), t('billing.confirm.discardTitle'), {
+      confirmButtonText: t('billing.confirm.discard'),
+      cancelButtonText: t('billing.confirm.continueEditing'),
       type: 'warning',
       confirmButtonClass: 'el-button--danger',
     })
@@ -257,7 +273,7 @@ async function submitPlan(): Promise<void> {
     const payload: PlanInput = { ...planForm, name: planForm.name.trim(), description: planForm.description.trim() }
     if (editingPlanId.value) await updatePlan(editingPlanId.value, payload)
     else await createPlan(payload)
-    ElMessage.success('套餐已保存')
+    ElMessage.success(t('billing.messages.planSaved'))
     planSnapshot.value = planState()
     planOpen.value = false
     await load()
@@ -270,9 +286,9 @@ async function submitPlan(): Promise<void> {
 
 async function removePlan(plan: Plan): Promise<void> {
   try {
-    await ElMessageBox.confirm(`将删除套餐「${plan.name}」。`, '删除套餐', {
-      confirmButtonText: '删除',
-      cancelButtonText: '取消',
+    await ElMessageBox.confirm(t('billing.confirm.deletePlanMessage', { name: plan.name }), t('billing.confirm.deletePlanTitle'), {
+      confirmButtonText: t('common.delete'),
+      cancelButtonText: t('common.cancel'),
       type: 'warning',
       confirmButtonClass: 'el-button--danger',
     })
@@ -281,7 +297,7 @@ async function removePlan(plan: Plan): Promise<void> {
   }
   try {
     await deletePlan(plan.id)
-    ElMessage.success('套餐已删除')
+    ElMessage.success(t('billing.messages.planDeleted'))
     await load()
   } catch (error) {
     ElMessage.error(toApiError(error).message)
@@ -303,7 +319,9 @@ const couponForm = reactive<{ code: string; type: CouponType; value_yuan: number
   expires_at: '',
   active: true,
 })
-const couponRules: FormRules = { code: [{ required: true, message: '请输入优惠券代码', trigger: 'blur' }] }
+const couponRules = computed<FormRules>(() => ({
+  code: [{ required: true, message: t('billing.validation.couponCodeRequired'), trigger: 'blur' }],
+}))
 const couponSnapshot = ref('')
 
 function couponState(): string {
@@ -317,9 +335,9 @@ async function closeCouponDialog(done: () => void): Promise<void> {
     return
   }
   try {
-    await ElMessageBox.confirm('关闭后未保存的修改将丢失。', '放弃修改？', {
-      confirmButtonText: '放弃修改',
-      cancelButtonText: '继续编辑',
+    await ElMessageBox.confirm(t('billing.confirm.discardMessage'), t('billing.confirm.discardTitle'), {
+      confirmButtonText: t('billing.confirm.discard'),
+      cancelButtonText: t('billing.confirm.continueEditing'),
       type: 'warning',
       confirmButtonClass: 'el-button--danger',
     })
@@ -371,7 +389,7 @@ async function submitCoupon(): Promise<void> {
     }
     if (editingCouponId.value) await updateCoupon(editingCouponId.value, payload)
     else await createCoupon(payload)
-    ElMessage.success('优惠券已保存')
+    ElMessage.success(t('billing.messages.couponSaved'))
     couponSnapshot.value = couponState()
     couponOpen.value = false
     await load()
@@ -384,9 +402,9 @@ async function submitCoupon(): Promise<void> {
 
 async function removeCoupon(coupon: Coupon): Promise<void> {
   try {
-    await ElMessageBox.confirm(`将删除优惠券「${coupon.code}」。`, '删除优惠券', {
-      confirmButtonText: '删除',
-      cancelButtonText: '取消',
+    await ElMessageBox.confirm(t('billing.confirm.deleteCouponMessage', { code: coupon.code }), t('billing.confirm.deleteCouponTitle'), {
+      confirmButtonText: t('common.delete'),
+      cancelButtonText: t('common.cancel'),
       type: 'warning',
       confirmButtonClass: 'el-button--danger',
     })
@@ -395,7 +413,7 @@ async function removeCoupon(coupon: Coupon): Promise<void> {
   }
   try {
     await deleteCoupon(coupon.id)
-    ElMessage.success('优惠券已删除')
+    ElMessage.success(t('billing.messages.couponDeleted'))
     await load()
   } catch (error) {
     ElMessage.error(toApiError(error).message)
@@ -403,7 +421,9 @@ async function removeCoupon(coupon: Coupon): Promise<void> {
 }
 
 function couponValueLabel(coupon: Coupon): string {
-  return coupon.type === 'fixed' ? `减 ¥${(coupon.value / 100).toFixed(2)}` : `减 ${coupon.value}%`
+  return coupon.type === 'fixed'
+    ? t('billing.coupon.fixedValue', { amount: (coupon.value / 100).toFixed(2) })
+    : t('billing.coupon.percentValue', { value: coupon.value })
 }
 
 // ---- 工单 ----
@@ -436,7 +456,7 @@ async function submitReply(): Promise<void> {
   try {
     detailTicket.value = await replyTicket(ticket.id, body)
     replyBody.value = ''
-    ElMessage.success('回复已发送')
+    ElMessage.success(t('billing.messages.replySent'))
     await load()
   } catch (error) {
     ElMessage.error(toApiError(error).message)
@@ -448,7 +468,7 @@ async function submitReply(): Promise<void> {
 async function closeTicket(ticket: Ticket): Promise<void> {
   try {
     await setTicketStatus(ticket.id, 'closed')
-    ElMessage.success('工单已关闭')
+    ElMessage.success(t('billing.messages.ticketClosed'))
     if (detailTicket.value?.id === ticket.id) {
       detailTicket.value = { ...detailTicket.value, status: 'closed' }
     }
@@ -463,11 +483,11 @@ onMounted(load)
 
 <template>
   <div class="ax-page">
-    <PageHeader title="计费管理" description="管理套餐、优惠券、订单与工单。">
+    <PageHeader :title="t('billing.title')" :description="t('billing.description')">
       <template #actions>
-        <el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button>
-        <el-button v-if="activeTab === 'plans'" type="primary" :icon="Plus" @click="openCreatePlan">新建套餐</el-button>
-        <el-button v-else-if="activeTab === 'coupons'" type="primary" :icon="Plus" @click="openCreateCoupon">新建优惠券</el-button>
+        <el-button :icon="Refresh" :loading="loading" @click="load">{{ t('common.refresh') }}</el-button>
+        <el-button v-if="activeTab === 'plans'" type="primary" :icon="Plus" @click="openCreatePlan">{{ t('billing.actions.createPlan') }}</el-button>
+        <el-button v-else-if="activeTab === 'coupons'" type="primary" :icon="Plus" @click="openCreateCoupon">{{ t('billing.actions.createCoupon') }}</el-button>
       </template>
     </PageHeader>
 
@@ -477,37 +497,37 @@ onMounted(load)
       v-else-if="loading && plans.length === 0 && coupons.length === 0 && orders.length === 0 && tickets.length === 0"
       :rows="8"
       :columns="5"
-      title="正在加载计费数据"
+      :title="t('billing.loading')"
     />
 
     <el-tabs v-else v-model="activeTab">
-      <el-tab-pane :label="`套餐 (${plans.length})`" name="plans">
-        <EmptyState v-if="plans.length === 0" title="暂无套餐" description="点击「新建套餐」创建套餐。" />
+      <el-tab-pane :label="t('billing.tabs.plans', { count: plans.length })" name="plans">
+        <EmptyState v-if="plans.length === 0" :title="t('billing.empty.plansTitle')" :description="t('billing.empty.plansDescription')" />
         <div v-else class="ax-card table-card">
           <div class="ax-table-scroll">
             <el-table :data="plans" style="width: 100%">
-              <el-table-column prop="name" label="名称" min-width="150" />
-              <el-table-column label="价格" width="110">
+              <el-table-column prop="name" :label="t('billing.columns.name')" min-width="150" />
+              <el-table-column :label="t('billing.columns.price')" width="110">
                 <template #default="{ row }">{{ priceLabel(row.price_cents) }}</template>
               </el-table-column>
-              <el-table-column label="配额" width="120">
-                <template #default="{ row }">{{ row.quota_mb > 0 ? `${row.quota_mb} MiB` : '不限' }}</template>
+              <el-table-column :label="t('billing.columns.quota')" width="120">
+                <template #default="{ row }">{{ row.quota_mb > 0 ? `${row.quota_mb} MiB` : t('billing.unlimited') }}</template>
               </el-table-column>
-              <el-table-column label="有效期" width="100">
-                <template #default="{ row }">{{ row.duration_days > 0 ? `${row.duration_days} 天` : '永久' }}</template>
+              <el-table-column :label="t('billing.columns.duration')" width="100">
+                <template #default="{ row }">{{ row.duration_days > 0 ? t('billing.days', { days: row.duration_days }) : t('billing.forever') }}</template>
               </el-table-column>
-              <el-table-column label="状态" width="90">
+              <el-table-column :label="t('billing.columns.status')" width="90">
                 <template #default="{ row }">
                   <el-tag size="small" :type="row.active ? 'success' : 'info'" effect="plain">
-                    {{ row.active ? '启用' : '停用' }}
+                    {{ row.active ? t('billing.plan.enabled') : t('billing.plan.disabled') }}
                   </el-tag>
                 </template>
               </el-table-column>
-              <el-table-column label="操作" fixed="right" width="170" align="right">
+              <el-table-column :label="t('billing.columns.actions')" fixed="right" width="170" align="right">
                 <template #default="{ row }">
                   <div class="ax-row-actions">
-                    <el-button link type="primary" :icon="EditPen" @click="openEditPlan(row)">编辑</el-button>
-                    <el-button link type="danger" :icon="Delete" @click="removePlan(row)">删除</el-button>
+                    <el-button link type="primary" :icon="EditPen" @click="openEditPlan(row)">{{ t('common.edit') }}</el-button>
+                    <el-button link type="danger" :icon="Delete" @click="removePlan(row)">{{ t('common.delete') }}</el-button>
                   </div>
                 </template>
               </el-table-column>
@@ -516,32 +536,32 @@ onMounted(load)
         </div>
       </el-tab-pane>
 
-      <el-tab-pane :label="`优惠券 (${coupons.length})`" name="coupons">
-        <EmptyState v-if="coupons.length === 0" title="暂无优惠券" description="创建优惠券后用户可在下单时使用。" />
+      <el-tab-pane :label="t('billing.tabs.coupons', { count: coupons.length })" name="coupons">
+        <EmptyState v-if="coupons.length === 0" :title="t('billing.empty.couponsTitle')" :description="t('billing.empty.couponsDescription')" />
         <div v-else class="ax-card table-card">
           <div class="ax-table-scroll">
             <el-table :data="coupons" style="width: 100%">
-              <el-table-column prop="code" label="代码" min-width="140" />
-              <el-table-column label="优惠" width="120">
+              <el-table-column prop="code" :label="t('billing.columns.code')" min-width="140" />
+              <el-table-column :label="t('billing.columns.discount')" width="120">
                 <template #default="{ row }">{{ couponValueLabel(row) }}</template>
               </el-table-column>
-              <el-table-column label="使用情况" width="120">
+              <el-table-column :label="t('billing.columns.usage')" width="120">
                 <template #default="{ row }">
                   {{ row.used }}{{ row.max_uses > 0 ? ` / ${row.max_uses}` : '' }}
                 </template>
               </el-table-column>
-              <el-table-column label="状态" width="90">
+              <el-table-column :label="t('billing.columns.status')" width="90">
                 <template #default="{ row }">
                   <el-tag size="small" :type="row.active ? 'success' : 'info'" effect="plain">
-                    {{ row.active ? '启用' : '停用' }}
+                    {{ row.active ? t('billing.plan.enabled') : t('billing.plan.disabled') }}
                   </el-tag>
                 </template>
               </el-table-column>
-              <el-table-column label="操作" fixed="right" width="170" align="right">
+              <el-table-column :label="t('billing.columns.actions')" fixed="right" width="170" align="right">
                 <template #default="{ row }">
                   <div class="ax-row-actions">
-                    <el-button link type="primary" :icon="EditPen" @click="openEditCoupon(row)">编辑</el-button>
-                    <el-button link type="danger" :icon="Delete" @click="removeCoupon(row)">删除</el-button>
+                    <el-button link type="primary" :icon="EditPen" @click="openEditCoupon(row)">{{ t('common.edit') }}</el-button>
+                    <el-button link type="danger" :icon="Delete" @click="removeCoupon(row)">{{ t('common.delete') }}</el-button>
                   </div>
                 </template>
               </el-table-column>
@@ -550,39 +570,39 @@ onMounted(load)
         </div>
       </el-tab-pane>
 
-      <el-tab-pane :label="`订单 (${orderTotal})`" name="orders">
-        <EmptyState v-if="orderTotal === 0" title="暂无订单" description="用户下单后会显示在这里。" />
+      <el-tab-pane :label="t('billing.tabs.orders', { count: orderTotal })" name="orders">
+        <EmptyState v-if="orderTotal === 0" :title="t('billing.empty.ordersTitle')" :description="t('billing.empty.ordersDescription')" />
         <div v-else class="ax-card table-card">
           <div class="ax-table-scroll">
             <el-table v-loading="ordersLoading" :data="orders" style="width: 100%">
-              <el-table-column prop="plan_name" label="套餐" min-width="150" />
-              <el-table-column label="金额" width="110">
+              <el-table-column prop="plan_name" :label="t('billing.columns.plan')" min-width="150" />
+              <el-table-column :label="t('billing.columns.amount')" width="110">
                 <template #default="{ row }">{{ priceLabel(row.amount_cents) }}</template>
               </el-table-column>
-              <el-table-column label="渠道" width="100">
+              <el-table-column :label="t('billing.columns.provider')" width="100">
                 <template #default="{ row }">{{ row.provider }}</template>
               </el-table-column>
-              <el-table-column label="状态" width="90">
+              <el-table-column :label="t('billing.columns.status')" width="90">
                 <template #default="{ row }">
                   <el-tag size="small" :type="row.status === 'paid' ? 'success' : 'info'" effect="plain">
-                    {{ row.status === 'paid' ? '已支付' : row.status === 'cancelled' ? '已取消' : '待支付' }}
+                    {{ row.status === 'paid' ? t('billing.orderStatus.paid') : row.status === 'cancelled' ? t('billing.orderStatus.cancelled') : t('billing.orderStatus.pending') }}
                   </el-tag>
                 </template>
               </el-table-column>
-              <el-table-column label="创建时间" min-width="170">
+              <el-table-column :label="t('billing.columns.createdAt')" min-width="170">
                 <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
               </el-table-column>
-              <el-table-column label="操作" fixed="right" width="160" align="right">
+              <el-table-column :label="t('billing.columns.actions')" fixed="right" width="160" align="right">
                 <template #default="{ row }">
                   <div class="ax-row-actions">
-                    <el-button link type="primary" @click="openOrderDetail(row)">详情</el-button>
+                    <el-button link type="primary" @click="openOrderDetail(row)">{{ t('billing.actions.detail') }}</el-button>
                     <el-button
                       v-if="row.status === 'pending'"
                       link
                       type="primary"
                       @click="confirmOrder(row)"
                     >
-                      核销
+                      {{ t('billing.actions.verify') }}
                     </el-button>
                   </div>
                 </template>
@@ -604,30 +624,30 @@ onMounted(load)
         </div>
       </el-tab-pane>
 
-      <el-tab-pane :label="`工单 (${ticketTotal})`" name="tickets">
-        <EmptyState v-if="ticketTotal === 0" title="暂无工单" description="用户提交工单后会显示在这里。" />
+      <el-tab-pane :label="t('billing.tabs.tickets', { count: ticketTotal })" name="tickets">
+        <EmptyState v-if="ticketTotal === 0" :title="t('billing.empty.ticketsTitle')" :description="t('billing.empty.ticketsDescription')" />
         <div v-else class="ax-card table-card">
           <div class="ax-table-scroll">
             <el-table v-loading="ticketsLoading" :data="tickets" style="width: 100%">
-              <el-table-column prop="subject" label="标题" min-width="200" />
-              <el-table-column label="用户" width="140">
+              <el-table-column prop="subject" :label="t('billing.columns.subject')" min-width="200" />
+              <el-table-column :label="t('billing.columns.user')" width="140">
                 <template #default="{ row }">{{ row.username || row.user_id }}</template>
               </el-table-column>
-              <el-table-column label="状态" width="100">
+              <el-table-column :label="t('billing.columns.status')" width="100">
                 <template #default="{ row }">
                   <el-tag size="small" :type="row.status === 'open' ? 'warning' : row.status === 'answered' ? 'success' : 'info'" effect="plain">
-                    {{ row.status === 'open' ? '待处理' : row.status === 'answered' ? '已回复' : '已关闭' }}
+                    {{ row.status === 'open' ? t('billing.ticketStatus.open') : row.status === 'answered' ? t('billing.ticketStatus.answered') : t('billing.ticketStatus.closed') }}
                   </el-tag>
                 </template>
               </el-table-column>
-              <el-table-column label="更新时间" min-width="170">
+              <el-table-column :label="t('billing.columns.updatedAt')" min-width="170">
                 <template #default="{ row }">{{ formatDateTime(row.updated_at) }}</template>
               </el-table-column>
-              <el-table-column label="操作" fixed="right" width="170" align="right">
+              <el-table-column :label="t('billing.columns.actions')" fixed="right" width="170" align="right">
                 <template #default="{ row }">
                   <div class="ax-row-actions">
-                    <el-button link type="primary" @click="openTicketDetail(row)">详情</el-button>
-                    <el-button link type="info" :icon="Close" :disabled="row.status === 'closed'" @click="closeTicket(row)">关闭</el-button>
+                    <el-button link type="primary" @click="openTicketDetail(row)">{{ t('billing.actions.detail') }}</el-button>
+                    <el-button link type="info" :icon="Close" :disabled="row.status === 'closed'" @click="closeTicket(row)">{{ t('common.close') }}</el-button>
                   </div>
                 </template>
               </el-table-column>
@@ -650,60 +670,60 @@ onMounted(load)
     </el-tabs>
 
     <!-- 套餐编辑 -->
-    <el-dialog v-model="planOpen" :title="editingPlanId ? '编辑套餐' : '新建套餐'" width="min(520px, 92vw)" append-to-body :before-close="closePlanDialog">
+    <el-dialog v-model="planOpen" :title="editingPlanId ? t('billing.plan.edit') : t('billing.plan.create')" width="min(520px, 92vw)" append-to-body :before-close="closePlanDialog">
       <el-form ref="planFormRef" :model="planForm" :rules="planRules" label-position="top">
-        <el-form-item label="名称" prop="name"><el-input v-model="planForm.name" maxlength="64" /></el-form-item>
-        <el-form-item label="简介"><el-input v-model="planForm.description" type="textarea" :rows="2" maxlength="255" /></el-form-item>
-        <el-form-item label="价格（元）">
+        <el-form-item :label="t('billing.plan.name')" prop="name"><el-input v-model="planForm.name" maxlength="64" /></el-form-item>
+        <el-form-item :label="t('billing.plan.description')"><el-input v-model="planForm.description" type="textarea" :rows="2" maxlength="255" /></el-form-item>
+        <el-form-item :label="t('billing.plan.price')">
           <el-input-number v-model="planForm.price_cents" :min="0" />
-          <span class="form-hint">此处直接填写分，例如 1000 表示 ¥10.00</span>
+          <span class="form-hint">{{ t('billing.plan.priceHint') }}</span>
         </el-form-item>
-        <el-form-item label="有效期（天，0 为永久）"><el-input-number v-model="planForm.duration_days" :min="0" /></el-form-item>
-        <el-form-item label="存储配额（MiB，0 为不限）"><el-input-number v-model="planForm.quota_mb" :min="0" /></el-form-item>
-        <el-form-item label="应用角色组">
-          <el-select v-model="planForm.role_group_id" clearable placeholder="不改变角色组" style="width: 100%">
+        <el-form-item :label="t('billing.plan.duration')"><el-input-number v-model="planForm.duration_days" :min="0" /></el-form-item>
+        <el-form-item :label="t('billing.plan.quota')"><el-input-number v-model="planForm.quota_mb" :min="0" /></el-form-item>
+        <el-form-item :label="t('billing.plan.roleGroup')">
+          <el-select v-model="planForm.role_group_id" clearable :placeholder="t('billing.plan.roleGroupPlaceholder')" style="width: 100%">
             <el-option v-for="g in roleGroups" :key="g.id" :label="g.name" :value="g.id" />
           </el-select>
         </el-form-item>
-        <el-form-item label="排序"><el-input-number v-model="planForm.sort_order" :min="0" /></el-form-item>
-        <el-form-item label="启用"><el-switch v-model="planForm.active" /></el-form-item>
+        <el-form-item :label="t('billing.plan.sortOrder')"><el-input-number v-model="planForm.sort_order" :min="0" /></el-form-item>
+        <el-form-item :label="t('billing.plan.active')"><el-switch v-model="planForm.active" /></el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="planOpen = false">取消</el-button>
-        <el-button type="primary" :loading="planSaving" @click="submitPlan">保存</el-button>
+        <el-button @click="planOpen = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="planSaving" @click="submitPlan">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 优惠券编辑 -->
-    <el-dialog v-model="couponOpen" :title="editingCouponId ? '编辑优惠券' : '新建优惠券'" width="min(520px, 92vw)" append-to-body :before-close="closeCouponDialog">
+    <el-dialog v-model="couponOpen" :title="editingCouponId ? t('billing.coupon.edit') : t('billing.coupon.create')" width="min(520px, 92vw)" append-to-body :before-close="closeCouponDialog">
       <el-form ref="couponFormRef" :model="couponForm" :rules="couponRules" label-position="top">
-        <el-form-item label="代码" prop="code"><el-input v-model="couponForm.code" maxlength="64" /></el-form-item>
-        <el-form-item label="类型">
+        <el-form-item :label="t('billing.coupon.code')" prop="code"><el-input v-model="couponForm.code" maxlength="64" /></el-form-item>
+        <el-form-item :label="t('billing.coupon.type')">
           <el-radio-group v-model="couponForm.type">
-            <el-radio-button value="fixed">固定金额</el-radio-button>
-            <el-radio-button value="percent">百分比</el-radio-button>
+            <el-radio-button value="fixed">{{ t('billing.coupon.fixed') }}</el-radio-button>
+            <el-radio-button value="percent">{{ t('billing.coupon.percent') }}</el-radio-button>
           </el-radio-group>
         </el-form-item>
-        <el-form-item :label="couponForm.type === 'fixed' ? '减免（元）' : '减免百分比（%）'">
+        <el-form-item :label="couponForm.type === 'fixed' ? t('billing.coupon.valueFixed') : t('billing.coupon.valuePercent')">
           <el-input-number v-model="couponForm.value_yuan" :min="0" :max="couponForm.type === 'percent' ? 100 : undefined" />
         </el-form-item>
-        <el-form-item label="使用门槛（元）"><el-input-number v-model="couponForm.min_yuan" :min="0" /></el-form-item>
-        <el-form-item label="最大使用次数（0 为不限）"><el-input-number v-model="couponForm.max_uses" :min="0" /></el-form-item>
-        <el-form-item label="每用户限用次数（0 为不限）"><el-input-number v-model="couponForm.per_user_limit" :min="0" /></el-form-item>
-        <el-form-item label="过期时间（可选）">
-          <el-date-picker v-model="couponForm.expires_at" type="datetime" value-format="YYYY-MM-DDTHH:mm:ssZ" placeholder="不填表示不过期" />
+        <el-form-item :label="t('billing.coupon.minAmount')"><el-input-number v-model="couponForm.min_yuan" :min="0" /></el-form-item>
+        <el-form-item :label="t('billing.coupon.maxUses')"><el-input-number v-model="couponForm.max_uses" :min="0" /></el-form-item>
+        <el-form-item :label="t('billing.coupon.perUserLimit')"><el-input-number v-model="couponForm.per_user_limit" :min="0" /></el-form-item>
+        <el-form-item :label="t('billing.coupon.expiresAt')">
+          <el-date-picker v-model="couponForm.expires_at" type="datetime" value-format="YYYY-MM-DDTHH:mm:ssZ" :placeholder="t('billing.coupon.expiresPlaceholder')" />
         </el-form-item>
-        <el-form-item label="启用"><el-switch v-model="couponForm.active" /></el-form-item>
+        <el-form-item :label="t('billing.coupon.active')"><el-switch v-model="couponForm.active" /></el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="couponOpen = false">取消</el-button>
-        <el-button type="primary" :loading="couponSaving" @click="submitCoupon">保存</el-button>
+        <el-button @click="couponOpen = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="couponSaving" @click="submitCoupon">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
 
     <el-drawer
       v-model="orderDetailOpen"
-      title="订单详情"
+      :title="t('billing.orderDetail.title')"
       size="min(440px, 92vw)"
       append-to-body
     >
@@ -730,47 +750,47 @@ onMounted(load)
 
         <dl class="order-detail__list">
           <div class="order-detail__row">
-            <dt>金额</dt>
+            <dt>{{ t('billing.orderDetail.amount') }}</dt>
             <dd>{{ priceLabel(detailOrder.amount_cents) }}</dd>
           </div>
           <div class="order-detail__row">
-            <dt>优惠</dt>
+            <dt>{{ t('billing.orderDetail.discount') }}</dt>
             <dd>{{ priceLabel(detailOrder.discount_cents) }}</dd>
           </div>
           <div class="order-detail__row">
-            <dt>支付渠道</dt>
+            <dt>{{ t('billing.orderDetail.provider') }}</dt>
             <dd>{{ detailOrder.provider || '—' }}</dd>
           </div>
           <div class="order-detail__row">
-            <dt>用户 ID</dt>
+            <dt>{{ t('billing.orderDetail.userId') }}</dt>
             <dd class="ax-mono">{{ detailOrder.user_id }}</dd>
           </div>
           <div class="order-detail__row">
-            <dt>交易号</dt>
+            <dt>{{ t('billing.orderDetail.tradeNo') }}</dt>
             <dd class="ax-mono">{{ detailOrder.trade_no || '—' }}</dd>
           </div>
           <div class="order-detail__row">
-            <dt>支付时间</dt>
+            <dt>{{ t('billing.orderDetail.paidAt') }}</dt>
             <dd>{{ detailOrder.paid_at ? formatDateTime(detailOrder.paid_at) : '—' }}</dd>
           </div>
           <div class="order-detail__row">
-            <dt>创建时间</dt>
+            <dt>{{ t('billing.orderDetail.createdAt') }}</dt>
             <dd>{{ formatDateTime(detailOrder.created_at) }}</dd>
           </div>
           <div class="order-detail__row">
-            <dt>更新时间</dt>
+            <dt>{{ t('billing.orderDetail.updatedAt') }}</dt>
             <dd>{{ formatDateTime(detailOrder.updated_at) }}</dd>
           </div>
         </dl>
 
         <div class="order-detail__actions">
-          <el-button @click="orderDetailOpen = false">关闭</el-button>
+          <el-button @click="orderDetailOpen = false">{{ t('common.close') }}</el-button>
           <el-button
             v-if="detailOrder.status === 'pending'"
             type="primary"
             @click="confirmOrder(detailOrder)"
           >
-            核销订单
+            {{ t('billing.actions.verifyOrder') }}
           </el-button>
         </div>
       </template>
@@ -778,7 +798,7 @@ onMounted(load)
 
     <el-drawer
       v-model="ticketDetailOpen"
-      title="工单详情"
+      :title="t('billing.ticketDetail.title')"
       size="min(520px, 92vw)"
       append-to-body
     >
@@ -814,13 +834,13 @@ onMounted(load)
             :class="{ 'is-admin': message.author_role === 'admin' }"
           >
             <header class="ticket-message__head">
-              <span>{{ message.author_role === 'admin' ? '管理员' : '用户' }}</span>
+              <span>{{ message.author_role === 'admin' ? t('billing.ticketDetail.admin') : t('billing.ticketDetail.user') }}</span>
               <span class="ticket-message__time">{{ formatDateTime(message.created_at) }}</span>
             </header>
             <p class="ticket-message__body">{{ message.body }}</p>
           </article>
           <p v-if="(detailTicket.messages ?? []).length === 0" class="ax-muted">
-            暂无消息记录。
+            {{ t('billing.ticketDetail.noMessages') }}
           </p>
         </div>
 
@@ -830,18 +850,18 @@ onMounted(load)
             type="textarea"
             :rows="3"
             maxlength="5000"
-            placeholder="输入回复内容，发送后工单将标记为「已回复」"
+            :placeholder="t('billing.ticketDetail.replyPlaceholder')"
             class="ticket-reply"
           />
           <div class="ticket-detail__actions">
-            <el-button :icon="Close" @click="closeTicket(detailTicket)">关闭工单</el-button>
+            <el-button :icon="Close" @click="closeTicket(detailTicket)">{{ t('billing.actions.closeTicket') }}</el-button>
             <el-button type="primary" :loading="replying" :disabled="!replyBody.trim()" @click="submitReply">
-              发送回复
+              {{ t('billing.actions.sendReply') }}
             </el-button>
           </div>
         </template>
         <div v-else class="ticket-detail__actions">
-          <el-button @click="ticketDetailOpen = false">关闭</el-button>
+          <el-button @click="ticketDetailOpen = false">{{ t('common.close') }}</el-button>
         </div>
       </template>
     </el-drawer>

@@ -1,3 +1,5 @@
+import { translate } from '@/i18n'
+
 /** 健康检查中数据库的状态。 */
 export interface DatabaseHealth {
   status: 'ok' | 'error' | string
@@ -28,7 +30,7 @@ export async function fetchHealthStatus(timeoutMs = 5000): Promise<HealthStatus>
     })
     const body = (await response.json()) as { data?: HealthStatus }
     if (!response.ok || !body?.data) {
-      throw new Error('健康检查失败')
+      throw new Error(translate('errors.healthCheckFailed'))
     }
     return body.data
   } finally {

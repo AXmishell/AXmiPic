@@ -61,6 +61,7 @@ export default defineConfig({
             { text: '插件系统', link: '/dev/plugins' },
             { text: '持续集成', link: '/dev/ci' },
             { text: '目录结构', link: '/dev/structure' },
+            { text: '前端国际化', link: '/dev/i18n' },
           ],
         },
       ],

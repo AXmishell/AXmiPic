@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import {
   ArrowLeft,
   ArrowRight,
@@ -26,6 +27,7 @@ const index = defineModel<number>('index', { default: 0 })
 const props = defineProps<{ items: ImageItem[]; albumName?: (id?: string) => string }>()
 
 const auth = useAuthStore()
+const { t } = useI18n()
 
 const scale = ref(1)
 const offsetX = ref(0)
@@ -398,9 +400,9 @@ async function copyLink(): Promise<void> {
   if (!url) return
   const copied = await copyText(url)
   if (copied) {
-    ElMessage.success('已复制链接')
+    ElMessage.success(t('imageViewer.messages.copied'))
   } else {
-    ElMessage.error('复制失败，请手动复制')
+    ElMessage.error(t('imageViewer.messages.copyFailed'))
   }
 }
 
@@ -543,26 +545,26 @@ onBeforeUnmount(() => {
           <p class="ax-viewer__title" :title="title">{{ title }}</p>
           <div class="ax-viewer__tools">
             <span class="ax-viewer__counter">{{ index + 1 }} / {{ items.length }}</span>
-            <el-button circle :icon="ZoomOut" title="缩小 (-)" @click="zoomBy(1 / 1.2)" />
+            <el-button circle :icon="ZoomOut" :title="t('imageViewer.toolbar.zoomOut')" @click="zoomBy(1 / 1.2)" />
             <span class="ax-viewer__zoom">{{ Math.round(scale * dpr * 100) }}%</span>
-            <el-button circle :icon="ZoomIn" title="放大 (+)" @click="zoomBy(1.2)" />
+            <el-button circle :icon="ZoomIn" :title="t('imageViewer.toolbar.zoomIn')" @click="zoomBy(1.2)" />
             <el-button
               circle
               :icon="FullScreen"
               :type="defaultMode === 'fit' ? 'primary' : ''"
-              title="适应窗口（点击设为默认）"
+              :title="t('imageViewer.toolbar.fit')"
               @click="chooseFit"
             />
             <el-button
               circle
               :icon="RefreshLeft"
               :type="defaultMode === 'actual' ? 'primary' : ''"
-              title="原始像素 100%（点击设为默认）"
+              :title="t('imageViewer.toolbar.actual')"
               @click="chooseActual"
             />
-            <el-button circle :icon="CopyDocument" title="复制链接" @click="copyLink" />
-            <el-button circle :icon="Link" title="新窗口打开" @click="openOriginal" />
-            <el-button circle :icon="Close" title="关闭 (Esc)" @click="close" />
+            <el-button circle :icon="CopyDocument" :title="t('imageViewer.toolbar.copyLink')" @click="copyLink" />
+            <el-button circle :icon="Link" :title="t('imageViewer.toolbar.openOriginal')" @click="openOriginal" />
+            <el-button circle :icon="Close" :title="t('imageViewer.toolbar.close')" @click="close" />
           </div>
         </header>
 
@@ -582,7 +584,7 @@ onBeforeUnmount(() => {
             v-if="hasPrev"
             class="ax-viewer__nav is-prev"
             type="button"
-            aria-label="上一张"
+            :aria-label="t('imageViewer.prev')"
             @pointerdown.stop
             @dblclick.stop
             @click.stop="go(-1)"
@@ -600,13 +602,13 @@ onBeforeUnmount(() => {
             @load="onImgLoad"
             @error="onImgError"
           />
-          <span v-if="failed" class="ax-viewer__error">图片加载失败</span>
+          <span v-if="failed" class="ax-viewer__error">{{ t('imageViewer.loadFailed') }}</span>
 
           <button
             v-if="hasNext"
             class="ax-viewer__nav is-next"
             type="button"
-            aria-label="下一张"
+            :aria-label="t('imageViewer.next')"
             @pointerdown.stop
             @dblclick.stop
             @click.stop="go(1)"
@@ -649,12 +651,12 @@ onBeforeUnmount(() => {
         >
           <span v-if="isMobileLayout" class="ax-viewer__info-handle" aria-hidden="true" />
           <header class="ax-viewer__info-head">
-            <h2 class="ax-viewer__info-title">图片信息</h2>
+            <h2 class="ax-viewer__info-title">{{ t('imageViewer.info.title') }}</h2>
             <button
               v-if="isMobileLayout"
               class="ax-viewer__info-close"
               type="button"
-              aria-label="收起图片信息"
+              :aria-label="t('imageViewer.info.close')"
               @click="infoOpen = false"
             >
               <el-icon :size="18"><Close /></el-icon>
@@ -662,15 +664,15 @@ onBeforeUnmount(() => {
           </header>
           <dl class="ax-viewer__fields">
             <div class="ax-viewer__field">
-              <dt>名称</dt>
+              <dt>{{ t('imageViewer.info.name') }}</dt>
               <dd>{{ current.original_name || '—' }}</dd>
             </div>
             <div v-if="current.owner_username" class="ax-viewer__field">
-              <dt>上传者</dt>
+              <dt>{{ t('imageViewer.info.owner') }}</dt>
               <dd>{{ current.owner_username }}</dd>
             </div>
             <div v-if="current.author_name || current.author_handle" class="ax-viewer__field">
-              <dt>作者</dt>
+              <dt>{{ t('imageViewer.info.author') }}</dt>
               <dd>
                 <a
                   v-if="current.author_url"
@@ -692,7 +694,7 @@ onBeforeUnmount(() => {
               </dd>
             </div>
             <div v-if="current.source_url" class="ax-viewer__field">
-              <dt>来源</dt>
+              <dt>{{ t('imageViewer.info.source') }}</dt>
               <dd>
                 <a
                   class="ax-viewer__source-link"
@@ -701,44 +703,44 @@ onBeforeUnmount(() => {
                   rel="noopener noreferrer nofollow"
                   :title="current.source_url"
                 >
-                  查看原帖 ↗
+                  {{ t('imageViewer.info.viewPost') }}
                 </a>
               </dd>
             </div>
             <div class="ax-viewer__field">
-              <dt>存储名</dt>
+              <dt>{{ t('imageViewer.info.storageName') }}</dt>
               <dd>{{ current.filename || current.key }}</dd>
             </div>
             <div class="ax-viewer__field">
-              <dt>尺寸</dt>
+              <dt>{{ t('imageViewer.info.dimensions') }}</dt>
               <dd>{{ formatDimensions(current.width, current.height) }}</dd>
             </div>
             <div class="ax-viewer__field">
-              <dt>大小</dt>
+              <dt>{{ t('imageViewer.info.size') }}</dt>
               <dd>{{ formatBytes(current.size) }}</dd>
             </div>
             <div class="ax-viewer__field">
-              <dt>格式</dt>
+              <dt>{{ t('imageViewer.info.format') }}</dt>
               <dd>{{ formatMime(current.mime_type) }}</dd>
             </div>
             <div class="ax-viewer__field">
-              <dt>可见性</dt>
-              <dd>{{ current.permission === 'public' ? '公开' : '私有' }}</dd>
+              <dt>{{ t('imageViewer.info.visibility') }}</dt>
+              <dd>{{ current.permission === 'public' ? t('imageViewer.info.public') : t('imageViewer.info.private') }}</dd>
             </div>
             <div class="ax-viewer__field">
-              <dt>相册</dt>
-              <dd>{{ props.albumName?.(current.album_id) || '未归入相册' }}</dd>
+              <dt>{{ t('imageViewer.info.album') }}</dt>
+              <dd>{{ props.albumName?.(current.album_id) || t('imageViewer.info.noAlbum') }}</dd>
             </div>
             <div class="ax-viewer__field">
-              <dt>上传时间</dt>
+              <dt>{{ t('imageViewer.info.uploadedAt') }}</dt>
               <dd>{{ formatDateTime(current.created_at) }}</dd>
             </div>
             <div class="ax-viewer__field">
-              <dt>哈希</dt>
+              <dt>{{ t('imageViewer.info.hash') }}</dt>
               <dd class="ax-viewer__mono">{{ current.hash || '—' }}</dd>
             </div>
             <div class="ax-viewer__field">
-              <dt>链接</dt>
+              <dt>{{ t('imageViewer.info.link') }}</dt>
               <dd class="ax-viewer__link" :title="current.url" @click="copyLink">{{ current.url }}</dd>
             </div>
           </dl>

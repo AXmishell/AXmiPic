@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { HomeFilled, Management, Search, Setting, User } from '@element-plus/icons-vue'
 
 import { useAuthStore } from '@/stores/auth'
@@ -8,14 +9,15 @@ import { navGroupsFor, type NavItem } from '@/utils/navigation'
 
 interface CommandItem extends NavItem {
   id: string
-  group: string
+  groupKey: string
 }
 
 interface PaletteGroup {
-  label: string
+  labelKey: string
   items: CommandItem[]
 }
 
+const { t } = useI18n()
 const auth = useAuthStore()
 const route = useRoute()
 const router = useRouter()
@@ -32,9 +34,9 @@ const variant = computed<'user' | 'admin'>(() =>
 
 const extras = computed<NavItem[]>(() => {
   const items: NavItem[] = [
-    { label: '返回首页', to: '/', icon: HomeFilled, keywords: 'home 首页' },
+    { labelKey: 'nav.items.home', to: '/', icon: HomeFilled, keywords: 'home 首页' },
     {
-      label: '账号设置',
+      labelKey: 'nav.items.settings',
       to: variant.value === 'admin' ? '/admin/settings' : '/user/settings',
       icon: Setting,
       keywords: 'settings 设置 密码 邮箱 二次验证',
@@ -43,8 +45,8 @@ const extras = computed<NavItem[]>(() => {
   if (auth.isAdmin) {
     items.push(
       variant.value === 'admin'
-        ? { label: '用户中心', to: '/user', icon: User, keywords: 'user center 用户中心' }
-        : { label: '管理控制台', to: '/admin', icon: Management, keywords: 'admin 管理控制台' },
+        ? { labelKey: 'nav.items.userCenterShort', to: '/user', icon: User, keywords: 'user center 用户中心' }
+        : { labelKey: 'nav.items.adminConsole', to: '/admin', icon: Management, keywords: 'admin 管理控制台' },
     )
   }
   return items
@@ -55,22 +57,22 @@ const visibleGroups = computed<PaletteGroup[]>(() => {
   const keyword = query.value.trim().toLowerCase()
   const source = [
     ...navGroupsFor(variant.value),
-    { label: '快捷操作', items: extras.value },
+    { labelKey: 'nav.items.shortcuts', items: extras.value },
   ]
   return source
     .map((group) => ({
-      label: group.label,
+      labelKey: group.labelKey,
       items: group.items
         .filter((item) => {
           if (!keyword) return true
-          return `${item.label} ${group.label} ${item.keywords ?? ''}`
+          return `${t(item.labelKey)} ${t(group.labelKey)} ${item.keywords ?? ''}`
             .toLowerCase()
             .includes(keyword)
         })
         .map((item) => ({
           ...item,
-          id: `${group.label}:${item.to}`,
-          group: group.label,
+          id: `${group.labelKey}:${item.to}`,
+          groupKey: group.labelKey,
         })),
     }))
     .filter((group) => group.items.length > 0)
@@ -174,7 +176,7 @@ defineExpose({ show })
   <Teleport to="body">
     <Transition name="palette">
       <div v-if="open" class="palette" @click.self="close">
-        <div class="palette__panel" role="dialog" aria-modal="true" aria-label="全局搜索">
+        <div class="palette__panel" role="dialog" aria-modal="true" :aria-label="t('commandPalette.dialogLabel')">
           <div class="palette__field">
             <el-icon :size="16" class="palette__search-icon"><Search /></el-icon>
             <input
@@ -182,7 +184,7 @@ defineExpose({ show })
               v-model="query"
               class="palette__input"
               type="text"
-              placeholder="搜索页面或功能…"
+              :placeholder="t('commandPalette.placeholder')"
               role="combobox"
               aria-controls="palette-results"
               :aria-expanded="open"
@@ -193,10 +195,10 @@ defineExpose({ show })
           </div>
 
           <div id="palette-results" class="palette__results" role="listbox">
-            <p v-if="flat.length === 0" class="palette__empty">没有匹配的页面，试试「用户」「订单」等关键词。</p>
+            <p v-if="flat.length === 0" class="palette__empty">{{ t('commandPalette.empty') }}</p>
             <template v-else>
-              <div v-for="group in visibleGroups" :key="group.label" class="palette__group">
-                <p class="palette__group-label">{{ group.label }}</p>
+              <div v-for="group in visibleGroups" :key="group.labelKey" class="palette__group">
+                <p class="palette__group-label">{{ t(group.labelKey) }}</p>
                 <button
                   v-for="item in group.items"
                   :id="`palette-item-${indexOf(item)}`"
@@ -212,7 +214,7 @@ defineExpose({ show })
                   <el-icon :size="15" class="palette__item-icon">
                     <component :is="item.icon" />
                   </el-icon>
-                  <span class="palette__item-label">{{ item.label }}</span>
+                  <span class="palette__item-label">{{ t(item.labelKey) }}</span>
                   <span class="palette__item-hint">{{ item.to }}</span>
                 </button>
               </div>
@@ -220,9 +222,9 @@ defineExpose({ show })
           </div>
 
           <footer class="palette__footer">
-            <span><kbd>↑</kbd><kbd>↓</kbd> 选择</span>
-            <span><kbd>Enter</kbd> 打开</span>
-            <span><kbd>Esc</kbd> 关闭</span>
+            <span><kbd>↑</kbd><kbd>↓</kbd> {{ t('commandPalette.selectHint') }}</span>
+            <span><kbd>Enter</kbd> {{ t('commandPalette.openHint') }}</span>
+            <span><kbd>Esc</kbd> {{ t('common.close') }}</span>
           </footer>
         </div>
       </div>

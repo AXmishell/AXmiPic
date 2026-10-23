@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import type { UploadRawFile } from 'element-plus'
 import {
   ArrowDown,
@@ -52,6 +53,7 @@ import {
   formatNumber,
 } from '@/utils/format'
 
+const { t } = useI18n()
 const items = ref<ImageItem[]>([])
 const total = ref(0)
 const page = ref(1)
@@ -68,17 +70,17 @@ const keyword = ref('')
 const albumFilter = ref('')
 const permissionFilter = ref<'' | ImagePermission>('')
 const albums = ref<Album[]>([])
-const orderOptions: { value: ImageOrder; label: string }[] = [
-  { value: 'newest', label: '最新' },
-  { value: 'earliest', label: '最早' },
-  { value: 'largest', label: '最大' },
-  { value: 'smallest', label: '最小' },
-]
-const permissionOptions: { value: '' | ImagePermission; label: string }[] = [
-  { value: '', label: '全部可见性' },
-  { value: 'public', label: '公开' },
-  { value: 'private', label: '私有' },
-]
+const orderOptions = computed<{ value: ImageOrder; label: string }[]>(() => [
+  { value: 'newest', label: t('images.order.newest') },
+  { value: 'earliest', label: t('images.order.earliest') },
+  { value: 'largest', label: t('images.order.largest') },
+  { value: 'smallest', label: t('images.order.smallest') },
+])
+const permissionOptions = computed<{ value: '' | ImagePermission; label: string }[]>(() => [
+  { value: '', label: t('images.permission.all') },
+  { value: 'public', label: t('images.permission.public') },
+  { value: 'private', label: t('images.permission.private') },
+])
 
 // 归入相册
 const assignOpen = ref(false)
@@ -173,8 +175,8 @@ function previewStyle(item: ImageItem): Record<string, string> {
 
 const description = computed(() =>
   loading.value && items.value.length === 0
-    ? '正在加载图片列表'
-    : `共 ${formatNumber(total.value)} 张图片`,
+    ? t('images.description.loading')
+    : t('images.description.total', { count: formatNumber(total.value) }),
 )
 
 const uploadOverall = computed(() => {
@@ -194,13 +196,13 @@ const uploadFinished = computed(
 function uploadStatusLabel(task: UploadTask): string {
   switch (task.status) {
     case 'pending':
-      return '等待中'
+      return t('images.status.pending')
     case 'uploading':
       return `${task.progress}%`
     case 'success':
-      return '完成'
+      return t('images.status.success')
     default:
-      return task.error ? '失败' : '失败'
+      return task.error ? t('images.status.failed') : t('images.status.failed')
   }
 }
 
@@ -290,9 +292,13 @@ async function applyPermission(ids: string[], permission: ImagePermission): Prom
     const result = await batchUpdateImages({ ids, permission })
     const blocked = result.blocked?.length ?? 0
     if (permission === 'public' && blocked > 0) {
-      ElMessage.warning(`${blocked} 张图片未通过内容审核，已保持私有；其余 ${result.published ?? 0} 张已公开`)
+      ElMessage.warning(
+        t('images.messages.blockedPrivate', { blocked, published: result.published ?? 0 }),
+      )
     } else {
-      ElMessage.success(permission === 'public' ? '已设为公开' : '已设为私有')
+      ElMessage.success(
+        permission === 'public' ? t('images.messages.setPublic') : t('images.messages.setPrivate'),
+      )
     }
     await load()
   } catch (error) {
@@ -317,7 +323,7 @@ async function submitAssign(): Promise<void> {
         ? { ids: assignIds.value, albumId: assignAlbumId.value }
         : { ids: assignIds.value, clearAlbum: true },
     )
-    ElMessage.success('已更新所属相册')
+    ElMessage.success(t('images.assign.success'))
     assignOpen.value = false
     await load()
   } catch (error) {
@@ -357,10 +363,10 @@ function clearSelection(): void {
 // ---- 上传（多文件 / 拖拽 / 粘贴）----
 function validateFile(file: { size: number; type: string; name: string }): string | null {
   if (!ACCEPT.split(',').includes(file.type)) {
-    return `不支持的格式：${file.name}`
+    return t('images.messages.unsupportedFormat', { name: file.name })
   }
   if (file.size > MAX_SIZE_MB * 1024 * 1024) {
-    return `超出 ${MAX_SIZE_MB} MB 上限：${file.name}`
+    return t('images.messages.exceedsMaxSize', { max: MAX_SIZE_MB, name: file.name })
   }
   return null
 }
@@ -389,7 +395,7 @@ async function uploadFiles(files: File[]): Promise<void> {
   if (files.length === 0) return
   let candidates = files
   if (candidates.length > 1 && !auth.hasFeature('batch_upload')) {
-    ElMessage.warning('当前角色未开启批量上传，仅上传第一张')
+    ElMessage.warning(t('images.messages.batchUploadDisabled'))
     candidates = candidates.slice(0, 1)
   }
 
@@ -446,11 +452,15 @@ async function uploadFiles(files: File[]): Promise<void> {
   uploadRunning.value = false
 
   if (ok > 0) {
-    ElMessage.success(failed > 0 ? `已上传 ${ok} 张，${failed} 张失败` : `已上传 ${ok} 张图片`)
+    ElMessage.success(
+      failed > 0
+        ? t('images.messages.uploadedPartial', { ok, failed })
+        : t('images.messages.uploaded', { ok }),
+    )
     page.value = 1
     await load()
   } else if (failed > 0) {
-    ElMessage.error('上传失败')
+    ElMessage.error(t('images.messages.uploadFailed'))
   }
 }
 
@@ -493,7 +503,7 @@ function onDragLeave(event: DragEvent): void {
 function onDrop(event: DragEvent): void {
   dragActive.value = false
   if (!auth.hasFeature('drag_upload')) {
-    ElMessage.warning('当前角色未开启拖拽上传')
+    ElMessage.warning(t('images.messages.dragDisabled'))
     return
   }
   const dropped = event.dataTransfer?.files
@@ -506,24 +516,24 @@ function onDrop(event: DragEvent): void {
 function linkFormats(item: ImageItem): { label: string; value: string }[] {
   const url = item.url
   const name = item.original_name || item.filename || 'image'
-  const base = [{ label: '复制 URL', value: url }]
+  const base = [{ label: t('images.copy.url'), value: url }]
   if (!auth.hasFeature('embed_code')) {
     return base
   }
   return [
     ...base,
-    { label: '复制 HTML', value: `<img src="${url}" alt="${name}">` },
-    { label: '复制 BBCode', value: `[img]${url}[/img]` },
-    { label: '复制 Markdown', value: `![${name}](${url})` },
+    { label: t('images.copy.html'), value: `<img src="${url}" alt="${name}">` },
+    { label: t('images.copy.bbcode'), value: `[img]${url}[/img]` },
+    { label: t('images.copy.markdown'), value: `![${name}](${url})` },
   ]
 }
 
 async function copyValue(value: string): Promise<void> {
   const copied = await copyText(value)
   if (copied) {
-    ElMessage.success('已复制')
+    ElMessage.success(t('common.copied'))
   } else {
-    ElMessage.error('复制失败，请手动复制')
+    ElMessage.error(t('images.copy.failed'))
   }
 }
 
@@ -546,7 +556,7 @@ async function submitRename(): Promise<void> {
   try {
     const updated = await renameImage(target.id, name)
     items.value = items.value.map((i) => (i.id === updated.id ? updated : i))
-    ElMessage.success('已重命名')
+    ElMessage.success(t('images.rename.success'))
     renameOpen.value = false
   } catch (error) {
     ElMessage.error(toApiError(error).message)
@@ -584,7 +594,7 @@ async function submitMeta(): Promise<void> {
     })
     items.value = items.value.map((item) => (item.id === updated.id ? updated : item))
     if (detailTarget.value?.id === updated.id) detailTarget.value = updated
-    ElMessage.success('作者与来源信息已更新')
+    ElMessage.success(t('images.meta.success'))
     metaOpen.value = false
   } catch (error) {
     ElMessage.error(toApiError(error).message)
@@ -602,7 +612,7 @@ function openDetail(item: ImageItem): void {
 // ---- 分享 ----
 function openShare(item: ImageItem): void {
   if (!auth.hasFeature('share')) {
-    ElMessage.warning('当前角色未开启分享功能')
+    ElMessage.warning(t('images.messages.shareDisabled'))
     return
   }
   shareTarget.value = item
@@ -612,9 +622,9 @@ function openShare(item: ImageItem): void {
 // ---- 删除 ----
 async function deleteOne(item: ImageItem): Promise<void> {
   try {
-    await ElMessageBox.confirm('该图片将被永久删除，操作不可恢复。', '删除图片', {
-      confirmButtonText: '删除',
-      cancelButtonText: '取消',
+    await ElMessageBox.confirm(t('images.confirm.deleteMessage'), t('images.confirm.deleteTitle'), {
+      confirmButtonText: t('common.delete'),
+      cancelButtonText: t('common.cancel'),
       type: 'warning',
       confirmButtonClass: 'el-button--danger',
     })
@@ -623,7 +633,7 @@ async function deleteOne(item: ImageItem): Promise<void> {
   }
   try {
     await deleteImage(item.id)
-    ElMessage.success('图片已删除')
+    ElMessage.success(t('images.messages.deleted'))
     if (items.value.length === 1 && page.value > 1) {
       page.value -= 1
     }
@@ -637,12 +647,16 @@ async function deleteSelected(): Promise<void> {
   const ids = [...selectedIds.value]
   if (ids.length === 0) return
   try {
-    await ElMessageBox.confirm(`将删除选中的 ${ids.length} 张图片，操作不可恢复。`, '批量删除', {
-      confirmButtonText: '删除',
-      cancelButtonText: '取消',
-      type: 'warning',
-      confirmButtonClass: 'el-button--danger',
-    })
+    await ElMessageBox.confirm(
+      t('images.confirm.batchDeleteMessage', { count: ids.length }),
+      t('images.confirm.batchDeleteTitle'),
+      {
+        confirmButtonText: t('common.delete'),
+        cancelButtonText: t('common.cancel'),
+        type: 'warning',
+        confirmButtonClass: 'el-button--danger',
+      },
+    )
   } catch {
     return
   }
@@ -652,13 +666,13 @@ async function deleteSelected(): Promise<void> {
     if (result.deleted > 0) {
       ElMessage.success(
         result.failed > 0
-          ? `已删除 ${result.deleted} 张，${result.failed} 张失败`
-          : `已删除 ${result.deleted} 张图片`,
+          ? t('images.messages.deletedPartial', { deleted: result.deleted, failed: result.failed })
+          : t('images.messages.deletedMany', { deleted: result.deleted }),
       )
       page.value = 1
       await load()
     } else {
-      ElMessage.error('删除失败')
+      ElMessage.error(t('images.messages.deleteFailed'))
     }
   } catch (error) {
     ElMessage.error(toApiError(error).message)
@@ -775,7 +789,7 @@ onBeforeUnmount(() => {
     @dragleave="onDragLeave"
     @drop="onDrop"
   >
-    <PageHeader title="图片管理" :description="description">
+    <PageHeader :title="t('images.title')" :description="description">
       <template #actions>
         <el-upload
           ref="uploadRef"
@@ -785,16 +799,16 @@ onBeforeUnmount(() => {
           :before-upload="beforeUpload"
           :http-request="handleUpload"
         >
-          <el-button type="primary" :icon="Upload" :loading="uploadRunning">上传图片</el-button>
+          <el-button type="primary" :icon="Upload" :loading="uploadRunning">{{ t('images.actions.upload') }}</el-button>
         </el-upload>
-        <el-button :icon="Link" @click="xImportOpen = true">从 X 导入</el-button>
-        <el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button>
+        <el-button :icon="Link" @click="xImportOpen = true">{{ t('images.actions.importX') }}</el-button>
+        <el-button :icon="Refresh" :loading="loading" @click="load">{{ t('common.refresh') }}</el-button>
       </template>
       <template #toolbar>
         <el-input
           v-model="keyword"
           class="images-search"
-          placeholder="搜索文件名"
+          :placeholder="t('images.searchPlaceholder')"
           clearable
           :prefix-icon="Search"
           @keyup.enter="search"
@@ -820,10 +834,10 @@ onBeforeUnmount(() => {
         <el-select
           :model-value="albumFilter"
           class="images-filter"
-          placeholder="全部相册"
+          :placeholder="t('images.allAlbums')"
           @change="setAlbumFilter"
         >
-          <el-option label="全部相册" value="" />
+          <el-option :label="t('images.allAlbums')" value="" />
           <el-option v-for="album in albums" :key="album.id" :label="album.name" :value="album.id" />
         </el-select>
         <el-select
@@ -840,10 +854,10 @@ onBeforeUnmount(() => {
         </el-select>
         <el-button
           :icon="layout === 'masonry' ? Grid : Histogram"
-          :title="layout === 'masonry' ? '切换为网格' : '切换为瀑布流'"
+          :title="layout === 'masonry' ? t('images.layout.switchToGrid') : t('images.layout.switchToMasonry')"
           @click="toggleLayout"
         >
-          {{ layout === 'masonry' ? '网格' : '瀑布流' }}
+          {{ layout === 'masonry' ? t('images.layout.grid') : t('images.layout.masonry') }}
         </el-button>
       </template>
     </PageHeader>
@@ -868,31 +882,31 @@ onBeforeUnmount(() => {
 
     <EmptyState
       v-else-if="items.length === 0"
-      title="还没有上传图片"
-      description="点击「上传图片」，或拖拽、粘贴图片到本页即可上传。"
+      :title="t('images.empty.title')"
+      :description="t('images.empty.description')"
     />
 
     <template v-else>
       <div v-if="selectedCount > 0" class="images-selection-bar">
-        <span class="images-selection-bar__text">已选择 {{ selectedCount }} 张图片</span>
+        <span class="images-selection-bar__text">{{ t('images.selection.count', { count: selectedCount }) }}</span>
         <div class="images-selection-bar__actions">
-          <el-button size="small" @click="clearSelection">取消选择</el-button>
+          <el-button size="small" @click="clearSelection">{{ t('images.actions.clearSelection') }}</el-button>
           <el-button
             size="small"
             :icon="Unlock"
             @click="applyPermission([...selectedIds], 'public')"
           >
-            设为公开
+            {{ t('images.actions.setPublic') }}
           </el-button>
           <el-button
             size="small"
             :icon="Lock"
             @click="applyPermission([...selectedIds], 'private')"
           >
-            设为私有
+            {{ t('images.actions.setPrivate') }}
           </el-button>
           <el-button size="small" :icon="Folder" @click="openAssign([...selectedIds])">
-            归入相册
+            {{ t('images.actions.assignAlbum') }}
           </el-button>
           <el-button
             size="small"
@@ -901,7 +915,7 @@ onBeforeUnmount(() => {
             :icon="Delete"
             @click="deleteSelected"
           >
-            删除所选
+            {{ t('images.actions.deleteSelected') }}
           </el-button>
         </div>
       </div>
@@ -909,7 +923,7 @@ onBeforeUnmount(() => {
       <section
         :class="layout === 'masonry' ? 'image-masonry' : 'ax-grid image-grid'"
         :aria-busy="loading"
-        aria-label="图片列表"
+        :aria-label="t('images.listLabel')"
         @contextmenu.self.prevent="openMenu($event, null)"
       >
         <article
@@ -941,14 +955,14 @@ onBeforeUnmount(() => {
             />
             <span v-else class="image-card__fallback">
               <el-icon :size="20"><Picture /></el-icon>
-              <span>预览不可用</span>
+              <span>{{ t('images.previewUnavailable') }}</span>
             </span>
 
             <button
               class="image-card__select"
               type="button"
               :aria-pressed="isSelected(item.id)"
-              :aria-label="isSelected(item.id) ? '取消选择' : '选择'"
+              :aria-label="isSelected(item.id) ? t('images.actions.clearSelection') : t('images.actions.select')"
               @click.stop="toggleSelect(item.id)"
             >
               <el-icon :size="14"><Select /></el-icon>
@@ -961,9 +975,9 @@ onBeforeUnmount(() => {
                 </p>
                 <div class="image-card__badges">
                   <el-tag v-if="item.permission === 'public'" size="small" type="success" effect="dark">
-                    公开
+                    {{ t('images.permission.public') }}
                   </el-tag>
-                  <el-tag v-else size="small" type="info" effect="plain">私有</el-tag>
+                  <el-tag v-else size="small" type="info" effect="plain">{{ t('images.permission.private') }}</el-tag>
                   <el-tag v-if="item.album_id" size="small" effect="plain">
                     {{ albumName(item.album_id) }}
                   </el-tag>
@@ -972,19 +986,19 @@ onBeforeUnmount(() => {
 
               <dl class="image-card__meta">
                 <div class="image-card__meta-row">
-                  <dt>尺寸</dt>
+                  <dt>{{ t('images.card.dimensions') }}</dt>
                   <dd>{{ formatDimensions(item.width, item.height) }}</dd>
                 </div>
                 <div class="image-card__meta-row">
-                  <dt>大小</dt>
+                  <dt>{{ t('images.card.size') }}</dt>
                   <dd>{{ formatBytes(item.size) }}</dd>
                 </div>
                 <div class="image-card__meta-row">
-                  <dt>格式</dt>
+                  <dt>{{ t('images.card.format') }}</dt>
                   <dd>{{ formatMime(item.mime_type) }}</dd>
                 </div>
                 <div class="image-card__meta-row">
-                  <dt>上传</dt>
+                  <dt>{{ t('images.card.uploadedAt') }}</dt>
                   <dd>{{ formatDateTime(item.created_at) }}</dd>
                 </div>
               </dl>
@@ -996,12 +1010,12 @@ onBeforeUnmount(() => {
                   :icon="Share"
                   @click.stop="openShare(item)"
                 >
-                  分享
+                  {{ t('images.actions.share') }}
                 </el-button>
                 <el-button size="small" :icon="CopyDocument" @click.stop="copyLink(item)">
-                  复制
+                  {{ t('images.actions.copy') }}
                 </el-button>
-                <el-button size="small" :icon="EditPen" @click.stop="openRename(item)">重命名</el-button>
+                <el-button size="small" :icon="EditPen" @click.stop="openRename(item)">{{ t('images.actions.rename') }}</el-button>
                 <el-button
                   size="small"
                   type="danger"
@@ -1009,7 +1023,7 @@ onBeforeUnmount(() => {
                   :icon="Delete"
                   @click.stop="deleteOne(item)"
                 >
-                  删除
+                  {{ t('common.delete') }}
                 </el-button>
               </div>
             </div>
@@ -1034,21 +1048,21 @@ onBeforeUnmount(() => {
     <!-- 拖拽提示层 -->
     <div v-if="dragActive" class="images-dropzone" aria-hidden="true">
       <el-icon :size="40"><Upload /></el-icon>
-      <span>松开以上传图片</span>
+      <span>{{ t('images.dropzone') }}</span>
     </div>
 
     <!-- 上传队列 -->
     <div v-if="uploadTasks.length > 0" class="upload-queue" aria-live="polite">
       <header class="upload-queue__head">
         <span class="upload-queue__title">
-          上传队列
+          {{ t('images.uploadQueue.title') }}
           <span class="ax-muted">{{ uploadFinished }}/{{ uploadTasks.length }}</span>
         </span>
         <div class="upload-queue__actions">
           <el-button link size="small" @click="uploadPanelOpen = !uploadPanelOpen">
-            {{ uploadPanelOpen ? '收起' : '展开' }}
+            {{ uploadPanelOpen ? t('images.uploadQueue.collapse') : t('images.uploadQueue.expand') }}
           </el-button>
-          <el-button link size="small" :disabled="uploadRunning" @click="clearUploads">清空</el-button>
+          <el-button link size="small" :disabled="uploadRunning" @click="clearUploads">{{ t('images.uploadQueue.clear') }}</el-button>
         </div>
       </header>
       <el-progress
@@ -1078,7 +1092,7 @@ onBeforeUnmount(() => {
       @click.stop
     >
       <template v-if="menuTarget">
-        <li class="images-context-menu__head">图片操作</li>
+        <li class="images-context-menu__head">{{ t('images.contextMenu.head') }}</li>
         <li
           v-for="fmt in linkFormats(menuTarget)"
           :key="fmt.label"
@@ -1086,104 +1100,104 @@ onBeforeUnmount(() => {
         >
           <el-icon><CopyDocument /></el-icon>{{ fmt.label }}
         </li>
-        <li @click="menuOpenTab"><el-icon><Picture /></el-icon>新窗口打开</li>
+        <li @click="menuOpenTab"><el-icon><Picture /></el-icon>{{ t('images.actions.openInNewTab') }}</li>
         <li v-if="menuTarget.permission !== 'public'" @click="menuSetPermission('public')">
-          <el-icon><Unlock /></el-icon>设为公开
+          <el-icon><Unlock /></el-icon>{{ t('images.actions.setPublic') }}
         </li>
         <li v-else @click="menuSetPermission('private')">
-          <el-icon><Lock /></el-icon>设为私有
+          <el-icon><Lock /></el-icon>{{ t('images.actions.setPrivate') }}
         </li>
-        <li @click="menuAssign"><el-icon><Folder /></el-icon>归入相册</li>
+        <li @click="menuAssign"><el-icon><Folder /></el-icon>{{ t('images.actions.assignAlbum') }}</li>
         <li v-if="auth.hasFeature('share')" @click="runMenu(() => menuTarget && openShare(menuTarget))">
-          <el-icon><Share /></el-icon>分享
+          <el-icon><Share /></el-icon>{{ t('images.actions.share') }}
         </li>
         <li class="images-context-menu__divider" />
-        <li @click="menuRename"><el-icon><EditPen /></el-icon>重命名</li>
+        <li @click="menuRename"><el-icon><EditPen /></el-icon>{{ t('images.actions.rename') }}</li>
         <li v-if="auth.isAdmin" @click="menuEditMeta">
-          <el-icon><EditPen /></el-icon>编辑作者/来源
+          <el-icon><EditPen /></el-icon>{{ t('images.actions.editMeta') }}
         </li>
-        <li @click="menuDetail"><el-icon><InfoFilled /></el-icon>详细信息</li>
-        <li class="is-danger" @click="menuDelete"><el-icon><Delete /></el-icon>删除</li>
+        <li @click="menuDetail"><el-icon><InfoFilled /></el-icon>{{ t('images.actions.detail') }}</li>
+        <li class="is-danger" @click="menuDelete"><el-icon><Delete /></el-icon>{{ t('common.delete') }}</li>
       </template>
       <template v-else>
-        <li @click="runMenu(load)"><el-icon><Refresh /></el-icon>刷新</li>
-        <li @click="runMenu(selectAllVisible)"><el-icon><Select /></el-icon>全选</li>
+        <li @click="runMenu(load)"><el-icon><Refresh /></el-icon>{{ t('common.refresh') }}</li>
+        <li @click="runMenu(selectAllVisible)"><el-icon><Select /></el-icon>{{ t('images.actions.selectAll') }}</li>
       </template>
     </ul>
 
     <!-- 重命名 -->
     <el-dialog
       v-model="renameOpen"
-      title="重命名图片"
+      :title="t('images.rename.title')"
       width="min(420px, 92vw)"
       append-to-body
       :close-on-click-modal="false"
     >
-      <el-input v-model="renameName" maxlength="120" placeholder="请输入新的图片名称" @keyup.enter="submitRename" />
+      <el-input v-model="renameName" maxlength="120" :placeholder="t('images.rename.placeholder')" @keyup.enter="submitRename" />
       <template #footer>
-        <el-button @click="renameOpen = false">取消</el-button>
-        <el-button type="primary" :loading="renaming" @click="submitRename">确认</el-button>
+        <el-button @click="renameOpen = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="renaming" @click="submitRename">{{ t('common.confirm') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 归入相册 -->
     <el-dialog
       v-model="assignOpen"
-      title="归入相册"
+      :title="t('images.assign.title')"
       width="min(420px, 92vw)"
       append-to-body
       :close-on-click-modal="false"
     >
-      <el-select v-model="assignAlbumId" placeholder="不归入相册" style="width: 100%">
-        <el-option label="不归入相册" value="" />
+      <el-select v-model="assignAlbumId" :placeholder="t('images.assign.none')" style="width: 100%">
+        <el-option :label="t('images.assign.none')" value="" />
         <el-option v-for="album in albums" :key="album.id" :label="album.name" :value="album.id" />
       </el-select>
       <template #footer>
-        <el-button @click="assignOpen = false">取消</el-button>
-        <el-button type="primary" :loading="assigning" @click="submitAssign">确认</el-button>
+        <el-button @click="assignOpen = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="assigning" @click="submitAssign">{{ t('common.confirm') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 作者/来源（仅管理员） -->
     <el-dialog
       v-model="metaOpen"
-      title="编辑作者与来源"
+      :title="t('images.meta.title')"
       width="min(480px, 94vw)"
       append-to-body
       :close-on-click-modal="false"
     >
       <div class="image-meta-form">
         <label>
-          <span>作者显示名</span>
+          <span>{{ t('images.meta.authorName') }}</span>
           <el-input
             v-model="metaForm.author_name"
             maxlength="100"
-            placeholder="例如：げっか ☾ᶻ 𝗓 𐰁"
+            :placeholder="t('images.meta.authorNamePlaceholder')"
           />
         </label>
         <label>
-          <span>作者用户名</span>
+          <span>{{ t('images.meta.authorHandle') }}</span>
           <el-input
             v-model="metaForm.author_handle"
             maxlength="15"
-            placeholder="X 用户名，不含 @，例如 mooNli9ht_4tune"
+            :placeholder="t('images.meta.authorHandlePlaceholder')"
           />
         </label>
         <label>
-          <span>来源链接</span>
+          <span>{{ t('images.meta.sourceUrl') }}</span>
           <el-input
             v-model="metaForm.source_url"
             maxlength="512"
-            placeholder="https://x.com/.../status/..."
+            :placeholder="t('images.meta.sourceUrlPlaceholder')"
           />
         </label>
         <p class="image-meta-form__hint">
-          留空即可清除对应字段。作者主页链接由用户名自动生成。
+          {{ t('images.meta.hint') }}
         </p>
       </div>
       <template #footer>
-        <el-button @click="metaOpen = false">取消</el-button>
-        <el-button type="primary" :loading="metaSaving" @click="submitMeta">保存</el-button>
+        <el-button @click="metaOpen = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="metaSaving" @click="submitMeta">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
 
@@ -1207,14 +1221,14 @@ onBeforeUnmount(() => {
     />
 
     <!-- 详情 -->
-    <el-drawer v-model="detailOpen" title="图片详情" size="360px" append-to-body>
+    <el-drawer v-model="detailOpen" :title="t('images.detail.title')" size="360px" append-to-body>
       <dl v-if="detailTarget" class="image-detail">
         <div class="image-detail__row">
-          <dt>名称</dt>
+          <dt>{{ t('images.detail.name') }}</dt>
           <dd>{{ detailTarget.original_name || '—' }}</dd>
         </div>
         <div v-if="detailTarget.author_name || detailTarget.author_handle" class="image-detail__row">
-          <dt>作者</dt>
+          <dt>{{ t('images.detail.author') }}</dt>
           <dd>
             <a
               v-if="detailTarget.author_url"
@@ -1237,7 +1251,7 @@ onBeforeUnmount(() => {
           </dd>
         </div>
         <div v-if="detailTarget.source_url" class="image-detail__row">
-          <dt>来源</dt>
+          <dt>{{ t('images.detail.source') }}</dt>
           <dd>
             <a
               class="image-detail__link"
@@ -1245,52 +1259,52 @@ onBeforeUnmount(() => {
               target="_blank"
               rel="noopener noreferrer nofollow"
             >
-              查看原帖 ↗
+              {{ t('images.detail.viewPost') }}
             </a>
           </dd>
         </div>
         <div class="image-detail__row">
-          <dt>存储名</dt>
+          <dt>{{ t('images.detail.storageName') }}</dt>
           <dd>{{ detailTarget.filename || detailTarget.key }}</dd>
         </div>
         <div class="image-detail__row">
-          <dt>哈希</dt>
+          <dt>{{ t('images.detail.hash') }}</dt>
           <dd class="ax-mono">{{ detailTarget.hash || '—' }}</dd>
         </div>
         <div class="image-detail__row">
-          <dt>大小</dt>
+          <dt>{{ t('images.detail.size') }}</dt>
           <dd>{{ formatBytes(detailTarget.size) }}</dd>
         </div>
         <div class="image-detail__row">
-          <dt>类型</dt>
+          <dt>{{ t('images.detail.type') }}</dt>
           <dd>{{ detailTarget.mime_type }}</dd>
         </div>
         <div class="image-detail__row">
-          <dt>尺寸</dt>
+          <dt>{{ t('images.detail.dimensions') }}</dt>
           <dd>{{ formatDimensions(detailTarget.width, detailTarget.height) }}</dd>
         </div>
         <div class="image-detail__row">
-          <dt>链接</dt>
+          <dt>{{ t('images.detail.link') }}</dt>
           <dd class="image-detail__link" @click="copyValue(detailTarget.url)">
             {{ detailTarget.url }}
           </dd>
         </div>
         <div class="image-detail__row">
-          <dt>可见性</dt>
-          <dd>{{ detailTarget.permission === 'public' ? '公开' : '私有' }}</dd>
+          <dt>{{ t('images.detail.visibility') }}</dt>
+          <dd>{{ detailTarget.permission === 'public' ? t('images.permission.public') : t('images.permission.private') }}</dd>
         </div>
         <div class="image-detail__row">
-          <dt>相册</dt>
-          <dd>{{ albumName(detailTarget.album_id) || '未归入相册' }}</dd>
+          <dt>{{ t('images.detail.album') }}</dt>
+          <dd>{{ albumName(detailTarget.album_id) || t('images.detail.noAlbum') }}</dd>
         </div>
         <div class="image-detail__row">
-          <dt>上传时间</dt>
+          <dt>{{ t('images.detail.uploadedAt') }}</dt>
           <dd>{{ formatDateTime(detailTarget.created_at) }}</dd>
         </div>
       </dl>
       <div v-if="detailTarget && auth.isAdmin" class="image-detail__actions">
         <el-button size="small" :icon="EditPen" @click="openMeta(detailTarget)">
-          编辑作者/来源
+          {{ t('images.actions.editMeta') }}
         </el-button>
       </div>
     </el-drawer>

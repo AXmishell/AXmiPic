@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import { Check, Connection, Key, Lock, Refresh, Setting, User } from '@element-plus/icons-vue'
 
 import { ApiError } from '@/api/client'
@@ -11,6 +12,7 @@ import BrandMark from '@/components/BrandMark.vue'
 import { useAppStore } from '@/stores/app'
 import { confirmPasswordRule, usernameRules } from '@/utils/validate'
 
+const { t } = useI18n()
 const router = useRouter()
 const app = useAppStore()
 
@@ -38,16 +40,18 @@ interface InstallForm extends InstallInput {
   admin_password_confirm: string
 }
 
-const rules: FormRules = {
-  base_url: [{ required: true, message: '请输入站点地址', trigger: 'blur' }],
-  database_dsn: [{ required: true, message: '请输入数据库连接串', trigger: 'blur' }],
-  admin_username: usernameRules('请输入管理员用户名'),
+const rules = computed<FormRules>(() => ({
+  base_url: [{ required: true, message: t('install.validation.siteUrlRequired'), trigger: 'blur' }],
+  database_dsn: [{ required: true, message: t('install.validation.dsnRequired'), trigger: 'blur' }],
+  admin_username: usernameRules(t('install.validation.adminUsernameRequired')),
   admin_password: [
-    { required: true, message: '请输入管理员密码', trigger: 'blur' },
-    { min: 8, max: 72, message: '密码长度为 8 到 72 个字符', trigger: 'blur' },
+    { required: true, message: t('install.validation.adminPasswordRequired'), trigger: 'blur' },
+    { min: 8, max: 72, message: t('install.validation.adminPasswordLength'), trigger: 'blur' },
   ],
-  admin_password_confirm: [confirmPasswordRule(() => form.admin_password, '请再次输入管理员密码')],
-}
+  admin_password_confirm: [
+    confirmPasswordRule(() => form.admin_password, t('install.validation.adminPasswordConfirmRequired')),
+  ],
+}))
 
 /** 去除仅用于前端校验的字段后，构造提交给后端的输入。 */
 function installPayload(): InstallInput {
@@ -65,12 +69,12 @@ function installPayload(): InstallInput {
   }
 }
 
-const steps = [
-  { title: '数据库', description: '连接配置', icon: Connection },
-  { title: '管理员', description: '初始账户', icon: User },
-  { title: '站点', description: '存储与权限', icon: Setting },
-  { title: '完成', description: '开始使用', icon: Check },
-]
+const steps = computed(() => [
+  { title: t('install.steps.database.title'), description: t('install.steps.database.desc'), icon: Connection },
+  { title: t('install.steps.admin.title'), description: t('install.steps.admin.desc'), icon: User },
+  { title: t('install.steps.site.title'), description: t('install.steps.site.desc'), icon: Setting },
+  { title: t('install.steps.done.title'), description: t('install.steps.done.desc'), icon: Check },
+])
 
 // ---- PostgreSQL 简化配置：由字段拼装 libpq 连接串 ----
 const pg = reactive({
@@ -205,16 +209,16 @@ async function next(): Promise<void> {
     }
     if (isPostgres.value && !useAdvancedDsn.value) {
       if (!pg.host.trim() || !pg.database.trim() || !pg.user.trim()) {
-        ElMessage.warning('请填写 PostgreSQL 主机、数据库名与用户名')
+        ElMessage.warning(t('install.messages.postgresRequired'))
         return
       }
     } else if (isMySQL.value && !useAdvancedDsn.value) {
       if (!my.host.trim() || !my.database.trim() || !my.user.trim()) {
-        ElMessage.warning('请填写 MySQL 主机、数据库名与用户名')
+        ElMessage.warning(t('install.messages.mysqlRequired'))
         return
       }
     } else if (!form.database_dsn.trim()) {
-      ElMessage.warning(isNetworkDB.value ? '请填写数据库连接串' : '请填写数据库文件路径')
+      ElMessage.warning(isNetworkDB.value ? t('install.messages.dsnRequired') : t('install.messages.filePathRequired'))
       return
     }
   }
@@ -222,7 +226,7 @@ async function next(): Promise<void> {
     const ok = await instance.validateField(['admin_username', 'admin_password', 'admin_password_confirm']).catch(() => false)
     if (!ok) return
   }
-  step.value = Math.min(step.value + 1, steps.length - 1)
+  step.value = Math.min(step.value + 1, steps.value.length - 1)
 }
 
 function prev(): void {
@@ -236,10 +240,10 @@ async function submit(): Promise<void> {
     await runInstall(installPayload())
     app.markInstalled()
     done.value = true
-    step.value = steps.length - 1
-    ElMessage.success('初始化完成')
+    step.value = steps.value.length - 1
+    ElMessage.success(t('install.messages.success'))
   } catch (error) {
-    ElMessage.error(error instanceof ApiError ? error.message : '初始化失败，请检查配置')
+    ElMessage.error(error instanceof ApiError ? error.message : t('install.messages.failed'))
   } finally {
     submitting.value = false
   }
@@ -276,8 +280,8 @@ onMounted(async () => {
           <BrandMark :size="20" />
         </span>
         <div>
-          <h1 class="install__title">AXmiPic 初始化模式</h1>
-          <p class="install__subtitle">手动完成程序与数据库的首次初始化</p>
+          <h1 class="install__title">{{ t('install.title') }}</h1>
+          <p class="install__subtitle">{{ t('install.subtitle') }}</p>
         </div>
       </header>
 
@@ -299,17 +303,17 @@ onMounted(async () => {
             <div class="install__section-head">
               <span class="install__section-icon"><el-icon><Connection /></el-icon></span>
               <div>
-                <h3 class="install__section-title">数据库连接</h3>
-                <p class="install__section-desc">选择数据库类型并填写连接信息</p>
+                <h3 class="install__section-title">{{ t('install.database.title') }}</h3>
+                <p class="install__section-desc">{{ t('install.database.desc') }}</p>
               </div>
             </div>
 
-            <el-form-item label="站点地址" prop="base_url">
+            <el-form-item :label="t('install.database.siteUrl')" prop="base_url">
               <el-input v-model="form.base_url" placeholder="https://pic.example.com" />
-              <div class="install__hint">用于生成图片与分享链接，请填写对外可访问的地址。</div>
+              <div class="install__hint">{{ t('install.database.siteUrlHint') }}</div>
             </el-form-item>
 
-            <el-form-item label="数据库类型">
+            <el-form-item :label="t('install.database.type')">
               <el-radio-group v-model="form.database_driver">
                 <el-radio-button value="sqlite">SQLite</el-radio-button>
                 <el-radio-button value="postgres">PostgreSQL</el-radio-button>
@@ -319,65 +323,65 @@ onMounted(async () => {
 
             <template v-if="isNetworkDB">
               <div v-if="!useAdvancedDsn && isPostgres" class="install__grid">
-                <el-form-item label="主机">
+                <el-form-item :label="t('install.database.host')">
                   <el-input v-model="pg.host" placeholder="127.0.0.1" />
                 </el-form-item>
-                <el-form-item label="端口">
+                <el-form-item :label="t('install.database.port')">
                   <el-input-number v-model="pg.port" :min="1" :max="65535" controls-position="right" class="install__number" />
                 </el-form-item>
-                <el-form-item label="数据库名">
+                <el-form-item :label="t('install.database.name')">
                   <el-input v-model="pg.database" placeholder="axmipic" />
                 </el-form-item>
-                <el-form-item label="用户名">
+                <el-form-item :label="t('install.database.username')">
                   <el-input v-model="pg.user" placeholder="axmipic" />
                 </el-form-item>
-                <el-form-item label="密码">
-                  <el-input v-model="pg.password" type="password" show-password autocomplete="new-password" placeholder="数据库密码" />
+                <el-form-item :label="t('install.database.password')">
+                  <el-input v-model="pg.password" type="password" show-password autocomplete="new-password" :placeholder="t('install.database.passwordPlaceholder')" />
                 </el-form-item>
-                <el-form-item label="SSL 模式">
+                <el-form-item :label="t('install.database.sslMode')">
                   <el-select v-model="pg.sslmode" class="install__select">
                     <el-option v-for="m in sslModes" :key="m.value" :label="m.label" :value="m.value" />
                   </el-select>
                 </el-form-item>
               </div>
               <div v-if="!useAdvancedDsn && isMySQL" class="install__grid">
-                <el-form-item label="主机">
+                <el-form-item :label="t('install.database.host')">
                   <el-input v-model="my.host" placeholder="127.0.0.1" />
                 </el-form-item>
-                <el-form-item label="端口">
+                <el-form-item :label="t('install.database.port')">
                   <el-input-number v-model="my.port" :min="1" :max="65535" controls-position="right" class="install__number" />
                 </el-form-item>
-                <el-form-item label="数据库名">
+                <el-form-item :label="t('install.database.name')">
                   <el-input v-model="my.database" placeholder="axmipic" />
                 </el-form-item>
-                <el-form-item label="用户名">
+                <el-form-item :label="t('install.database.username')">
                   <el-input v-model="my.user" placeholder="axmipic" />
                 </el-form-item>
-                <el-form-item label="密码">
-                  <el-input v-model="my.password" type="password" show-password autocomplete="new-password" placeholder="数据库密码" />
+                <el-form-item :label="t('install.database.password')">
+                  <el-input v-model="my.password" type="password" show-password autocomplete="new-password" :placeholder="t('install.database.passwordPlaceholder')" />
                 </el-form-item>
               </div>
               <div v-if="useAdvancedDsn" class="install__grid install__grid--single">
-                <el-form-item label="连接串" prop="database_dsn">
+                <el-form-item :label="t('install.database.dsn')" prop="database_dsn">
                   <el-input v-model="form.database_dsn" type="textarea" :rows="3" />
                 </el-form-item>
               </div>
               <div v-if="!useAdvancedDsn" class="install__dsn">
-                <span class="install__dsn-label">连接串</span>
+                <span class="install__dsn-label">{{ t('install.database.dsn') }}</span>
                 <code class="install__dsn-value">{{ dsnPreview }}</code>
               </div>
-              <el-checkbox v-model="useAdvancedDsn" class="install__advanced">高级：直接填写连接串</el-checkbox>
+              <el-checkbox v-model="useAdvancedDsn" class="install__advanced">{{ t('install.database.advanced') }}</el-checkbox>
               <div v-if="isPostgres" class="install__hint">
-                需先在数据库中创建对应的库与用户；容器部署时主机请填写宿主地址（如 <code>host.docker.internal</code> 或宿主机 IP）。
+                {{ t('install.database.postgresHintPrefix') }}<code>host.docker.internal</code>{{ t('install.database.postgresHintSuffix') }}
               </div>
               <div v-else class="install__hint">
-                需先在 MySQL 5.7+ 中创建数据库（建议 <code>CHARACTER SET utf8mb4</code>）与账号，程序会自动建表；容器部署时主机请填写宿主地址（如 <code>host.docker.internal</code> 或宿主机 IP）。
+                {{ t('install.database.mysqlHintPrefix') }}<code>CHARACTER SET utf8mb4</code>{{ t('install.database.mysqlHintMiddle') }}<code>host.docker.internal</code>{{ t('install.database.mysqlHintSuffix') }}
               </div>
             </template>
 
-            <el-form-item v-else label="数据库文件" prop="database_dsn">
+            <el-form-item v-else :label="t('install.database.file')" prop="database_dsn">
               <el-input v-model="form.database_dsn" placeholder="./data/axmipic.db" />
-              <div class="install__hint">SQLite 数据库文件路径，目录需可写。</div>
+              <div class="install__hint">{{ t('install.database.fileHint') }}</div>
             </el-form-item>
           </div>
         </template>
@@ -387,40 +391,40 @@ onMounted(async () => {
             <div class="install__section-head">
               <span class="install__section-icon"><el-icon><User /></el-icon></span>
               <div>
-                <h3 class="install__section-title">管理员账户</h3>
-                <p class="install__section-desc">用于登录管理控制台</p>
+                <h3 class="install__section-title">{{ t('install.admin.title') }}</h3>
+                <p class="install__section-desc">{{ t('install.admin.desc') }}</p>
               </div>
             </div>
 
-            <el-form-item label="管理员用户名" prop="admin_username">
+            <el-form-item :label="t('install.admin.username')" prop="admin_username">
               <el-input v-model="form.admin_username" :prefix-icon="User" placeholder="admin" />
-              <div class="install__hint">可包含字母、数字与 "."、"_"、"-"、"+"、"@"（3-64 位），支持邮箱形式。</div>
+              <div class="install__hint">{{ t('install.admin.usernameHint') }}</div>
             </el-form-item>
-            <el-form-item label="管理员密码" prop="admin_password">
+            <el-form-item :label="t('install.admin.password')" prop="admin_password">
               <el-input
                 v-model="form.admin_password"
                 type="password"
                 show-password
                 :prefix-icon="Lock"
-                placeholder="至少 8 位"
+                :placeholder="t('install.admin.passwordPlaceholder')"
               >
                 <template #append>
-                  <el-button :icon="Refresh" @click="generatePassword">随机</el-button>
+                  <el-button :icon="Refresh" @click="generatePassword">{{ t('install.admin.random') }}</el-button>
                 </template>
               </el-input>
             </el-form-item>
-            <el-form-item label="确认密码" prop="admin_password_confirm">
+            <el-form-item :label="t('install.admin.confirmPassword')" prop="admin_password_confirm">
               <el-input
                 v-model="form.admin_password_confirm"
                 type="password"
                 show-password
                 :prefix-icon="Lock"
-                placeholder="再次输入管理员密码"
+                :placeholder="t('install.admin.confirmPlaceholder')"
               />
             </el-form-item>
             <p class="install__note">
               <el-icon><Key /></el-icon>
-              该账号仅用于管理后台，与普通用户分表管理；请妥善保存密码。
+              {{ t('install.admin.note') }}
             </p>
           </div>
         </template>
@@ -430,33 +434,33 @@ onMounted(async () => {
             <div class="install__section-head">
               <span class="install__section-icon"><el-icon><Setting /></el-icon></span>
               <div>
-                <h3 class="install__section-title">站点与存储</h3>
-                <p class="install__section-desc">站点名称、存储方式与权限</p>
+                <h3 class="install__section-title">{{ t('install.site.title') }}</h3>
+                <p class="install__section-desc">{{ t('install.site.desc') }}</p>
               </div>
             </div>
 
-            <el-form-item label="站点名称">
+            <el-form-item :label="t('install.site.name')">
               <el-input v-model="form.site_name" placeholder="AXmiPic" />
             </el-form-item>
-            <el-form-item label="存储方式">
+            <el-form-item :label="t('install.site.storage')">
               <el-radio-group v-model="form.storage_driver">
-                <el-radio-button value="local">本地</el-radio-button>
+                <el-radio-button value="local">{{ t('install.site.storageLocal') }}</el-radio-button>
                 <el-radio-button value="s3">S3</el-radio-button>
-                <el-radio-button value="qiniu">七牛</el-radio-button>
+                <el-radio-button value="qiniu">{{ t('install.site.storageQiniu') }}</el-radio-button>
               </el-radio-group>
-              <div class="install__hint">S3 / 七牛可在初始化后于「存储配置」中补充密钥。</div>
+              <div class="install__hint">{{ t('install.site.storageHint') }}</div>
             </el-form-item>
-            <el-form-item v-if="form.storage_driver === 'local'" label="本地存储目录">
+            <el-form-item v-if="form.storage_driver === 'local'" :label="t('install.site.localRoot')">
               <el-input v-model="form.storage_root" placeholder="./data/uploads" />
             </el-form-item>
-            <el-form-item label="权限选项">
+            <el-form-item :label="t('install.site.permissions')">
               <div class="install__switch">
                 <div class="install__switch-row">
-                  <span>允许开放注册</span>
+                  <span>{{ t('install.site.allowRegistration') }}</span>
                   <el-switch v-model="form.allow_registration" />
                 </div>
                 <div class="install__switch-row">
-                  <span>允许未登录访客上传（Guest 低权角色）</span>
+                  <span>{{ t('install.site.allowGuestUpload') }}</span>
                   <el-switch v-model="form.allow_guest_upload" />
                 </div>
               </div>
@@ -467,15 +471,15 @@ onMounted(async () => {
 
       <div v-else class="install__done">
         <el-icon class="install__done-icon" :size="48"><Check /></el-icon>
-        <h2>初始化完成</h2>
-        <p>已创建管理员账户与 Guest 访客角色，现在可以登录管理控制台。</p>
-        <el-button type="primary" @click="goLogin">前往登录</el-button>
+        <h2>{{ t('install.done.title') }}</h2>
+        <p>{{ t('install.done.desc') }}</p>
+        <el-button type="primary" @click="goLogin">{{ t('install.done.goLogin') }}</el-button>
       </div>
 
       <footer v-if="!done" class="install__footer">
-        <el-button :disabled="step === 0" @click="prev">上一步</el-button>
-        <el-button v-if="step < steps.length - 1" type="primary" @click="next">下一步</el-button>
-        <el-button v-else type="primary" :loading="submitting" @click="submit">开始初始化</el-button>
+        <el-button :disabled="step === 0" @click="prev">{{ t('install.footer.previous') }}</el-button>
+        <el-button v-if="step < steps.length - 1" type="primary" @click="next">{{ t('install.footer.next') }}</el-button>
+        <el-button v-else type="primary" :loading="submitting" @click="submit">{{ t('install.footer.submit') }}</el-button>
       </footer>
     </section>
   </div>

@@ -1,15 +1,17 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 
+const { t } = useI18n()
 const router = useRouter()
 </script>
 
 <template>
   <main class="not-found">
     <p class="not-found__code">404</p>
-    <h1 class="not-found__title">页面不存在</h1>
-    <p class="not-found__desc">你访问的地址不存在或已被移除。</p>
-    <el-button type="primary" @click="router.replace('/')">返回首页</el-button>
+    <h1 class="not-found__title">{{ t('notFound.title') }}</h1>
+    <p class="not-found__desc">{{ t('notFound.desc') }}</p>
+    <el-button type="primary" @click="router.replace('/')">{{ t('notFound.backHome') }}</el-button>
   </main>
 </template>
 

@@ -1,0 +1,192 @@
+export default {
+  processing: {
+    title: '图片处理',
+    description: '通过 URL 参数实时缩放、裁剪、旋转、翻转、滤镜与水印。',
+    actions: {
+      resetParams: '重置参数',
+      copyLink: '复制链接',
+    },
+    empty: {
+      title: '还没有可处理的图片',
+      description: '先上传图片，再回到这里调试处理参数。',
+    },
+    labels: {
+      selectImage: '选择图片',
+      width: '宽度',
+      height: '高度',
+      fit: '适配',
+      format: '输出格式',
+      quality: '质量',
+      rotate: '旋转',
+      flip: '翻转',
+      enlarge: '允许放大',
+      grayscale: '灰度',
+      blur: '模糊强度',
+      sharpen: '锐化强度',
+      watermark: '文字水印',
+      watermarkText: '水印文字',
+      position: '位置',
+      opacity: '不透明度',
+      fontSize: '字号（0 自适应）',
+      color: '颜色',
+    },
+    format: {
+      keepOriginal: '保持原格式',
+    },
+    rotate: {
+      none: '不旋转',
+    },
+    flip: {
+      none: '不翻转',
+      horizontal: '水平',
+      vertical: '垂直',
+      both: '水平+垂直',
+    },
+    watermarkPlaceholder: '例如 AXmiPic',
+    preview: {
+      title: '实时预览',
+      alt: '预览',
+      unavailable: '预览不可用，请检查处理参数。',
+      linkLabel: '处理后的链接',
+    },
+    messages: {
+      copied: '已复制处理后的链接',
+      copyFailed: '复制失败',
+    },
+  },
+  albums: {
+    title: '相册',
+    description: '用相册归类图片，便于管理和浏览。',
+    create: '新建相册',
+    empty: {
+      title: '还没有相册',
+      description: '创建相册后，即可在图片管理页把图片归入其中。',
+    },
+    dialog: {
+      createTitle: '新建相册',
+      editTitle: '编辑相册',
+    },
+    form: {
+      name: '名称',
+      namePlaceholder: '例如：旅行 / 壁纸',
+      intro: '简介',
+      introPlaceholder: '选填',
+      visibility: '可见性',
+      visibilityHint: '公开后，任何人无需登录即可浏览相册及其中的图片。',
+    },
+    visibility: {
+      private: '私密',
+      public: '公开',
+    },
+    columns: {
+      name: '名称',
+      imageCount: '图片数',
+      visibility: '可见性',
+      intro: '简介',
+      createdAt: '创建时间',
+    },
+    actions: {
+      viewImages: '查看图片',
+      share: '分享',
+    },
+    validation: {
+      nameRequired: '请输入相册名称',
+      nameLength: '名称长度为 1 到 100 个字符',
+      introMax: '简介最多 255 个字符',
+    },
+    confirm: {
+      deleteTitle: '删除相册',
+      deleteMessage: '删除相册「{name}」后，其中的图片会保留但不再归入任何相册。',
+    },
+    messages: {
+      updated: '相册已更新',
+      created: '相册已创建',
+      deleted: '相册已删除',
+      shareDisabled: '当前角色未开启分享功能',
+    },
+  },
+  plaza: {
+    title: '图片广场',
+    description: '所有用户公开分享的图片。',
+    searchPlaceholder: '搜索文件名',
+    order: {
+      newest: '最新',
+      earliest: '最早',
+      largest: '最大',
+      smallest: '最小',
+    },
+    layout: {
+      switchToGrid: '切换为网格',
+      switchToMasonry: '切换为瀑布流',
+      grid: '网格',
+      masonry: '瀑布流',
+    },
+    count: '共 {count} 张公开图片',
+    listLabel: '图片广场',
+    actions: {
+      copyLink: '复制链接',
+    },
+    empty: {
+      noMatchTitle: '没有找到匹配的图片',
+      noMatchDescription: '试试其他关键词，或清空搜索条件。',
+      noItemsTitle: '广场上还没有公开图片',
+      noItemsDescription: '在图片管理页把图片设为「公开」，它就会出现在这里。',
+      clearSearch: '清空搜索',
+    },
+    messages: {
+      copied: '已复制',
+      copyFailed: '复制失败，请手动复制',
+    },
+  },
+  shares: {
+    title: '我的分享',
+    description: '管理图片与相册的分享链接，可随时撤销。',
+    empty: {
+      title: '还没有分享链接',
+      description: '在图片管理或相册页点击「分享」即可创建链接。',
+    },
+    type: {
+      album: '相册',
+      image: '图片',
+    },
+    columns: {
+      type: '类型',
+      link: '链接',
+      password: '密码',
+      views: '访问量',
+      createdAt: '创建时间',
+    },
+    passwordRequired: '需要',
+    actions: {
+      revoke: '撤销',
+    },
+    confirm: {
+      revokeTitle: '撤销分享',
+      revokeMessage: '撤销后该链接将立即失效，操作不可恢复。',
+    },
+    messages: {
+      revoked: '分享已撤销',
+    },
+  },
+  plazaCard: {
+    previewUnavailable: '预览不可用',
+    authorLabel: '作者：',
+    uploader: '上传者：{name}',
+    anonymous: '匿名',
+    meta: {
+      dimensions: '尺寸',
+      size: '大小',
+      format: '格式',
+      uploadedAt: '上传',
+    },
+  },
+  plazaMasonry: {
+    empty: '暂无公开图片',
+    previewUnavailable: '预览不可用',
+    authorLabel: '作者：',
+    uploader: '上传者：{name}',
+    anonymous: '匿名',
+    loadingMore: '正在加载更多…',
+    end: '已经到底啦',
+  },
+}

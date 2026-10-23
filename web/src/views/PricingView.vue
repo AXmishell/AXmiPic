@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import { Refresh } from '@element-plus/icons-vue'
 
 import { createOrder, listOrders, listPaymentGateways, listPlans, payOrder, validateCoupon } from '@/api/billing'
@@ -10,6 +11,8 @@ import EmptyState from '@/components/EmptyState.vue'
 import ErrorState from '@/components/ErrorState.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { formatBytes, formatDateTime } from '@/utils/format'
+
+const { t } = useI18n()
 
 const plans = ref<Plan[]>([])
 const orders = ref<Order[]>([])
@@ -24,15 +27,15 @@ const ordering = ref('')
 const gateways = ref<string[]>([])
 const provider = ref('manual')
 
-const providerLabels: Record<string, string> = {
-  manual: '人工核销',
-  mock: '模拟支付',
-  alipay: '支付宝',
-  wechat: '微信支付',
-  epay: '易支付',
-}
+const providerLabels = computed<Record<string, string>>(() => ({
+  manual: t('pricing.providers.manual'),
+  mock: t('pricing.providers.mock'),
+  alipay: t('pricing.providers.alipay'),
+  wechat: t('pricing.providers.wechat'),
+  epay: t('pricing.providers.epay'),
+}))
 
-const priceLabel = (cents: number): string => (cents === 0 ? '免费' : `¥${(cents / 100).toFixed(2)}`)
+const priceLabel = (cents: number): string => (cents === 0 ? t('pricing.free') : `¥${(cents / 100).toFixed(2)}`)
 
 const selectedPlan = computed(() => plans.value.find((p) => p.id === couponPlanId.value) ?? null)
 const payableLabel = computed(() => {
@@ -65,7 +68,7 @@ async function load(): Promise<void> {
 
 async function checkCoupon(plan: Plan): Promise<void> {
   if (!couponCode.value.trim()) {
-    ElMessage.warning('请输入优惠券代码')
+    ElMessage.warning(t('pricing.messages.couponRequired'))
     return
   }
   couponChecking.value = true
@@ -73,7 +76,7 @@ async function checkCoupon(plan: Plan): Promise<void> {
     const result = await validateCoupon(couponCode.value.trim(), plan.price_cents)
     couponPlanId.value = plan.id
     couponDiscount.value = result.discount_cents
-    ElMessage.success(`优惠券可用，可抵扣 ${priceLabel(result.discount_cents)}`)
+    ElMessage.success(t('pricing.messages.couponApplied', { amount: priceLabel(result.discount_cents) }))
   } catch (error) {
     couponPlanId.value = ''
     couponDiscount.value = 0
@@ -89,13 +92,13 @@ async function buy(plan: Plan): Promise<void> {
     const coupon = couponPlanId.value === plan.id ? couponCode.value.trim() : ''
     const order = await createOrder(plan.id, coupon, provider.value)
     if (order.status === 'paid') {
-      ElMessage.success('套餐已生效')
+      ElMessage.success(t('pricing.messages.planActivated'))
     } else if (order.status === 'pending' && order.pay_url && order.provider === 'mock') {
       // 仅模拟渠道可自助完成支付；真实渠道与人工核销需等待支付/管理员确认。
       await payOrder(order.id)
-      ElMessage.success('支付成功，套餐已生效')
+      ElMessage.success(t('pricing.messages.paidActivated'))
     } else {
-      ElMessage.success('订单已创建，请完成支付')
+      ElMessage.success(t('pricing.messages.orderCreated'))
     }
     couponDiscount.value = 0
     couponPlanId.value = ''
@@ -110,11 +113,11 @@ async function buy(plan: Plan): Promise<void> {
 function statusLabel(status: string): string {
   switch (status) {
     case 'paid':
-      return '已支付'
+      return t('pricing.status.paid')
     case 'cancelled':
-      return '已取消'
+      return t('pricing.status.cancelled')
     default:
-      return '待支付'
+      return t('pricing.status.pending')
   }
 }
 
@@ -123,9 +126,9 @@ onMounted(load)
 
 <template>
   <div class="ax-page">
-    <PageHeader title="套餐" description="选择套餐并下单，支付后自动应用配额与角色策略。">
+    <PageHeader :title="t('pricing.title')" :description="t('pricing.description')">
       <template #actions>
-        <el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button>
+        <el-button :icon="Refresh" :loading="loading" @click="load">{{ t('common.refresh') }}</el-button>
       </template>
     </PageHeader>
 
@@ -137,8 +140,8 @@ onMounted(load)
 
     <EmptyState
       v-else-if="plans.length === 0"
-      title="暂无可用套餐"
-      description="管理员尚未发布套餐，请稍后再来。"
+      :title="t('pricing.empty.title')"
+      :description="t('pricing.empty.description')"
     />
 
     <template v-else>
@@ -148,17 +151,17 @@ onMounted(load)
             <h2 class="plan-card__name">{{ plan.name }}</h2>
             <p class="plan-card__price">
               {{ priceLabel(plan.price_cents) }}
-              <span v-if="plan.duration_days" class="plan-card__period">/ {{ plan.duration_days }} 天</span>
+              <span v-if="plan.duration_days" class="plan-card__period">{{ t('pricing.perDays', { days: plan.duration_days }) }}</span>
             </p>
             <p v-if="plan.description" class="plan-card__desc">{{ plan.description }}</p>
             <ul class="plan-card__features">
-              <li>存储配额：{{ plan.quota_mb > 0 ? formatBytes(plan.quota_mb * 1024 * 1024) : '不限' }}</li>
-              <li v-if="plan.role_group_id">应用专属角色策略</li>
-              <li>有效期：{{ plan.duration_days > 0 ? `${plan.duration_days} 天` : '永久' }}</li>
+              <li>{{ t('pricing.storageQuota', { size: plan.quota_mb > 0 ? formatBytes(plan.quota_mb * 1024 * 1024) : t('pricing.unlimited') }) }}</li>
+              <li v-if="plan.role_group_id">{{ t('pricing.roleGroupFeature') }}</li>
+              <li>{{ plan.duration_days > 0 ? t('pricing.validityDays', { days: plan.duration_days }) : t('pricing.validityForever') }}</li>
             </ul>
             <div class="plan-card__actions">
               <el-button type="primary" :loading="ordering === plan.id" @click="buy(plan)">
-                {{ plan.price_cents === 0 ? '免费获取' : '立即购买' }}
+                {{ plan.price_cents === 0 ? t('pricing.getFree') : t('pricing.buy') }}
               </el-button>
             </div>
           </div>
@@ -167,10 +170,10 @@ onMounted(load)
 
       <section class="ax-card coupon-card">
         <div class="ax-card__body">
-          <h2 class="ax-card__title">优惠券</h2>
+          <h2 class="ax-card__title">{{ t('pricing.coupon.title') }}</h2>
           <div class="coupon-row">
-            <el-input v-model="couponCode" placeholder="输入优惠券代码" class="coupon-input" />
-            <el-select v-model="couponPlanId" placeholder="选择套餐以校验" class="coupon-select">
+            <el-input v-model="couponCode" :placeholder="t('pricing.coupon.codePlaceholder')" class="coupon-input" />
+            <el-select v-model="couponPlanId" :placeholder="t('pricing.coupon.planPlaceholder')" class="coupon-select">
               <el-option v-for="plan in plans" :key="plan.id" :label="plan.name" :value="plan.id" />
             </el-select>
             <el-button
@@ -178,9 +181,9 @@ onMounted(load)
               :disabled="!selectedPlan"
               @click="selectedPlan && checkCoupon(selectedPlan)"
             >
-              校验
+              {{ t('pricing.coupon.check') }}
             </el-button>
-            <el-select v-model="provider" class="coupon-select" aria-label="支付渠道">
+            <el-select v-model="provider" class="coupon-select" :aria-label="t('pricing.coupon.providerAria')">
               <el-option
                 v-for="g in gateways"
                 :key="g"
@@ -190,28 +193,28 @@ onMounted(load)
             </el-select>
           </div>
           <p v-if="couponDiscount > 0" class="coupon-hint">
-            已抵扣 {{ priceLabel(couponDiscount) }}，应付 {{ payableLabel }}
+            {{ t('pricing.coupon.applied', { discount: priceLabel(couponDiscount), payable: payableLabel }) }}
           </p>
         </div>
       </section>
 
       <section class="ax-card table-card">
-        <header class="ax-card__head"><h2 class="ax-card__title">我的订单</h2></header>
-        <div v-if="orders.length === 0" class="ax-card__body ax-muted">暂无订单</div>
+        <header class="ax-card__head"><h2 class="ax-card__title">{{ t('pricing.orders.title') }}</h2></header>
+        <div v-if="orders.length === 0" class="ax-card__body ax-muted">{{ t('pricing.orders.empty') }}</div>
         <div v-else class="ax-table-scroll">
           <el-table :data="orders" style="width: 100%">
-            <el-table-column prop="plan_name" label="套餐" min-width="160" />
-            <el-table-column label="金额" width="120">
+            <el-table-column prop="plan_name" :label="t('pricing.orders.plan')" min-width="160" />
+            <el-table-column :label="t('pricing.orders.amount')" width="120">
               <template #default="{ row }">{{ priceLabel(row.amount_cents) }}</template>
             </el-table-column>
-            <el-table-column label="状态" width="100">
+            <el-table-column :label="t('pricing.orders.status')" width="100">
               <template #default="{ row }">
                 <el-tag size="small" :type="row.status === 'paid' ? 'success' : 'info'" effect="plain">
                   {{ statusLabel(row.status) }}
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="创建时间" min-width="170">
+            <el-table-column :label="t('pricing.orders.createdAt')" min-width="170">
               <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
             </el-table-column>
           </el-table>

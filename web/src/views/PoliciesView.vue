@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import type { FormInstance, FormRules } from 'element-plus'
 import { Delete, EditPen, Link, Plus, Refresh } from '@element-plus/icons-vue'
 
@@ -29,31 +30,41 @@ type Tab = 'groups' | 'policies'
 const POLICY_TABS: readonly Tab[] = ['groups', 'policies']
 const activeTab = useTabQuery<Tab>('tab', 'groups', POLICY_TABS)
 
+const { t } = useI18n()
+
 const groups = ref<RoleGroup[]>([])
 const policies = ref<Policy[]>([])
 const loading = ref(false)
 const errorMessage = ref('')
 
 /** 策略类型元数据：展示名、标签色、配置模板与说明。 */
-const policyTypes: { value: PolicyType; label: string; tag: string; template: Record<string, unknown>; hint: string }[] = [
-  { value: 'quota', label: '配额', tag: 'primary', template: { quota_mb: 1024 }, hint: 'quota_mb：存储空间上限（MiB，0 表示不限）' },
+const policyTypes = computed<
+  { value: PolicyType; label: string; tag: string; template: Record<string, unknown>; hint: string }[]
+>(() => [
+  {
+    value: 'quota',
+    label: t('policies.types.quota.label'),
+    tag: 'primary',
+    template: { quota_mb: 1024 },
+    hint: t('policies.types.quota.hint'),
+  },
   {
     value: 'upload',
-    label: '上传',
+    label: t('policies.types.upload.label'),
     tag: 'success',
     template: { max_size_mb: 20, allowed_mime_types: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'] },
-    hint: 'max_size_mb：单文件上限；allowed_mime_types：允许的媒体类型',
+    hint: t('policies.types.upload.hint'),
   },
   {
     value: 'rate',
-    label: '速率',
+    label: t('policies.types.rate.label'),
     tag: 'warning',
     template: { upload_per_minute: 30, upload_burst: 5, image_per_minute: 600, image_burst: 120 },
-    hint: 'upload_per_minute/burst、image_per_minute/burst：每分钟限额与突发',
+    hint: t('policies.types.rate.hint'),
   },
   {
     value: 'processing',
-    label: '图片处理',
+    label: t('policies.types.processing.label'),
     tag: 'info',
     template: {
       enabled: true,
@@ -62,82 +73,94 @@ const policyTypes: { value: PolicyType; label: string; tag: string; template: Re
       default_quality: 82,
       allowed_formats: ['jpeg', 'png', 'gif', 'webp', 'avif'],
     },
-    hint: 'max_width/max_height、default_quality、allowed_formats',
+    hint: t('policies.types.processing.hint'),
   },
   {
     value: 'feature',
-    label: '功能开关',
+    label: t('policies.types.feature.label'),
     tag: 'danger',
     template: { features: ['plaza', 'albums', 'api_tokens', 'batch_upload', 'paste_upload', 'share'] },
-    hint: 'features：启用 plaza、albums、api_tokens、batch_upload、paste_upload、drag_upload、embed_code、share、share_password',
+    hint: t('policies.types.feature.hint'),
   },
-]
+])
 
 function typeMeta(type: PolicyType) {
-  return policyTypes.find((t) => t.value === type) ?? policyTypes[0]!
+  return policyTypes.value.find((item) => item.value === type) ?? policyTypes.value[0]!
 }
 
-const featureOptions = [
-  { value: 'plaza', label: '图片广场' },
-  { value: 'albums', label: '相册' },
-  { value: 'api_tokens', label: 'API 令牌' },
-  { value: 'batch_upload', label: '批量上传' },
-  { value: 'paste_upload', label: '粘贴上传' },
-  { value: 'drag_upload', label: '拖拽上传' },
-  { value: 'embed_code', label: '嵌入代码' },
-  { value: 'share', label: '分享' },
-  { value: 'share_password', label: '密码分享' },
-]
+const featureOptions = computed(() => [
+  { value: 'plaza', label: t('policies.features.plaza') },
+  { value: 'albums', label: t('policies.features.albums') },
+  { value: 'api_tokens', label: t('policies.features.apiTokens') },
+  { value: 'batch_upload', label: t('policies.features.batchUpload') },
+  { value: 'paste_upload', label: t('policies.features.pasteUpload') },
+  { value: 'drag_upload', label: t('policies.features.dragUpload') },
+  { value: 'embed_code', label: t('policies.features.embedCode') },
+  { value: 'share', label: t('policies.features.share') },
+  { value: 'share_password', label: t('policies.features.sharePassword') },
+])
 
 const mimeOptions = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif', 'image/bmp', 'image/tiff']
 const formatOptions = ['jpeg', 'png', 'gif', 'webp', 'avif', 'bmp', 'tiff']
 
 /** 常用预设：一键填入某类型的整套设置，仍可在表单中继续微调。 */
-const policyPresets: Record<PolicyType, { label: string; settings: Record<string, unknown> }[]> = {
+const policyPresets = computed<Record<PolicyType, { label: string; settings: Record<string, unknown> }[]>>(() => ({
   quota: [
-    { label: '不限', settings: { quota_mb: 0 } },
-    { label: '基础 1 GiB', settings: { quota_mb: 1024 } },
-    { label: '进阶 10 GiB', settings: { quota_mb: 10240 } },
+    { label: t('policies.presets.quota.unlimited'), settings: { quota_mb: 0 } },
+    { label: t('policies.presets.quota.basic'), settings: { quota_mb: 1024 } },
+    { label: t('policies.presets.quota.advanced'), settings: { quota_mb: 10240 } },
   ],
   upload: [
     {
-      label: '严格 2 MiB',
+      label: t('policies.presets.upload.strict'),
       settings: { max_size_mb: 2, allowed_mime_types: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'] },
     },
     {
-      label: '标准 20 MiB',
+      label: t('policies.presets.upload.standard'),
       settings: { max_size_mb: 20, allowed_mime_types: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'] },
     },
     {
-      label: '宽松 100 MiB',
+      label: t('policies.presets.upload.relaxed'),
       settings: { max_size_mb: 100, allowed_mime_types: ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/avif'] },
     },
   ],
   rate: [
-    { label: '严格', settings: { upload_per_minute: 10, upload_burst: 2, image_per_minute: 120, image_burst: 30 } },
-    { label: '标准', settings: { upload_per_minute: 30, upload_burst: 5, image_per_minute: 600, image_burst: 120 } },
-    { label: '宽松', settings: { upload_per_minute: 120, upload_burst: 20, image_per_minute: 3000, image_burst: 600 } },
+    {
+      label: t('policies.presets.rate.strict'),
+      settings: { upload_per_minute: 10, upload_burst: 2, image_per_minute: 120, image_burst: 30 },
+    },
+    {
+      label: t('policies.presets.rate.standard'),
+      settings: { upload_per_minute: 30, upload_burst: 5, image_per_minute: 600, image_burst: 120 },
+    },
+    {
+      label: t('policies.presets.rate.relaxed'),
+      settings: { upload_per_minute: 120, upload_burst: 20, image_per_minute: 3000, image_burst: 600 },
+    },
   ],
   processing: [
     {
-      label: '省资源',
+      label: t('policies.presets.processing.lowResource'),
       settings: { enabled: true, max_width: 2048, max_height: 2048, default_quality: 75, allowed_formats: ['jpeg', 'png', 'gif', 'webp'] },
     },
     {
-      label: '标准',
+      label: t('policies.presets.processing.standard'),
       settings: { enabled: true, max_width: 4096, max_height: 4096, default_quality: 82, allowed_formats: ['jpeg', 'png', 'gif', 'webp', 'avif'] },
     },
     {
-      label: '高质量',
+      label: t('policies.presets.processing.highQuality'),
       settings: { enabled: true, max_width: 8192, max_height: 8192, default_quality: 92, allowed_formats: ['jpeg', 'png', 'gif', 'webp', 'avif'] },
     },
   ],
   feature: [
-    { label: '极简', settings: { features: ['share'] } },
-    { label: '基础', settings: { features: ['plaza', 'albums', 'api_tokens', 'batch_upload', 'paste_upload', 'share'] } },
-    { label: '完整', settings: { features: featureOptions.map((f) => f.value) } },
+    { label: t('policies.presets.feature.minimal'), settings: { features: ['share'] } },
+    {
+      label: t('policies.presets.feature.basic'),
+      settings: { features: ['plaza', 'albums', 'api_tokens', 'batch_upload', 'paste_upload', 'share'] },
+    },
+    { label: t('policies.presets.feature.full'), settings: { features: featureOptions.value.map((f) => f.value) } },
   ],
-}
+}))
 
 // ---- 设置 JSON 与结构化表单的双向绑定 ----
 
@@ -223,9 +246,9 @@ async function closeGroupDialog(done: () => void): Promise<void> {
     return
   }
   try {
-    await ElMessageBox.confirm('关闭后未保存的修改将丢失。', '放弃修改？', {
-      confirmButtonText: '放弃修改',
-      cancelButtonText: '继续编辑',
+    await ElMessageBox.confirm(t('policies.discard.message'), t('policies.discard.title'), {
+      confirmButtonText: t('policies.discard.confirm'),
+      cancelButtonText: t('policies.discard.cancel'),
       type: 'warning',
       confirmButtonClass: 'el-button--danger',
     })
@@ -238,7 +261,7 @@ async function closeGroupDialog(done: () => void): Promise<void> {
 /** 可预判的删除失败原因：仍被用户或绑定关系引用时直接禁用。 */
 function groupDeleteBlockedReason(group: RoleGroup): string {
   if (group.customer_count > 0) {
-    return `该角色组仍有 ${group.customer_count} 位用户，请先调整这些用户的角色组`
+    return t('policies.blocked.groupUsers', { count: group.customer_count })
   }
   return ''
 }
@@ -250,16 +273,18 @@ function policyBindings(policyId: string): RoleGroup[] {
 function policyDeleteBlockedReason(policy: Policy): string {
   const bound = policyBindings(policy.id)
   if (bound.length > 0) {
-    return `已被「${bound.map((group) => group.name).join('、')}」引用，请先解绑`
+    return t('policies.blocked.policyBound', {
+      groups: bound.map((group) => group.name).join(t('policies.listSeparator')),
+    })
   }
   return ''
 }
-const groupRules: FormRules = {
+const groupRules = computed<FormRules>(() => ({
   name: [
-    { required: true, message: '请输入角色组名称', trigger: 'blur' },
-    { min: 1, max: 64, message: '名称长度为 1 到 64 个字符', trigger: 'blur' },
+    { required: true, message: t('policies.validation.groupNameRequired'), trigger: 'blur' },
+    { min: 1, max: 64, message: t('policies.validation.nameLength'), trigger: 'blur' },
   ],
-}
+}))
 
 // ---- 策略对话框 ----
 const policyOpen = ref(false)
@@ -286,9 +311,9 @@ async function closePolicyDialog(done: () => void): Promise<void> {
     return
   }
   try {
-    await ElMessageBox.confirm('关闭后未保存的修改将丢失。', '放弃修改？', {
-      confirmButtonText: '放弃修改',
-      cancelButtonText: '继续编辑',
+    await ElMessageBox.confirm(t('policies.discard.message'), t('policies.discard.title'), {
+      confirmButtonText: t('policies.discard.confirm'),
+      cancelButtonText: t('policies.discard.cancel'),
       type: 'warning',
       confirmButtonClass: 'el-button--danger',
     })
@@ -314,13 +339,13 @@ const maxWidth = settingModel<number>('max_width', 4096)
 const maxHeight = settingModel<number>('max_height', 4096)
 const defaultQuality = settingModel<number>('default_quality', 82)
 const allowedFormats = listModel('allowed_formats', ['jpeg', 'png', 'gif', 'webp', 'avif'])
-const policyRules: FormRules = {
+const policyRules = computed<FormRules>(() => ({
   name: [
-    { required: true, message: '请输入策略名称', trigger: 'blur' },
-    { min: 1, max: 64, message: '名称长度为 1 到 64 个字符', trigger: 'blur' },
+    { required: true, message: t('policies.validation.policyNameRequired'), trigger: 'blur' },
+    { min: 1, max: 64, message: t('policies.validation.nameLength'), trigger: 'blur' },
   ],
-  type: [{ required: true, message: '请选择策略类型', trigger: 'change' }],
-}
+  type: [{ required: true, message: t('policies.validation.typeRequired'), trigger: 'change' }],
+}))
 
 // ---- 策略绑定对话框 ----
 const bindOpen = ref(false)
@@ -380,10 +405,10 @@ async function submitGroup(): Promise<void> {
     }
     if (editingGroupId.value) {
       await updateRoleGroup(editingGroupId.value, payload)
-      ElMessage.success('角色组已更新')
+      ElMessage.success(t('policies.groups.updated'))
     } else {
       await createRoleGroup(payload)
-      ElMessage.success('角色组已创建')
+      ElMessage.success(t('policies.groups.created'))
     }
     groupSnapshot.value = groupState()
     groupOpen.value = false
@@ -397,9 +422,9 @@ async function submitGroup(): Promise<void> {
 
 async function removeGroup(group: RoleGroup): Promise<void> {
   try {
-    await ElMessageBox.confirm(`将删除角色组「${group.name}」，该操作不可恢复。`, '删除角色组', {
-      confirmButtonText: '删除',
-      cancelButtonText: '取消',
+    await ElMessageBox.confirm(t('policies.groups.deleteConfirm', { name: group.name }), t('policies.groups.deleteTitle'), {
+      confirmButtonText: t('common.delete'),
+      cancelButtonText: t('common.cancel'),
       type: 'warning',
       confirmButtonClass: 'el-button--danger',
     })
@@ -408,7 +433,7 @@ async function removeGroup(group: RoleGroup): Promise<void> {
   }
   try {
     await deleteRoleGroup(group.id)
-    ElMessage.success('角色组已删除')
+    ElMessage.success(t('policies.groups.deleted'))
     await load()
   } catch (error) {
     ElMessage.error(toApiError(error).message)
@@ -461,11 +486,11 @@ async function submitPolicy(): Promise<void> {
   try {
     const parsed: unknown = JSON.parse(policyForm.settingsText || '{}')
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-      throw new Error('设置必须是 JSON 对象')
+      throw new Error(t('policies.messages.settingsMustBeObject'))
     }
     settings = parsed as Record<string, unknown>
   } catch (error) {
-    ElMessage.error(error instanceof Error ? error.message : '设置 JSON 无效')
+    ElMessage.error(error instanceof Error ? error.message : t('policies.messages.settingsInvalid'))
     return
   }
   policySaving.value = true
@@ -479,10 +504,10 @@ async function submitPolicy(): Promise<void> {
     }
     if (editingPolicyId.value) {
       await updatePolicy(editingPolicyId.value, payload)
-      ElMessage.success('策略已更新')
+      ElMessage.success(t('policies.policy.updated'))
     } else {
       await createPolicy(payload)
-      ElMessage.success('策略已创建')
+      ElMessage.success(t('policies.policy.created'))
     }
     policySnapshot.value = policyState()
     policyOpen.value = false
@@ -496,9 +521,9 @@ async function submitPolicy(): Promise<void> {
 
 async function removePolicy(policy: Policy): Promise<void> {
   try {
-    await ElMessageBox.confirm(`将删除策略「${policy.name}」，仍被角色组引用时无法删除。`, '删除策略', {
-      confirmButtonText: '删除',
-      cancelButtonText: '取消',
+    await ElMessageBox.confirm(t('policies.policy.deleteConfirm', { name: policy.name }), t('policies.policy.deleteTitle'), {
+      confirmButtonText: t('common.delete'),
+      cancelButtonText: t('common.cancel'),
       type: 'warning',
       confirmButtonClass: 'el-button--danger',
     })
@@ -507,7 +532,7 @@ async function removePolicy(policy: Policy): Promise<void> {
   }
   try {
     await deletePolicy(policy.id)
-    ElMessage.success('策略已删除')
+    ElMessage.success(t('policies.policy.deleted'))
     await load()
   } catch (error) {
     ElMessage.error(toApiError(error).message)
@@ -542,41 +567,41 @@ onMounted(load)
 
 <template>
   <div class="ax-page">
-    <PageHeader title="角色策略" description="用角色组与多类型策略控制用户的配额、上传、速率、处理与功能权限。">
+    <PageHeader :title="t('policies.page.title')" :description="t('policies.page.description')">
       <template #actions>
-        <el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button>
-        <el-button type="primary" :icon="Plus" @click="openCreateGroup">新建角色组</el-button>
+        <el-button :icon="Refresh" :loading="loading" @click="load">{{ t('common.refresh') }}</el-button>
+        <el-button type="primary" :icon="Plus" @click="openCreateGroup">{{ t('policies.actions.createGroup') }}</el-button>
       </template>
     </PageHeader>
 
     <ErrorState v-if="errorMessage" :message="errorMessage" @retry="load" />
 
     <div v-else-if="loading && groups.length === 0 && policies.length === 0">
-      <TableSkeleton :rows="8" :columns="5" title="正在加载角色策略" />
+      <TableSkeleton :rows="8" :columns="5" :title="t('policies.loading')" />
     </div>
 
     <el-tabs v-else v-model="activeTab" class="policy-tabs">
-      <el-tab-pane :label="`角色组 (${groups.length})`" name="groups">
+      <el-tab-pane :label="t('policies.tabs.groups', { count: groups.length })" name="groups">
         <EmptyState
           v-if="groups.length === 0"
-          title="暂无角色组"
-          description="新建角色组并为它绑定策略，随后可在用户管理中分配。"
+          :title="t('policies.empty.groups.title')"
+          :description="t('policies.empty.groups.description')"
         />
         <div v-else class="ax-card table-card">
           <div class="ax-table-scroll">
             <el-table :data="groups" style="width: 100%">
-              <el-table-column label="角色组" min-width="220">
+              <el-table-column :label="t('policies.columns.group')" min-width="220">
                 <template #default="{ row }">
                   <div class="group-cell">
                     <span class="group-cell__name">
                       {{ row.name }}
-                      <el-tag v-if="row.is_default" size="small" type="primary" effect="plain">默认</el-tag>
+                      <el-tag v-if="row.is_default" size="small" type="primary" effect="plain">{{ t('policies.tags.default') }}</el-tag>
                     </span>
                     <span class="group-cell__desc">{{ row.description || '—' }}</span>
                   </div>
                 </template>
               </el-table-column>
-              <el-table-column label="策略" min-width="260">
+              <el-table-column :label="t('policies.columns.policies')" min-width="260">
                 <template #default="{ row }">
                   <div class="policy-tags">
                     <el-tag
@@ -588,21 +613,21 @@ onMounted(load)
                     >
                       {{ typeMeta(policy.type).label }} · {{ policy.name }}
                     </el-tag>
-                    <span v-if="row.policies.length === 0" class="ax-muted">未绑定策略</span>
+                    <span v-if="row.policies.length === 0" class="ax-muted">{{ t('policies.tags.noPolicies') }}</span>
                   </div>
                 </template>
               </el-table-column>
-              <el-table-column label="用户数" width="90" align="right">
+              <el-table-column :label="t('policies.columns.users')" width="90" align="right">
                 <template #default="{ row }">{{ row.customer_count }}</template>
               </el-table-column>
-              <el-table-column label="更新时间" min-width="170">
+              <el-table-column :label="t('policies.columns.updatedAt')" min-width="170">
                 <template #default="{ row }">{{ formatDateTime(row.updated_at) }}</template>
               </el-table-column>
-              <el-table-column label="操作" fixed="right" width="280" align="right">
+              <el-table-column :label="t('common.actions')" fixed="right" width="280" align="right">
                 <template #default="{ row }">
                   <div class="ax-row-actions">
-                    <el-button link type="primary" :icon="Link" @click="openBind(row)">绑定策略</el-button>
-                    <el-button link type="primary" :icon="EditPen" @click="openEditGroup(row)">编辑</el-button>
+                    <el-button link type="primary" :icon="Link" @click="openBind(row)">{{ t('policies.actions.bind') }}</el-button>
+                    <el-button link type="primary" :icon="EditPen" @click="openEditGroup(row)">{{ t('common.edit') }}</el-button>
                     <el-tooltip
                       :disabled="!groupDeleteBlockedReason(row)"
                       :content="groupDeleteBlockedReason(row)"
@@ -616,7 +641,7 @@ onMounted(load)
                           :disabled="Boolean(groupDeleteBlockedReason(row))"
                           @click="removeGroup(row)"
                         >
-                          删除
+                          {{ t('common.delete') }}
                         </el-button>
                       </span>
                     </el-tooltip>
@@ -628,19 +653,19 @@ onMounted(load)
         </div>
       </el-tab-pane>
 
-      <el-tab-pane :label="`策略 (${policies.length})`" name="policies">
+      <el-tab-pane :label="t('policies.tabs.policies', { count: policies.length })" name="policies">
         <div class="policy-toolbar">
-          <el-button type="primary" :icon="Plus" @click="openCreatePolicy">新建策略</el-button>
+          <el-button type="primary" :icon="Plus" @click="openCreatePolicy">{{ t('policies.actions.createPolicy') }}</el-button>
         </div>
         <EmptyState
           v-if="policies.length === 0"
-          title="暂无策略"
-          description="创建配额、上传、速率、图片处理或功能开关策略。"
+          :title="t('policies.empty.policies.title')"
+          :description="t('policies.empty.policies.description')"
         />
         <div v-else class="ax-card table-card">
           <div class="ax-table-scroll">
             <el-table :data="policies" style="width: 100%">
-              <el-table-column label="策略" min-width="200">
+              <el-table-column :label="t('policies.columns.policies')" min-width="200">
                 <template #default="{ row }">
                   <div class="group-cell">
                     <span class="group-cell__name">{{ row.name }}</span>
@@ -648,27 +673,27 @@ onMounted(load)
                   </div>
                 </template>
               </el-table-column>
-              <el-table-column label="类型" width="120">
+              <el-table-column :label="t('policies.columns.type')" width="120">
                 <template #default="{ row }">
                   <el-tag size="small" :type="(typeMeta(row.type).tag as any)" effect="plain">
                     {{ typeMeta(row.type).label }}
                   </el-tag>
                 </template>
               </el-table-column>
-              <el-table-column label="状态" width="100">
+              <el-table-column :label="t('common.status')" width="100">
                 <template #default="{ row }">
                   <el-tag size="small" :type="row.enabled ? 'success' : 'info'" effect="plain">
-                    {{ row.enabled ? '启用' : '停用' }}
+                    {{ row.enabled ? t('policies.policyStatus.enabled') : t('policies.policyStatus.disabled') }}
                   </el-tag>
                 </template>
               </el-table-column>
-              <el-table-column label="更新时间" min-width="170">
+              <el-table-column :label="t('policies.columns.updatedAt')" min-width="170">
                 <template #default="{ row }">{{ formatDateTime(row.updated_at) }}</template>
               </el-table-column>
-              <el-table-column label="操作" fixed="right" width="170" align="right">
+              <el-table-column :label="t('common.actions')" fixed="right" width="170" align="right">
                 <template #default="{ row }">
                   <div class="ax-row-actions">
-                    <el-button link type="primary" :icon="EditPen" @click="openEditPolicy(row)">编辑</el-button>
+                    <el-button link type="primary" :icon="EditPen" @click="openEditPolicy(row)">{{ t('common.edit') }}</el-button>
                     <el-tooltip
                       :disabled="!policyDeleteBlockedReason(row)"
                       :content="policyDeleteBlockedReason(row)"
@@ -682,7 +707,7 @@ onMounted(load)
                           :disabled="Boolean(policyDeleteBlockedReason(row))"
                           @click="removePolicy(row)"
                         >
-                          删除
+                          {{ t('common.delete') }}
                         </el-button>
                       </span>
                     </el-tooltip>
@@ -698,7 +723,7 @@ onMounted(load)
     <!-- 角色组编辑 -->
     <el-dialog
       v-model="groupOpen"
-      :title="editingGroupId ? '编辑角色组' : '新建角色组'"
+      :title="editingGroupId ? t('policies.groups.editTitle') : t('policies.groups.createTitle')"
       width="min(480px, 92vw)"
       append-to-body
       :close-on-click-modal="false"
@@ -706,27 +731,27 @@ onMounted(load)
       @closed="groupFormRef?.clearValidate()"
     >
       <el-form ref="groupFormRef" :model="groupForm" :rules="groupRules" label-position="top" @submit.prevent="submitGroup">
-        <el-form-item label="名称" prop="name">
-          <el-input v-model="groupForm.name" placeholder="例如：VIP 用户" maxlength="64" />
+        <el-form-item :label="t('policies.groups.name')" prop="name">
+          <el-input v-model="groupForm.name" :placeholder="t('policies.groups.namePlaceholder')" maxlength="64" />
         </el-form-item>
-        <el-form-item label="简介">
-          <el-input v-model="groupForm.description" type="textarea" :rows="2" maxlength="255" placeholder="可选" />
+        <el-form-item :label="t('policies.groups.description')">
+          <el-input v-model="groupForm.description" type="textarea" :rows="2" maxlength="255" :placeholder="t('policies.groups.descriptionPlaceholder')" />
         </el-form-item>
-        <el-form-item label="设为默认组">
+        <el-form-item :label="t('policies.groups.isDefault')">
           <el-switch v-model="groupForm.is_default" />
-          <span class="form-hint">新注册用户默认加入该角色组（全库至多一个）。</span>
+          <span class="form-hint">{{ t('policies.groups.defaultHint') }}</span>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="groupOpen = false">取消</el-button>
-        <el-button type="primary" :loading="groupSaving" @click="submitGroup">保存</el-button>
+        <el-button @click="groupOpen = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="groupSaving" @click="submitGroup">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 策略编辑 -->
     <el-dialog
       v-model="policyOpen"
-      :title="editingPolicyId ? '编辑策略' : '新建策略'"
+      :title="editingPolicyId ? t('policies.policy.editTitle') : t('policies.policy.createTitle')"
       width="min(560px, 92vw)"
       append-to-body
       :close-on-click-modal="false"
@@ -734,22 +759,22 @@ onMounted(load)
       @closed="policyFormRef?.clearValidate()"
     >
       <el-form ref="policyFormRef" :model="policyForm" :rules="policyRules" label-position="top" @submit.prevent="submitPolicy">
-        <el-form-item label="名称" prop="name">
-          <el-input v-model="policyForm.name" placeholder="例如：高配额" maxlength="64" />
+        <el-form-item :label="t('policies.policy.name')" prop="name">
+          <el-input v-model="policyForm.name" :placeholder="t('policies.policy.namePlaceholder')" maxlength="64" />
         </el-form-item>
-        <el-form-item label="类型" prop="type">
+        <el-form-item :label="t('policies.policy.type')" prop="type">
           <el-select v-model="policyForm.type" style="width: 100%" @change="onPolicyTypeChange">
-            <el-option v-for="t in policyTypes" :key="t.value" :label="t.label" :value="t.value" />
+            <el-option v-for="item in policyTypes" :key="item.value" :label="item.label" :value="item.value" />
           </el-select>
         </el-form-item>
-        <el-form-item label="简介">
-          <el-input v-model="policyForm.description" type="textarea" :rows="2" maxlength="255" placeholder="可选" />
+        <el-form-item :label="t('policies.policy.description')">
+          <el-input v-model="policyForm.description" type="textarea" :rows="2" maxlength="255" :placeholder="t('policies.policy.descriptionPlaceholder')" />
         </el-form-item>
-        <el-form-item label="启用">
+        <el-form-item :label="t('policies.policy.enabled')">
           <el-switch v-model="policyForm.enabled" />
         </el-form-item>
 
-        <el-form-item label="快速预设">
+        <el-form-item :label="t('policies.form.quickPreset')">
           <div class="preset-row">
             <el-button
               v-for="preset in policyPresets[policyForm.type]"
@@ -760,32 +785,32 @@ onMounted(load)
               {{ preset.label }}
             </el-button>
           </div>
-          <div class="form-hint">一键套用常用参数，可在下方继续微调。</div>
+          <div class="form-hint">{{ t('policies.form.presetHint') }}</div>
         </el-form-item>
 
-        <el-form-item label="配置方式">
+        <el-form-item :label="t('policies.form.settingsMode')">
           <el-radio-group v-model="settingsMode">
-            <el-radio-button value="form">表单</el-radio-button>
-            <el-radio-button value="json">高级 JSON</el-radio-button>
+            <el-radio-button value="form">{{ t('policies.form.modeForm') }}</el-radio-button>
+            <el-radio-button value="json">{{ t('policies.form.modeJson') }}</el-radio-button>
           </el-radio-group>
         </el-form-item>
 
         <template v-if="settingsMode === 'form'">
-          <div class="form-hint settings-hint">初始值来自系统默认策略；仅调整需要覆盖的字段即可，保存后未修改的字段保持默认。</div>
+          <div class="form-hint settings-hint">{{ t('policies.form.settingsHint') }}</div>
 
           <!-- 配额 -->
-          <el-form-item v-if="policyForm.type === 'quota'" label="存储配额">
+          <el-form-item v-if="policyForm.type === 'quota'" :label="t('policies.form.quota')">
             <el-input-number v-model="quotaMB" :min="0" :step="128" controls-position="right" style="width: 200px" />
-            <span class="form-hint form-hint--inline">单位 MiB，0 表示不限</span>
+            <span class="form-hint form-hint--inline">{{ t('policies.form.unitHint') }}</span>
           </el-form-item>
 
           <!-- 上传 -->
           <template v-else-if="policyForm.type === 'upload'">
-            <el-form-item label="单文件上限">
+            <el-form-item :label="t('policies.form.maxSize')">
               <el-input-number v-model="maxSizeMB" :min="0" :step="1" controls-position="right" style="width: 200px" />
-              <span class="form-hint form-hint--inline">单位 MiB，0 表示不限</span>
+              <span class="form-hint form-hint--inline">{{ t('policies.form.unitHint') }}</span>
             </el-form-item>
-            <el-form-item label="允许的媒体类型">
+            <el-form-item :label="t('policies.form.allowedMime')">
               <el-select v-model="allowedMimeTypes" multiple filterable allow-create default-first-option style="width: 100%">
                 <el-option v-for="mime in mimeOptions" :key="mime" :label="mime" :value="mime" />
               </el-select>
@@ -794,37 +819,37 @@ onMounted(load)
 
           <!-- 速率 -->
           <div v-else-if="policyForm.type === 'rate'" class="field-grid">
-            <el-form-item label="上传 / 分钟">
+            <el-form-item :label="t('policies.form.uploadPerMinute')">
               <el-input-number v-model="uploadPerMinute" :min="0" controls-position="right" style="width: 100%" />
             </el-form-item>
-            <el-form-item label="上传突发">
+            <el-form-item :label="t('policies.form.uploadBurst')">
               <el-input-number v-model="uploadBurst" :min="0" controls-position="right" style="width: 100%" />
             </el-form-item>
-            <el-form-item label="图片 / 分钟">
+            <el-form-item :label="t('policies.form.imagePerMinute')">
               <el-input-number v-model="imagePerMinute" :min="0" controls-position="right" style="width: 100%" />
             </el-form-item>
-            <el-form-item label="图片突发">
+            <el-form-item :label="t('policies.form.imageBurst')">
               <el-input-number v-model="imageBurst" :min="0" controls-position="right" style="width: 100%" />
             </el-form-item>
           </div>
 
           <!-- 图片处理 -->
           <template v-else-if="policyForm.type === 'processing'">
-            <el-form-item label="启用图片处理">
+            <el-form-item :label="t('policies.form.processingEnabled')">
               <el-switch v-model="processingEnabled" />
             </el-form-item>
             <div class="field-grid">
-              <el-form-item label="最大宽度">
+              <el-form-item :label="t('policies.form.maxWidth')">
                 <el-input-number v-model="maxWidth" :min="1" :step="256" controls-position="right" style="width: 100%" />
               </el-form-item>
-              <el-form-item label="最大高度">
+              <el-form-item :label="t('policies.form.maxHeight')">
                 <el-input-number v-model="maxHeight" :min="1" :step="256" controls-position="right" style="width: 100%" />
               </el-form-item>
-              <el-form-item label="默认质量">
+              <el-form-item :label="t('policies.form.defaultQuality')">
                 <el-input-number v-model="defaultQuality" :min="1" :max="100" controls-position="right" style="width: 100%" />
               </el-form-item>
             </div>
-            <el-form-item label="允许的输出格式">
+            <el-form-item :label="t('policies.form.allowedFormats')">
               <el-select v-model="allowedFormats" multiple filterable allow-create default-first-option style="width: 100%">
                 <el-option v-for="format in formatOptions" :key="format" :label="format" :value="format" />
               </el-select>
@@ -832,7 +857,7 @@ onMounted(load)
           </template>
 
           <!-- 功能开关 -->
-          <el-form-item v-else-if="policyForm.type === 'feature'" label="功能开关">
+          <el-form-item v-else-if="policyForm.type === 'feature'" :label="t('policies.form.features')">
             <div class="feature-grid">
               <el-checkbox
                 v-for="f in featureOptions"
@@ -846,43 +871,43 @@ onMounted(load)
           </el-form-item>
         </template>
 
-        <el-form-item v-else label="设置（JSON）">
+        <el-form-item v-else :label="t('policies.form.settingsJson')">
           <el-input v-model="policyForm.settingsText" type="textarea" :rows="10" spellcheck="false" class="settings-input" />
           <div class="form-hint">
             {{ typeMeta(policyForm.type).hint }}
-            <el-button link type="primary" @click="applyTemplate(policyForm.type)">填入默认模板</el-button>
+            <el-button link type="primary" @click="applyTemplate(policyForm.type)">{{ t('policies.actions.applyTemplate') }}</el-button>
           </div>
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="policyOpen = false">取消</el-button>
-        <el-button type="primary" :loading="policySaving" @click="submitPolicy">保存</el-button>
+        <el-button @click="policyOpen = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="policySaving" @click="submitPolicy">{{ t('common.save') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 策略绑定 -->
-    <el-dialog v-model="bindOpen" :title="`为「${bindingGroupName}」绑定策略`" width="min(560px, 92vw)" append-to-body>
-      <p class="bind-hint">每个类型保留一个策略；同一类型选择新策略会替换旧的绑定。</p>
-      <div v-for="t in policyTypes" :key="t.value" class="bind-row">
+    <el-dialog v-model="bindOpen" :title="t('policies.bind.title', { name: bindingGroupName })" width="min(560px, 92vw)" append-to-body>
+      <p class="bind-hint">{{ t('policies.bind.hint') }}</p>
+      <div v-for="item in policyTypes" :key="item.value" class="bind-row">
         <div class="bind-row__label">
-          <el-tag size="small" :type="(t.tag as any)" effect="plain">{{ t.label }}</el-tag>
+          <el-tag size="small" :type="(item.tag as any)" effect="plain">{{ item.label }}</el-tag>
         </div>
         <el-select
-          :model-value="boundPolicyFor(t.value)"
+          :model-value="boundPolicyFor(item.value)"
           clearable
-          :placeholder="filteredPolicies(t.value).length ? '未绑定' : '该类型暂无策略'"
-          :disabled="filteredPolicies(t.value).length === 0"
+          :placeholder="filteredPolicies(item.value).length ? t('policies.bind.unbound') : t('policies.bind.noPolicies')"
+          :disabled="filteredPolicies(item.value).length === 0"
           style="flex: 1"
-          @update:model-value="(value: string) => onBindChange(t.value, value ?? '')"
+          @update:model-value="(value: string) => onBindChange(item.value, value ?? '')"
         >
-          <el-option v-for="p in filteredPolicies(t.value)" :key="p.id" :label="p.name" :value="p.id">
+          <el-option v-for="p in filteredPolicies(item.value)" :key="p.id" :label="p.name" :value="p.id">
             <span>{{ p.name }}</span>
-            <span class="ax-muted" style="margin-left: 8px">{{ p.enabled ? '' : '（停用）' }}</span>
+            <span class="ax-muted" style="margin-left: 8px">{{ p.enabled ? '' : t('policies.bind.disabledSuffix') }}</span>
           </el-option>
         </el-select>
       </div>
       <template #footer>
-        <el-button type="primary" @click="bindOpen = false">完成</el-button>
+        <el-button type="primary" @click="bindOpen = false">{{ t('policies.actions.complete') }}</el-button>
       </template>
     </el-dialog>
   </div>

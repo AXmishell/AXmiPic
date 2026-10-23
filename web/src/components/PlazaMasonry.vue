@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 import { toApiError } from '@/api/client'
 import { listPlaza } from '@/api/images'
 import type { ImageItem } from '@/api/types'
 import ImageViewer from '@/components/ImageViewer.vue'
 
+const { t } = useI18n()
 const props = withDefaults(defineProps<{ pageSize?: number }>(), { pageSize: 30 })
 
 const items = ref<ImageItem[]>([])
@@ -135,7 +137,7 @@ onBeforeUnmount(() => {
       show-icon
       :title="errorMessage"
     >
-      <el-button link type="primary" @click="retry">重试</el-button>
+      <el-button link type="primary" @click="retry">{{ t('common.retry') }}</el-button>
     </el-alert>
 
     <div v-if="items.length === 0 && loading" class="pm__masonry">
@@ -149,7 +151,9 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <p v-else-if="items.length === 0 && !loading" class="pm__empty">暂无公开图片</p>
+    <p v-else-if="items.length === 0 && !loading" class="pm__empty">
+      {{ t('plazaMasonry.empty') }}
+    </p>
 
     <div v-else class="pm__masonry">
       <div v-for="(col, ci) in columns" :key="ci" class="pm__col">
@@ -169,7 +173,7 @@ onBeforeUnmount(() => {
               :alt="item.original_name || item.key"
               @error="onPreviewError(item.id)"
             />
-            <span v-else class="pm__fallback">预览不可用</span>
+            <span v-else class="pm__fallback">{{ t('plazaMasonry.previewUnavailable') }}</span>
 
             <div class="pm__overlay">
               <p class="pm__name" :title="item.original_name || item.filename || item.key">
@@ -177,7 +181,7 @@ onBeforeUnmount(() => {
               </p>
               <p class="pm__author" @click.stop>
                 <template v-if="item.author_name || item.author_handle">
-                  作者：
+                  {{ t('plazaMasonry.authorLabel') }}
                   <a
                     v-if="item.author_url"
                     :href="item.author_url"
@@ -192,7 +196,9 @@ onBeforeUnmount(() => {
                     <span v-if="item.author_name && item.author_handle">@{{ item.author_handle }}</span>
                   </template>
                 </template>
-                <template v-else>上传者：{{ item.owner_username || '匿名' }}</template>
+                <template v-else>
+                  {{ t('plazaMasonry.uploader', { name: item.owner_username || t('plazaMasonry.anonymous') }) }}
+                </template>
               </p>
             </div>
           </div>
@@ -201,8 +207,8 @@ onBeforeUnmount(() => {
     </div>
 
     <div ref="sentinel" class="pm__sentinel" aria-hidden="true">
-      <span v-if="loading && items.length > 0">正在加载更多…</span>
-      <span v-else-if="!hasMore && items.length > 0">已经到底啦</span>
+      <span v-if="loading && items.length > 0">{{ t('plazaMasonry.loadingMore') }}</span>
+      <span v-else-if="!hasMore && items.length > 0">{{ t('plazaMasonry.end') }}</span>
     </div>
 
     <ImageViewer v-model="viewerOpen" v-model:index="viewerIndex" :items="items" />

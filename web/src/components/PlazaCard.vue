@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { Picture } from '@element-plus/icons-vue'
 
 import type { ImageItem } from '@/api/types'
 import { formatBytes, formatDateTime, formatDimensions, formatMime } from '@/utils/format'
 
+const { t } = useI18n()
 const props = defineProps<{ item: ImageItem; masonry?: boolean; failed?: boolean }>()
 const emit = defineEmits<{ open: [item: ImageItem]; error: [id: string] }>()
 
@@ -35,7 +37,7 @@ const thumbStyle = computed(() =>
       />
       <span v-else class="pc__fallback">
         <el-icon :size="20"><Picture /></el-icon>
-        <span>预览不可用</span>
+        <span>{{ t('plazaCard.previewUnavailable') }}</span>
       </span>
 
       <div class="pc__overlay">
@@ -43,7 +45,7 @@ const thumbStyle = computed(() =>
           <p class="pc__name" :title="name">{{ name }}</p>
           <p class="pc__author" @click.stop>
             <template v-if="item.author_name || item.author_handle">
-              作者：
+              {{ t('plazaCard.authorLabel') }}
               <a
                 v-if="item.author_url"
                 :href="item.author_url"
@@ -58,24 +60,26 @@ const thumbStyle = computed(() =>
                 <span v-if="item.author_name && item.author_handle">@{{ item.author_handle }}</span>
               </template>
             </template>
-            <template v-else>上传者：{{ item.owner_username || '匿名' }}</template>
+            <template v-else>
+              {{ t('plazaCard.uploader', { name: item.owner_username || t('plazaCard.anonymous') }) }}
+            </template>
           </p>
         </div>
         <dl class="pc__meta">
           <div class="pc__meta-row">
-            <dt>尺寸</dt>
+            <dt>{{ t('plazaCard.meta.dimensions') }}</dt>
             <dd>{{ formatDimensions(item.width, item.height) }}</dd>
           </div>
           <div class="pc__meta-row">
-            <dt>大小</dt>
+            <dt>{{ t('plazaCard.meta.size') }}</dt>
             <dd>{{ formatBytes(item.size) }}</dd>
           </div>
           <div class="pc__meta-row">
-            <dt>格式</dt>
+            <dt>{{ t('plazaCard.meta.format') }}</dt>
             <dd>{{ formatMime(item.mime_type) }}</dd>
           </div>
           <div class="pc__meta-row">
-            <dt>上传</dt>
+            <dt>{{ t('plazaCard.meta.uploadedAt') }}</dt>
             <dd>{{ formatDateTime(item.created_at) }}</dd>
           </div>
         </dl>

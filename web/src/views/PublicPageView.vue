@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 
 import { toApiError } from '@/api/client'
 import { getPage } from '@/api/site'
 import type { Page } from '@/api/types'
 
+const { t } = useI18n()
 const route = useRoute()
 const slug = computed(() => String(route.params.slug ?? ''))
 
@@ -89,7 +91,7 @@ onMounted(load)
 <template>
   <main class="page-view">
     <article class="page-view__card">
-      <div v-if="loading" class="page-view__state">正在加载…</div>
+      <div v-if="loading" class="page-view__state">{{ t('publicPage.loading') }}</div>
       <div v-else-if="errorMessage" class="page-view__state page-view__state--error">{{ errorMessage }}</div>
       <template v-else-if="page">
         <h1 class="page-view__title">{{ page.title }}</h1>

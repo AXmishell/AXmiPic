@@ -19,6 +19,7 @@ import type {
   User,
   UserPreferences,
 } from '@/api/types'
+import { translate } from '@/i18n'
 import { useAppStore } from '@/stores/app'
 
 /** 登录结果：直接成功，或需要完成 TOTP 二次验证。 */
@@ -192,7 +193,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   function applySession(result: LoginResult): User {
     if (!result.token || !result.user) {
-      throw new Error('登录响应缺少会话令牌')
+      throw new Error(translate('errors.sessionTokenMissing'))
     }
     token.value = result.token
     expiresAt.value = result.expires_at ?? ''

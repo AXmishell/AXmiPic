@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 import type { DailyStat } from '@/api/types'
 import { formatBytes, formatNumber } from '@/utils/format'
 
+const { t } = useI18n()
 const props = withDefaults(
   defineProps<{
     points: DailyStat[]
@@ -18,7 +20,7 @@ const totalBytes = computed(() => props.points.reduce((sum, point) => sum + poin
 const today = new Date().toLocaleDateString('sv-SE')
 
 function dayLabel(date: string): string {
-  if (date === today) return '今天'
+  if (date === today) return t('trendChart.today')
   const [, month, day] = date.split('-')
   return `${Number(month)}/${Number(day)}`
 }
@@ -29,7 +31,11 @@ function barHeight(point: DailyStat): string {
 }
 
 function describe(point: DailyStat): string {
-  return `${point.date}：${formatNumber(point.images)} 张，${formatBytes(point.bytes)}`
+  return t('trendChart.description', {
+    date: point.date,
+    count: formatNumber(point.images),
+    bytes: formatBytes(point.bytes),
+  })
 }
 </script>
 
@@ -37,7 +43,7 @@ function describe(point: DailyStat): string {
   <div class="trend" :style="{ '--trend-height': `${height}px` }">
     <div class="trend__plot">
       <div class="trend__grid" aria-hidden="true" />
-      <div class="trend__cols" role="list" :aria-label="`近 ${points.length} 日上传趋势`">
+      <div class="trend__cols" role="list" :aria-label="t('trendChart.ariaLabel', { count: points.length })">
         <div
           v-for="point in points"
           :key="point.date"
@@ -57,9 +63,13 @@ function describe(point: DailyStat): string {
       </div>
     </div>
     <p class="trend__summary">
-      <span>近 {{ points.length }} 日新增 <strong>{{ formatNumber(totalImages) }}</strong> 张</span>
+      <span>
+        {{ t('trendChart.added', { count: points.length }) }}
+        <strong>{{ formatNumber(totalImages) }}</strong>
+        {{ t('trendChart.imagesUnit') }}
+      </span>
       <span class="trend__dot" aria-hidden="true" />
-      <span>约 {{ formatBytes(totalBytes) }}</span>
+      <span>{{ t('trendChart.approx', { bytes: formatBytes(totalBytes) }) }}</span>
     </p>
   </div>
 </template>

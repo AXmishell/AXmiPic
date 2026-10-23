@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, ref, onBeforeUnmount } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus'
 import { CopyDocument, Select } from '@element-plus/icons-vue'
 
 import { copyText } from '@/utils/clipboard'
 
+const { t } = useI18n()
 const props = defineProps<{
   value: string
   label?: string
@@ -18,10 +20,10 @@ const hasValue = computed(() => props.value.length > 0)
 async function handleCopy(): Promise<void> {
   const ok = await copyText(props.value)
   if (!ok) {
-    ElMessage.error('复制失败，请手动选择文本复制')
+    ElMessage.error(t('copyField.copyFailed'))
     return
   }
-  ElMessage.success('已复制到剪贴板')
+  ElMessage.success(t('copyField.copiedToClipboard'))
   copied.value = true
   window.clearTimeout(timer)
   timer = window.setTimeout(() => {
@@ -44,7 +46,7 @@ onBeforeUnmount(() => {
           <Select v-if="copied" />
           <CopyDocument v-else />
         </el-icon>
-        {{ copied ? '已复制' : '复制' }}
+        {{ copied ? t('copyField.copied') : t('copyField.copy') }}
       </el-button>
     </div>
   </div>

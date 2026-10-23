@@ -50,21 +50,25 @@ import '@/styles/element.css'
 
 import App from './App.vue'
 import router from './router'
+import i18n from '@/i18n'
 import { configureAuth } from '@/api/client'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
+import { useLocaleStore } from '@/stores/locale'
 import { useThemeStore } from '@/stores/theme'
 
 const app = createApp(App)
 const pinia = createPinia()
 
 app.use(pinia)
+app.use(i18n)
 app.use(router)
 // 注册 v-loading 指令；此前只有组件被手动注册，表格上的 v-loading 实际不生效。
 app.use(ElLoading)
 
-// 在挂载前应用已持久化（或系统偏好）的主题。
+// 在挂载前应用已持久化（或系统偏好）的主题与语言。
 useThemeStore(pinia).init()
+useLocaleStore(pinia).init()
 
 const globalComponents: Component[] = [
   ElAlert,

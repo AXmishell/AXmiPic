@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { Refresh } from '@element-plus/icons-vue'
 
 import { getNotifyLogs, type NotifyLog } from '@/api/billing'
@@ -9,6 +10,8 @@ import ErrorState from '@/components/ErrorState.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import TableSkeleton from '@/components/TableSkeleton.vue'
 import { formatDateTime } from '@/utils/format'
+
+const { t } = useI18n()
 
 const logChannel = ref<'email' | 'sms'>('email')
 const notifyLogs = ref<NotifyLog[]>([])
@@ -60,16 +63,16 @@ onMounted(loadNotifyLogs)
 
 <template>
   <div class="ax-page">
-    <PageHeader title="邮件日志" description="查看邮件与短信通知的发送记录，日志保留 30 天。">
+    <PageHeader :title="t('notifyLogs.title')" :description="t('notifyLogs.description')">
       <template #actions>
         <el-radio-group
           :model-value="logChannel"
           @change="switchLogChannel($event as 'email' | 'sms')"
         >
-          <el-radio-button value="email">邮件</el-radio-button>
-          <el-radio-button value="sms">短信</el-radio-button>
+          <el-radio-button value="email">{{ t('notifyLogs.channels.email') }}</el-radio-button>
+          <el-radio-button value="sms">{{ t('notifyLogs.channels.sms') }}</el-radio-button>
         </el-radio-group>
-        <el-button :icon="Refresh" :loading="logsLoading" @click="loadNotifyLogs">刷新</el-button>
+        <el-button :icon="Refresh" :loading="logsLoading" @click="loadNotifyLogs">{{ t('common.refresh') }}</el-button>
       </template>
     </PageHeader>
 
@@ -79,38 +82,38 @@ onMounted(loadNotifyLogs)
       v-else-if="logsLoading && notifyLogs.length === 0"
       :rows="8"
       :columns="5"
-      title="正在加载通知日志"
+      :title="t('notifyLogs.loading')"
     />
 
     <article v-else class="ax-card">
       <div class="ax-card__body">
         <EmptyState
           v-if="notifyLogs.length === 0"
-          title="暂无日志"
-          :description="logChannel === 'email' ? '最近 30 天没有邮件发送记录。' : '最近 30 天没有短信发送记录。'"
+          :title="t('notifyLogs.empty.title')"
+          :description="logChannel === 'email' ? t('notifyLogs.empty.email') : t('notifyLogs.empty.sms')"
         />
         <el-table v-else :data="notifyLogs" style="width: 100%">
-          <el-table-column label="时间" width="180">
+          <el-table-column :label="t('notifyLogs.columns.time')" width="180">
             <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
           </el-table-column>
-          <el-table-column prop="to" label="接收方" min-width="180" show-overflow-tooltip />
+          <el-table-column prop="to" :label="t('notifyLogs.columns.recipient')" min-width="180" show-overflow-tooltip />
           <el-table-column
             v-if="logChannel === 'email'"
             prop="subject"
-            label="主题"
+            :label="t('notifyLogs.columns.subject')"
             min-width="160"
             show-overflow-tooltip
           />
-          <el-table-column label="状态" width="100">
+          <el-table-column :label="t('notifyLogs.columns.status')" width="100">
             <template #default="{ row }">
               <el-tooltip v-if="row.status === 'failed' && row.error" :content="row.error" placement="top">
-                <el-tag type="danger" size="small" effect="plain">失败</el-tag>
+                <el-tag type="danger" size="small" effect="plain">{{ t('notifyLogs.status.failed') }}</el-tag>
               </el-tooltip>
-              <el-tag v-else type="success" size="small" effect="plain">成功</el-tag>
+              <el-tag v-else type="success" size="small" effect="plain">{{ t('notifyLogs.status.success') }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="provider" label="渠道" width="100" />
-          <el-table-column prop="body" label="内容" min-width="260" show-overflow-tooltip />
+          <el-table-column prop="provider" :label="t('notifyLogs.columns.channel')" width="100" />
+          <el-table-column prop="body" :label="t('notifyLogs.columns.body')" min-width="260" show-overflow-tooltip />
         </el-table>
         <div v-if="logsTotal > 0" class="notify-logs__pager">
           <el-pagination

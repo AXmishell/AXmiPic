@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, type UploadFile } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 
 import {
   getActivePlugin,
@@ -46,6 +47,8 @@ const configName = ref('')
 const route = useRoute()
 const router = useRouter()
 
+const { t } = useI18n()
+
 /** 载入已安装插件及其状态。 */
 async function loadInstalled(): Promise<void> {
   installedLoading.value = true
@@ -88,7 +91,7 @@ function isNotifyPlugin(row: PluginStatus): boolean {
 async function setActive(row: PluginStatus): Promise<void> {
   try {
     await setActivePlugin(row.category, row.name)
-    ElMessage.success(`已将 ${row.name} 设为当前渠道`)
+    ElMessage.success(t('plugins.messages.activeSet', { name: row.name }))
     await loadActive()
   } catch (error) {
     ElMessage.error(toApiError(error).message)
@@ -121,7 +124,7 @@ async function installFromMarket(entry: PluginMarketEntry): Promise<void> {
   installing.value = true
   try {
     await installPlugin({ name: entry.name, version: entry.version })
-    ElMessage.success(`已安装 ${entry.name}`)
+    ElMessage.success(t('plugins.messages.installed', { name: entry.name }))
     await loadInstalled()
   } catch (error) {
     ElMessage.error(toApiError(error).message)
@@ -133,7 +136,7 @@ async function installFromMarket(entry: PluginMarketEntry): Promise<void> {
 /** 按 URL 安装。 */
 async function installFromURL(): Promise<void> {
   if (!installUrl.value.trim()) {
-    ElMessage.warning('请输入插件归档地址')
+    ElMessage.warning(t('plugins.messages.enterArchiveUrl'))
     return
   }
   installing.value = true
@@ -143,7 +146,7 @@ async function installFromURL(): Promise<void> {
       sha256: installSha.value.trim(),
       signature: installSig.value.trim(),
     })
-    ElMessage.success('安装成功')
+    ElMessage.success(t('plugins.messages.installSuccess'))
     installUrl.value = ''
     installSha.value = ''
     installSig.value = ''
@@ -168,7 +171,7 @@ function onFileRemove(): void {
 /** 上传本地归档安装。 */
 async function installFromUpload(): Promise<void> {
   if (!uploadFile.value) {
-    ElMessage.warning('请选择插件归档（zip）')
+    ElMessage.warning(t('plugins.messages.selectArchive'))
     return
   }
   installing.value = true
@@ -178,7 +181,7 @@ async function installFromUpload(): Promise<void> {
       uploadSha.value.trim(),
       uploadSig.value.trim(),
     )
-    ElMessage.success('安装成功')
+    ElMessage.success(t('plugins.messages.installSuccess'))
     uploadFile.value = null
     uploadSha.value = ''
     uploadSig.value = ''
@@ -195,7 +198,7 @@ async function toggleEnabled(row: PluginStatus): Promise<void> {
   toggling.value = row.name
   try {
     await setPluginEnabled(row.name, !row.enabled)
-    ElMessage.success(row.enabled ? `已暂停 ${row.name}` : `已启用 ${row.name}`)
+    ElMessage.success(row.enabled ? t('plugins.messages.paused', { name: row.name }) : t('plugins.messages.enabled', { name: row.name }))
     await loadInstalled()
   } catch (error) {
     ElMessage.error(toApiError(error).message)
@@ -209,7 +212,7 @@ async function removeByName(name: string): Promise<void> {
   removing.value = name
   try {
     await removePlugin(name)
-    ElMessage.success(`已卸载 ${name}`)
+    ElMessage.success(t('plugins.messages.removed', { name }))
     await loadInstalled()
   } catch (error) {
     ElMessage.error(toApiError(error).message)
@@ -222,7 +225,7 @@ async function removeByName(name: string): Promise<void> {
 async function reloadByName(name: string): Promise<void> {
   try {
     await reloadPlugin(name)
-    ElMessage.success(`已重新加载 ${name}`)
+    ElMessage.success(t('plugins.messages.reloaded', { name }))
     await loadInstalled()
   } catch (error) {
     ElMessage.error(toApiError(error).message)
@@ -252,7 +255,7 @@ onMounted(async () => {
     if (row) {
       openConfig(row)
     } else {
-      ElMessage.warning(`插件「${target}」未安装`)
+      ElMessage.warning(t('plugins.messages.notInstalled', { name: target }))
       clearConfigQuery()
     }
   }
@@ -262,9 +265,9 @@ onMounted(async () => {
 
 <template>
   <div class="ax-page">
-    <PageHeader title="插件市场" description="在线安装、配置并管理运行时插件（WASM / 进程）。">
+    <PageHeader :title="t('plugins.page.title')" :description="t('plugins.page.description')">
       <template #actions>
-        <el-button :loading="marketLoading" @click="loadRegistry">刷新市场</el-button>
+        <el-button :loading="marketLoading" @click="loadRegistry">{{ t('plugins.actions.refreshMarket') }}</el-button>
       </template>
     </PageHeader>
 
@@ -279,41 +282,41 @@ onMounted(async () => {
 
     <article class="ax-card">
       <header class="ax-card__head">
-        <h2 class="ax-card__title">已安装插件</h2>
-        <el-tag size="small" type="info" effect="plain">{{ installed.length }} 个</el-tag>
+        <h2 class="ax-card__title">{{ t('plugins.installed.title') }}</h2>
+        <el-tag size="small" type="info" effect="plain">{{ t('plugins.installed.count', { count: installed.length }) }}</el-tag>
       </header>
       <div class="ax-card__body">
-        <el-table v-loading="installedLoading" :data="installed" size="small" empty-text="暂无已安装插件">
-          <el-table-column label="名称" min-width="200">
+        <el-table v-loading="installedLoading" :data="installed" size="small" :empty-text="t('plugins.installed.empty')">
+          <el-table-column :label="t('plugins.installed.name')" min-width="200">
             <template #default="{ row }">
               <span>{{ row.title || row.name }}</span>
               <span class="plugin-key">{{ row.name }}</span>
               <el-tag v-if="row.builtin" size="small" type="success" effect="plain" class="plugin-tag">
-                内置
+                {{ t('plugins.badges.builtin') }}
               </el-tag>
               <el-tag v-else size="small" type="info" effect="plain" class="plugin-tag">
-                沙箱
+                {{ t('plugins.badges.sandbox') }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="category" label="类别" width="130" />
-          <el-table-column label="运行时" width="90">
+          <el-table-column prop="category" :label="t('plugins.installed.category')" width="130" />
+          <el-table-column :label="t('plugins.installed.runtime')" width="90">
             <template #default="{ row }">{{ row.runtime }}</template>
           </el-table-column>
-          <el-table-column label="状态" width="150">
+          <el-table-column :label="t('plugins.installed.status')" width="150">
             <template #default="{ row }">
               <el-tag size="small" :type="row.enabled ? 'success' : 'info'" effect="plain">
-                {{ row.enabled ? '已启用' : '已暂停' }}
+                {{ row.enabled ? t('plugins.status.enabled') : t('plugins.status.paused') }}
               </el-tag>
               <el-tag v-if="isActive(row)" size="small" type="primary" effect="plain" class="plugin-tag">
-                当前渠道
+                {{ t('plugins.badges.active') }}
               </el-tag>
               <el-tag v-else-if="row.configured" size="small" type="warning" effect="plain" class="plugin-tag">
-                已配置
+                {{ t('plugins.badges.configured') }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" fixed="right" width="390" align="right">
+          <el-table-column :label="t('common.actions')" fixed="right" width="390" align="right">
             <template #default="{ row }">
               <el-button
                 v-if="isNotifyPlugin(row) && !isActive(row)"
@@ -321,9 +324,9 @@ onMounted(async () => {
                 type="primary"
                 @click="setActive(row)"
               >
-                设为当前
+                {{ t('plugins.actions.setActive') }}
               </el-button>
-              <el-button size="small" @click="openConfig(row)">配置</el-button>
+              <el-button size="small" @click="openConfig(row)">{{ t('plugins.actions.config') }}</el-button>
               <template v-if="!row.builtin">
                 <el-button
                   size="small"
@@ -331,19 +334,19 @@ onMounted(async () => {
                   :loading="toggling === row.name"
                   @click="toggleEnabled(row)"
                 >
-                  {{ row.enabled ? '暂停' : '启用' }}
+                  {{ row.enabled ? t('plugins.actions.pause') : t('plugins.actions.enable') }}
                 </el-button>
-                <el-button size="small" @click="reloadByName(row.name)">重新加载</el-button>
+                <el-button size="small" @click="reloadByName(row.name)">{{ t('plugins.actions.reload') }}</el-button>
                 <el-button
                   size="small"
                   type="danger"
                   :loading="removing === row.name"
                   @click="removeByName(row.name)"
                 >
-                  卸载
+                  {{ t('plugins.actions.uninstall') }}
                 </el-button>
               </template>
-              <el-tag v-else size="small" type="info" effect="plain">编译内置</el-tag>
+              <el-tag v-else size="small" type="info" effect="plain">{{ t('plugins.badges.compiledIn') }}</el-tag>
             </template>
           </el-table-column>
         </el-table>
@@ -352,8 +355,8 @@ onMounted(async () => {
 
     <article class="ax-card">
       <header class="ax-card__head">
-        <h2 class="ax-card__title">本地上传安装</h2>
-        <el-tag size="small" type="info" effect="plain">zip 归档</el-tag>
+        <h2 class="ax-card__title">{{ t('plugins.upload.title') }}</h2>
+        <el-tag size="small" type="info" effect="plain">{{ t('plugins.upload.zip') }}</el-tag>
       </header>
       <div class="ax-card__body">
         <el-upload
@@ -364,39 +367,39 @@ onMounted(async () => {
           :on-change="onFileChange"
           :on-remove="onFileRemove"
         >
-          <div class="upload-hint">将插件 zip 拖到此处，或<em>点击选择</em></div>
+          <div class="upload-hint">{{ t('plugins.upload.dropHint') }}<em>{{ t('plugins.upload.clickToSelect') }}</em></div>
         </el-upload>
         <div class="install-row">
-          <el-input v-model="uploadSha" placeholder="sha256（可选）" style="max-width: 300px" />
+          <el-input v-model="uploadSha" :placeholder="t('plugins.upload.shaPlaceholder')" style="max-width: 300px" />
           <el-input
             v-model="uploadSig"
-            placeholder="Ed25519 签名 base64（可选）"
+            :placeholder="t('plugins.upload.sigPlaceholder')"
             style="max-width: 340px"
           />
         </div>
         <div class="install-actions">
-          <el-button type="primary" :loading="installing" @click="installFromUpload">上传并安装</el-button>
+          <el-button type="primary" :loading="installing" @click="installFromUpload">{{ t('plugins.upload.submit') }}</el-button>
         </div>
       </div>
     </article>
 
     <article class="ax-card">
       <header class="ax-card__head">
-        <h2 class="ax-card__title">市场索引</h2>
-        <el-tag size="small" type="info" effect="plain">{{ registry.length }} 个</el-tag>
+        <h2 class="ax-card__title">{{ t('plugins.market.title') }}</h2>
+        <el-tag size="small" type="info" effect="plain">{{ t('plugins.market.count', { count: registry.length }) }}</el-tag>
       </header>
       <div class="ax-card__body">
         <el-table
           v-loading="marketLoading"
           :data="registry"
           size="small"
-          :empty-text="registryConfigured ? '索引为空' : '未配置插件索引（plugins.index_url）'"
+          :empty-text="registryConfigured ? t('plugins.market.empty') : t('plugins.market.notConfigured')"
         >
-          <el-table-column prop="name" label="名称" min-width="150" />
-          <el-table-column prop="version" label="版本" width="90" />
-          <el-table-column prop="runtime" label="运行时" width="90" />
-          <el-table-column prop="description" label="说明" />
-          <el-table-column label="操作" fixed="right" width="110">
+          <el-table-column prop="name" :label="t('plugins.market.name')" min-width="150" />
+          <el-table-column prop="version" :label="t('plugins.market.version')" width="90" />
+          <el-table-column prop="runtime" :label="t('plugins.market.runtime')" width="90" />
+          <el-table-column prop="description" :label="t('plugins.market.description')" />
+          <el-table-column :label="t('common.actions')" fixed="right" width="110">
             <template #default="{ row }">
               <el-button
                 v-if="!isInstalled(row.name)"
@@ -405,9 +408,9 @@ onMounted(async () => {
                 :loading="installing"
                 @click="installFromMarket(row)"
               >
-                安装
+                {{ t('plugins.actions.install') }}
               </el-button>
-              <el-tag v-else size="small" type="success">已安装</el-tag>
+              <el-tag v-else size="small" type="success">{{ t('plugins.badges.installed') }}</el-tag>
             </template>
           </el-table-column>
         </el-table>
@@ -416,29 +419,29 @@ onMounted(async () => {
 
     <article class="ax-card">
       <header class="ax-card__head">
-        <h2 class="ax-card__title">按 URL 安装</h2>
+        <h2 class="ax-card__title">{{ t('plugins.url.title') }}</h2>
       </header>
       <div class="ax-card__body">
         <el-form label-position="top" @submit.prevent>
-          <el-form-item label="归档地址（zip）">
+          <el-form-item :label="t('plugins.url.archiveUrl')">
             <el-input v-model="installUrl" placeholder="https://example.com/smsbao-0.1.0.zip" />
           </el-form-item>
           <div class="install-row">
-            <el-input v-model="installSha" placeholder="sha256（可选）" style="max-width: 300px" />
+            <el-input v-model="installSha" :placeholder="t('plugins.upload.shaPlaceholder')" style="max-width: 300px" />
             <el-input
               v-model="installSig"
-              placeholder="Ed25519 签名 base64（可选）"
+              :placeholder="t('plugins.upload.sigPlaceholder')"
               style="max-width: 340px"
             />
           </div>
         </el-form>
         <div class="install-actions">
-          <el-button type="primary" :loading="installing" @click="installFromURL">安装</el-button>
+          <el-button type="primary" :loading="installing" @click="installFromURL">{{ t('plugins.url.submit') }}</el-button>
         </div>
       </div>
     </article>
 
-    <el-dialog v-model="configOpen" :title="`配置插件：${configName}`" width="640px" @closed="clearConfigQuery">
+    <el-dialog v-model="configOpen" :title="t('plugins.configDialog.title', { name: configName })" width="640px" @closed="clearConfigQuery">
       <PluginConfigForm v-if="configOpen" :name="configName" @saved="loadInstalled" />
     </el-dialog>
   </div>

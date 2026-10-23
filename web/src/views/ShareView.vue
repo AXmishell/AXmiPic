@@ -2,6 +2,7 @@
 import { onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import { Lock, Picture } from '@element-plus/icons-vue'
 
 import { toApiError } from '@/api/client'
@@ -10,6 +11,7 @@ import type { Share, SharePayload } from '@/api/types'
 import { copyText } from '@/utils/clipboard'
 import { formatDateTime } from '@/utils/format'
 
+const { t } = useI18n()
 const route = useRoute()
 const token = String(route.params.token ?? '')
 
@@ -53,8 +55,8 @@ async function access(): Promise<void> {
 
 async function copy(url: string): Promise<void> {
   const ok = await copyText(url)
-  if (ok) ElMessage.success('已复制链接')
-  else ElMessage.error('复制失败')
+  if (ok) ElMessage.success(t('share.copySuccess'))
+  else ElMessage.error(t('share.copyFailed'))
 }
 
 onMounted(load)
@@ -66,11 +68,11 @@ onMounted(load)
       <header class="share-card__head">
         <span class="share-card__badge">
           <el-icon :size="16"><Picture /></el-icon>
-          AXmiPic 分享
+          {{ t('share.badge') }}
         </span>
       </header>
 
-      <div v-if="loading && !payload && !needsPassword" class="share-state">正在加载…</div>
+      <div v-if="loading && !payload && !needsPassword" class="share-state">{{ t('share.loading') }}</div>
 
       <div v-else-if="errorMessage" class="share-state share-state--error">
         <p>{{ errorMessage }}</p>
@@ -78,15 +80,15 @@ onMounted(load)
 
       <form v-else-if="needsPassword" class="share-password" @submit.prevent="access">
         <el-icon :size="28" class="share-password__icon"><Lock /></el-icon>
-        <p class="share-password__title">该分享需要密码</p>
+        <p class="share-password__title">{{ t('share.requiresPassword') }}</p>
         <el-input
           v-model="password"
           type="password"
           show-password
-          placeholder="请输入访问密码"
+          :placeholder="t('share.passwordPlaceholder')"
           class="share-password__input"
         />
-        <el-button type="primary" native-type="submit" :loading="loading">访问</el-button>
+        <el-button type="primary" native-type="submit" :loading="loading">{{ t('share.access') }}</el-button>
       </form>
 
       <template v-else-if="payload">
@@ -96,7 +98,7 @@ onMounted(load)
           <figcaption>
             <strong>{{ payload.image.original_name || payload.image.filename || payload.image.key }}</strong>
             <span>{{ formatDateTime(payload.image.created_at) }}</span>
-            <el-button size="small" @click="copy(payload.image?.url ?? '')">复制图片链接</el-button>
+            <el-button size="small" @click="copy(payload.image?.url ?? '')">{{ t('share.copyImageLink') }}</el-button>
           </figcaption>
         </figure>
 
@@ -106,8 +108,8 @@ onMounted(load)
             <h1>{{ payload.album.name }}</h1>
             <p v-if="payload.album.intro" class="share-album__intro">{{ payload.album.intro }}</p>
             <p class="share-album__meta">
-              作者：{{ payload.album.owner_username || '匿名' }} ·
-              共 {{ payload.images?.length ?? 0 }} 张图片
+              {{ t('share.author', { name: payload.album.owner_username || t('share.anonymous') }) }} ·
+              {{ t('share.imageCount', { count: payload.images?.length ?? 0 }) }}
             </p>
           </div>
           <div class="share-grid">

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import { ArrowDown, CopyDocument, Grid, Histogram, Refresh, Search } from '@element-plus/icons-vue'
 
 import { toApiError } from '@/api/client'
@@ -17,6 +18,7 @@ import { formatNumber } from '@/utils/format'
 import { buildMasonryColumns, masonryColumnCount } from '@/utils/masonry'
 
 const auth = useAuthStore()
+const { t } = useI18n()
 
 const items = ref<ImageItem[]>([])
 const total = ref(0)
@@ -28,12 +30,12 @@ const failedIds = ref<Set<string>>(new Set())
 
 const order = ref<ImageOrder>('newest')
 const keyword = ref('')
-const orderOptions: { value: ImageOrder; label: string }[] = [
-  { value: 'newest', label: '最新' },
-  { value: 'earliest', label: '最早' },
-  { value: 'largest', label: '最大' },
-  { value: 'smallest', label: '最小' },
-]
+const orderOptions = computed<{ value: ImageOrder; label: string }[]>(() => [
+  { value: 'newest', label: t('plaza.order.newest') },
+  { value: 'earliest', label: t('plaza.order.earliest') },
+  { value: 'largest', label: t('plaza.order.largest') },
+  { value: 'smallest', label: t('plaza.order.smallest') },
+])
 
 // 布局：来自用户偏好（跨设备），默认网格。
 const layout = computed<'grid' | 'masonry'>(() =>
@@ -140,9 +142,9 @@ function onPreviewError(id: string): void {
 async function copyLink(item: ImageItem): Promise<void> {
   const copied = await copyText(item.url)
   if (copied) {
-    ElMessage.success('已复制')
+    ElMessage.success(t('plaza.messages.copied'))
   } else {
-    ElMessage.error('复制失败，请手动复制')
+    ElMessage.error(t('plaza.messages.copyFailed'))
   }
 }
 
@@ -177,15 +179,15 @@ onBeforeUnmount(teardownMasonry)
 
 <template>
   <div class="ax-page">
-    <PageHeader title="图片广场" description="所有用户公开分享的图片。">
+    <PageHeader :title="t('plaza.title')" :description="t('plaza.description')">
       <template #actions>
-        <el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button>
+        <el-button :icon="Refresh" :loading="loading" @click="load">{{ t('common.refresh') }}</el-button>
       </template>
       <template #toolbar>
         <el-input
           v-model="keyword"
           class="plaza-search"
-          placeholder="搜索文件名"
+          :placeholder="t('plaza.searchPlaceholder')"
           clearable
           :prefix-icon="Search"
           @keyup.enter="search"
@@ -210,10 +212,12 @@ onBeforeUnmount(teardownMasonry)
         </el-dropdown>
         <el-button
           :icon="layout === 'masonry' ? Grid : Histogram"
-          :title="layout === 'masonry' ? '切换为网格' : '切换为瀑布流'"
+          :title="
+            layout === 'masonry' ? t('plaza.layout.switchToGrid') : t('plaza.layout.switchToMasonry')
+          "
           @click="toggleLayout"
         >
-          {{ layout === 'masonry' ? '网格' : '瀑布流' }}
+          {{ layout === 'masonry' ? t('plaza.layout.grid') : t('plaza.layout.masonry') }}
         </el-button>
       </template>
     </PageHeader>
@@ -235,24 +239,24 @@ onBeforeUnmount(teardownMasonry)
 
     <EmptyState
       v-else-if="items.length === 0"
-      :title="keyword.trim() ? '没有找到匹配的图片' : '广场上还没有公开图片'"
+      :title="keyword.trim() ? t('plaza.empty.noMatchTitle') : t('plaza.empty.noItemsTitle')"
       :description="
         keyword.trim()
-          ? '试试其他关键词，或清空搜索条件。'
-          : '在图片管理页把图片设为「公开」，它就会出现在这里。'
+          ? t('plaza.empty.noMatchDescription')
+          : t('plaza.empty.noItemsDescription')
       "
     >
-      <el-button v-if="keyword.trim()" @click="clearKeyword">清空搜索</el-button>
+      <el-button v-if="keyword.trim()" @click="clearKeyword">{{ t('plaza.empty.clearSearch') }}</el-button>
     </EmptyState>
 
     <template v-else>
-      <p class="plaza-count">共 {{ formatNumber(total) }} 张公开图片</p>
+      <p class="plaza-count">{{ t('plaza.count', { count: formatNumber(total) }) }}</p>
 
       <section
         v-if="layout === 'grid'"
         class="ax-grid plaza-grid"
         :aria-busy="loading"
-        aria-label="图片广场"
+        :aria-label="t('plaza.listLabel')"
       >
         <PlazaCard
           v-for="item in items"
@@ -264,13 +268,19 @@ onBeforeUnmount(teardownMasonry)
         >
           <template #actions="{ item: target }">
             <el-button size="small" :icon="CopyDocument" @click="copyLink(target)">
-              复制链接
+              {{ t('plaza.actions.copyLink') }}
             </el-button>
           </template>
         </PlazaCard>
       </section>
 
-      <div v-else ref="masonryRef" class="plaza-masonry" :aria-busy="loading" aria-label="图片广场">
+      <div
+        v-else
+        ref="masonryRef"
+        class="plaza-masonry"
+        :aria-busy="loading"
+        :aria-label="t('plaza.listLabel')"
+      >
         <div v-for="(col, ci) in columns" :key="ci" class="plaza-masonry__col">
           <PlazaCard
             v-for="item in col"
@@ -283,7 +293,7 @@ onBeforeUnmount(teardownMasonry)
           >
             <template #actions="{ item: target }">
               <el-button size="small" :icon="CopyDocument" @click="copyLink(target)">
-                复制链接
+                {{ t('plaza.actions.copyLink') }}
               </el-button>
             </template>
           </PlazaCard>

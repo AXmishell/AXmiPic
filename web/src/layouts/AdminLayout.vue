@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 
 import AppSidebar from '@/components/AppSidebar.vue'
 import AppTopbar from '@/components/AppTopbar.vue'
@@ -8,6 +9,7 @@ import CommandPalette from '@/components/CommandPalette.vue'
 
 withDefaults(defineProps<{ variant?: 'user' | 'admin' }>(), { variant: 'admin' })
 
+const { t } = useI18n()
 const route = useRoute()
 const drawerOpen = ref(false)
 const collapsed = ref(localStorage.getItem('ax.sidebar.collapsed') === '1')
@@ -35,7 +37,7 @@ watch(
 
 <template>
   <div class="app-shell" :class="{ 'is-collapsed': collapsed }">
-    <a class="skip-link" href="#main-content">跳到主要内容</a>
+    <a class="skip-link" href="#main-content">{{ t('layouts.skipToContent') }}</a>
 
     <AppSidebar
       :open="drawerOpen"

@@ -19,7 +19,8 @@ import {
 } from '@element-plus/icons-vue'
 
 export interface NavItem {
-  label: string
+  /** i18n 文案键，组件中通过 t(labelKey) 渲染。 */
+  labelKey: string
   to: string
   icon: Component
   exact?: boolean
@@ -28,32 +29,40 @@ export interface NavItem {
 }
 
 export interface NavGroup {
-  label: string
+  labelKey: string
   items: NavItem[]
 }
 
 /** 普通用户控制台导航。 */
 export const userNavGroups: NavGroup[] = [
   {
-    label: '概览',
-    items: [{ label: '用户中心', to: '/user', icon: Odometer, exact: true, keywords: 'home dashboard 概览' }],
-  },
-  {
-    label: '资源',
+    labelKey: 'nav.groups.overview',
     items: [
-      { label: '我的图片', to: '/user/images', icon: Picture, keywords: 'image 图片 上传' },
-      { label: '图片处理', to: '/user/processing', icon: MagicStick, keywords: 'process 处理 压缩' },
-      { label: '我的相册', to: '/user/albums', icon: Folder, keywords: 'album 相册' },
-      { label: '图片广场', to: '/user/plaza', icon: Grid, keywords: 'plaza 广场 公开' },
-      { label: '我的分享', to: '/user/shares', icon: Share, keywords: 'share 分享 链接' },
-      { label: '访问令牌', to: '/user/tokens', icon: Key, keywords: 'token api 令牌' },
+      {
+        labelKey: 'nav.items.userCenter',
+        to: '/user',
+        icon: Odometer,
+        exact: true,
+        keywords: 'home dashboard 概览 用户中心',
+      },
     ],
   },
   {
-    label: '账户',
+    labelKey: 'nav.groups.resources',
     items: [
-      { label: '套餐', to: '/user/pricing', icon: ShoppingCart, keywords: 'plan 套餐 价格' },
-      { label: '工单', to: '/user/tickets', icon: Service, keywords: 'ticket 工单 客服' },
+      { labelKey: 'nav.items.images', to: '/user/images', icon: Picture, keywords: 'image 图片 上传' },
+      { labelKey: 'nav.items.processing', to: '/user/processing', icon: MagicStick, keywords: 'process 处理 压缩' },
+      { labelKey: 'nav.items.albums', to: '/user/albums', icon: Folder, keywords: 'album 相册' },
+      { labelKey: 'nav.items.plaza', to: '/user/plaza', icon: Grid, keywords: 'plaza 广场 公开' },
+      { labelKey: 'nav.items.shares', to: '/user/shares', icon: Share, keywords: 'share 分享 链接' },
+      { labelKey: 'nav.items.tokens', to: '/user/tokens', icon: Key, keywords: 'token api 令牌' },
+    ],
+  },
+  {
+    labelKey: 'nav.groups.account',
+    items: [
+      { labelKey: 'nav.items.pricing', to: '/user/pricing', icon: ShoppingCart, keywords: 'plan 套餐 价格' },
+      { labelKey: 'nav.items.tickets', to: '/user/tickets', icon: Service, keywords: 'ticket 工单 客服' },
     ],
   },
 ]
@@ -61,31 +70,39 @@ export const userNavGroups: NavGroup[] = [
 /** 管理员控制台导航。 */
 export const adminNavGroups: NavGroup[] = [
   {
-    label: '概览',
-    items: [{ label: '仪表盘', to: '/admin', icon: Odometer, exact: true, keywords: 'dashboard 概览 统计' }],
-  },
-  {
-    label: '内容',
+    labelKey: 'nav.groups.overview',
     items: [
-      { label: '用户管理', to: '/admin/users', icon: User, keywords: 'user 用户 账号 角色' },
-      { label: '图片广场', to: '/admin/plaza', icon: Grid, keywords: 'plaza 广场 图片' },
-      { label: '站点内容', to: '/admin/site', icon: Bell, keywords: 'site 公告 举报 页面' },
+      {
+        labelKey: 'nav.items.dashboard',
+        to: '/admin',
+        icon: Odometer,
+        exact: true,
+        keywords: 'dashboard 概览 统计',
+      },
     ],
   },
   {
-    label: '运营',
+    labelKey: 'nav.groups.content',
     items: [
-      { label: '角色策略', to: '/admin/policies', icon: Management, keywords: 'policy 角色 权限 配额 限流' },
-      { label: '计费管理', to: '/admin/billing', icon: ShoppingCart, keywords: 'billing 订单 套餐 优惠券 工单' },
-      { label: '存储配置', to: '/admin/storage', icon: Coin, keywords: 'storage s3 oss cos qiniu 存储' },
+      { labelKey: 'nav.items.users', to: '/admin/users', icon: User, keywords: 'user 用户 账号 角色' },
+      { labelKey: 'nav.items.plaza', to: '/admin/plaza', icon: Grid, keywords: 'plaza 广场 图片' },
+      { labelKey: 'nav.items.site', to: '/admin/site', icon: Bell, keywords: 'site 公告 举报 页面' },
     ],
   },
   {
-    label: '系统',
+    labelKey: 'nav.groups.operations',
     items: [
-      { label: '系统设置', to: '/admin/system', icon: Setting, keywords: 'system 设置 通知 支付 集成' },
-      { label: '插件市场', to: '/admin/plugins', icon: Goods, keywords: 'plugin 插件 扩展' },
-      { label: '邮件日志', to: '/admin/mail-logs', icon: Message, keywords: 'mail sms log 邮件 短信 日志' },
+      { labelKey: 'nav.items.policies', to: '/admin/policies', icon: Management, keywords: 'policy 角色 权限 配额 限流' },
+      { labelKey: 'nav.items.billing', to: '/admin/billing', icon: ShoppingCart, keywords: 'billing 订单 套餐 优惠券 工单' },
+      { labelKey: 'nav.items.storage', to: '/admin/storage', icon: Coin, keywords: 'storage s3 oss cos qiniu 存储' },
+    ],
+  },
+  {
+    labelKey: 'nav.groups.system',
+    items: [
+      { labelKey: 'nav.items.system', to: '/admin/system', icon: Setting, keywords: 'system 设置 通知 支付 集成' },
+      { labelKey: 'nav.items.plugins', to: '/admin/plugins', icon: Goods, keywords: 'plugin 插件 扩展' },
+      { labelKey: 'nav.items.mailLogs', to: '/admin/mail-logs', icon: Message, keywords: 'mail sms log 邮件 短信 日志' },
     ],
   },
 ]

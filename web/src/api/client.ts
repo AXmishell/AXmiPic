@@ -1,6 +1,8 @@
 import axios, { type AxiosError, type AxiosRequestConfig } from 'axios'
 import { ElMessage } from 'element-plus'
 
+import { translate } from '@/i18n'
+
 import type { ApiEnvelope } from './types'
 
 /** 由传输失败与非零 API 状态码归一化而来的错误结构。 */
@@ -53,7 +55,7 @@ http.interceptors.response.use(
       unauthorizedHandler?.()
     }
     if (status === 403) {
-      ElMessage.warning('权限不足')
+      ElMessage.warning(translate('errors.insufficientPermission'))
     }
     return Promise.reject(error)
   },
@@ -75,26 +77,26 @@ export function toApiError(error: unknown): ApiError {
         ? payload.message
         : ''
 
-    let fallback = '网络请求失败，请稍后重试'
+    let fallback = translate('errors.network')
     if (axiosError.code === 'ECONNABORTED' || axiosError.code === 'ETIMEDOUT') {
-      fallback = '请求超时，请稍后重试'
+      fallback = translate('errors.timeout')
     } else if (status === 401) {
-      fallback = '登录状态已失效，请重新登录'
+      fallback = translate('errors.sessionExpired')
     } else if (status === 403) {
-      fallback = '权限不足'
+      fallback = translate('errors.insufficientPermission')
     } else if (status === 404) {
-      fallback = '请求的资源不存在'
+      fallback = translate('errors.notFound')
     } else if (status !== null && status >= 500) {
-      fallback = '服务器暂时不可用，请稍后重试'
+      fallback = translate('errors.server')
     } else if (status === null && axiosError.code === 'ERR_NETWORK') {
-      fallback = '无法连接到服务器，请检查网络'
+      fallback = translate('errors.cannotConnect')
     }
 
     const code = payload && typeof payload.code === 'number' ? payload.code : -1
     return new ApiError(serverMessage || fallback, code, status)
   }
 
-  return new ApiError(error instanceof Error ? error.message : '未知错误', -1, null)
+  return new ApiError(error instanceof Error ? error.message : translate('errors.unknown'), -1, null)
 }
 
 /**
@@ -107,7 +109,7 @@ export async function request<T>(config: AxiosRequestConfig): Promise<T> {
     const body: unknown = response.data
     if (isEnvelope(body)) {
       if (body.code !== 0) {
-        throw new ApiError(body.message || '请求失败', body.code, response.status)
+        throw new ApiError(body.message || translate('errors.requestFailed'), body.code, response.status)
       }
       return body.data as T
     }

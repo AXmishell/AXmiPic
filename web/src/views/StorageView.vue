@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import type { FormInstance, FormRules } from 'element-plus'
 import { Delete, EditPen, FolderOpened, Plus, QuestionFilled, Refresh, Star } from '@element-plus/icons-vue'
 
@@ -30,6 +31,8 @@ import ErrorState from '@/components/ErrorState.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import TableSkeleton from '@/components/TableSkeleton.vue'
 import { formatBytes, formatDateTime, formatNumber } from '@/utils/format'
+
+const { t } = useI18n()
 
 const backends = ref<StorageBackend[]>([])
 const pools = ref<StoragePool[]>([])
@@ -123,9 +126,9 @@ async function closeFormDialog(done: () => void): Promise<void> {
     return
   }
   try {
-    await ElMessageBox.confirm('关闭后未保存的修改将丢失。', '放弃修改？', {
-      confirmButtonText: '放弃修改',
-      cancelButtonText: '继续编辑',
+    await ElMessageBox.confirm(t('storage.confirm.discardMessage'), t('storage.confirm.discardTitle'), {
+      confirmButtonText: t('storage.confirm.discardConfirm'),
+      cancelButtonText: t('storage.confirm.continueEditing'),
       type: 'warning',
       confirmButtonClass: 'el-button--danger',
     })
@@ -136,17 +139,17 @@ async function closeFormDialog(done: () => void): Promise<void> {
 }
 
 const isEdit = computed(() => editingId.value !== null)
-const driverLabel: Record<StorageDriver, string> = {
-  local: '本地存储',
-  s3: '对象存储 (S3 兼容)',
-  qiniu: '七牛云 Kodo',
-  oss: '阿里云 OSS',
-  cos: '腾讯云 COS',
-}
+const driverLabel = computed<Record<StorageDriver, string>>(() => ({
+  local: t('storage.drivers.local'),
+  s3: t('storage.drivers.s3'),
+  qiniu: t('storage.drivers.qiniu'),
+  oss: t('storage.drivers.oss'),
+  cos: t('storage.drivers.cos'),
+}))
 
-const rules: FormRules = {
-  name: [{ required: true, message: '请输入配置名称', trigger: 'blur' }],
-}
+const rules = computed<FormRules>(() => ({
+  name: [{ required: true, message: t('storage.messages.nameRequired'), trigger: 'blur' }],
+}))
 
 async function load(): Promise<void> {
   loading.value = true
@@ -278,10 +281,10 @@ async function submit(): Promise<void> {
   try {
     if (isEdit.value && editingId.value) {
       await updateStorage(editingId.value, buildPayload())
-      ElMessage.success('存储配置已更新')
+      ElMessage.success(t('storage.messages.updated'))
     } else {
       await createStorage(buildPayload())
-      ElMessage.success('存储配置已创建')
+      ElMessage.success(t('storage.messages.created'))
     }
     formSnapshot.value = formState()
     dialogOpen.value = false
@@ -296,9 +299,9 @@ async function submit(): Promise<void> {
 async function activate(item: StorageBackend): Promise<void> {
   try {
     await ElMessageBox.confirm(
-      `切换后新上传的图片将存入「${item.name}」，已有图片仍从原存储读取。`,
-      '切换默认存储',
-      { confirmButtonText: '切换', cancelButtonText: '取消', type: 'warning' },
+      t('storage.confirm.activateMessage', { name: item.name }),
+      t('storage.confirm.activateTitle'),
+      { confirmButtonText: t('storage.confirm.activateConfirm'), cancelButtonText: t('common.cancel'), type: 'warning' },
     )
   } catch {
     return
@@ -306,7 +309,7 @@ async function activate(item: StorageBackend): Promise<void> {
   pendingId.value = item.id
   try {
     await activateStorage(item.id)
-    ElMessage.success('已切换默认存储')
+    ElMessage.success(t('storage.messages.activated'))
     await load()
   } catch (error) {
     ElMessage.error(toApiError(error).message)
@@ -317,26 +320,26 @@ async function activate(item: StorageBackend): Promise<void> {
 
 /** 删除后端的可预判失败原因：前端已有数据，不应等接口报错。 */
 function backendDeleteBlockedReason(item: StorageBackend): string {
-  if (item.is_current) return '当前默认存储不可删除，请先切换默认存储'
+  if (item.is_current) return t('storage.blocked.currentBackend')
   if (item.image_count > 0) {
-    return `该存储上仍有 ${formatNumber(item.image_count)} 张图片，请先迁移或删除后再试`
+    return t('storage.blocked.backendImages', { count: formatNumber(item.image_count) })
   }
   return ''
 }
 
 /** 删除存储池的可预判失败原因。 */
 function poolDeleteBlockedReason(pool: StoragePool): string {
-  if (pool.is_current) return '当前写入池不可删除，请先切换到其他存储池'
+  if (pool.is_current) return t('storage.blocked.currentPool')
   return ''
 }
 
 async function remove(item: StorageBackend): Promise<void> {  try {
     await ElMessageBox.confirm(
-      `确定删除存储配置「${item.name}」吗？仅当其上没有图片时可删除。`,
-      '删除存储配置',
+      t('storage.confirm.deleteMessage', { name: item.name }),
+      t('storage.confirm.deleteTitle'),
       {
-        confirmButtonText: '删除',
-        cancelButtonText: '取消',
+        confirmButtonText: t('storage.confirm.deleteConfirm'),
+        cancelButtonText: t('common.cancel'),
         type: 'warning',
         confirmButtonClass: 'el-button--danger',
       },
@@ -347,7 +350,7 @@ async function remove(item: StorageBackend): Promise<void> {  try {
   pendingId.value = item.id
   try {
     await deleteStorage(item.id)
-    ElMessage.success('存储配置已删除')
+    ElMessage.success(t('storage.messages.deleted'))
     await load()
   } catch (error) {
     ElMessage.error(toApiError(error).message)
@@ -390,9 +393,9 @@ async function closePoolDialog(done: () => void): Promise<void> {
     return
   }
   try {
-    await ElMessageBox.confirm('关闭后未保存的修改将丢失。', '放弃修改？', {
-      confirmButtonText: '放弃修改',
-      cancelButtonText: '继续编辑',
+    await ElMessageBox.confirm(t('storage.confirm.discardMessage'), t('storage.confirm.discardTitle'), {
+      confirmButtonText: t('storage.confirm.discardConfirm'),
+      cancelButtonText: t('storage.confirm.continueEditing'),
       type: 'warning',
       confirmButtonClass: 'el-button--danger',
     })
@@ -402,14 +405,14 @@ async function closePoolDialog(done: () => void): Promise<void> {
   }
 }
 
-const poolPolicyLabel: Record<StoragePoolPolicy, string> = {
-  weighted_rr: '加权轮询',
-  priority: '优先级',
-}
+const poolPolicyLabel = computed<Record<StoragePoolPolicy, string>>(() => ({
+  weighted_rr: t('storage.pools.policyWeighted'),
+  priority: t('storage.pools.policyPriority'),
+}))
 
-const poolRules: FormRules = {
-  name: [{ required: true, message: '请输入存储池名称', trigger: 'blur' }],
-}
+const poolRules = computed<FormRules>(() => ({
+  name: [{ required: true, message: t('storage.messages.poolNameRequired'), trigger: 'blur' }],
+}))
 
 function emptyPoolForm(): PoolForm {
   return {
@@ -421,7 +424,7 @@ function emptyPoolForm(): PoolForm {
 
 function openPoolCreate(): void {
   if (backends.value.length === 0) {
-    ElMessage.warning('请先创建至少一个存储后端')
+    ElMessage.warning(t('storage.messages.needBackend'))
     return
   }
   poolEditingId.value = null
@@ -461,11 +464,11 @@ async function submitPool(): Promise<void> {
   const valid = await instance.validate().catch(() => false)
   if (!valid) return
   if (poolForm.members.some((m) => !m.backend_id)) {
-    ElMessage.warning('请为每个成员选择存储后端')
+    ElMessage.warning(t('storage.messages.memberBackendRequired'))
     return
   }
   if (!poolForm.members.some((m) => m.enabled)) {
-    ElMessage.warning('至少需要一个启用的成员')
+    ElMessage.warning(t('storage.messages.memberEnabledRequired'))
     return
   }
   const payload: StoragePoolInput = {
@@ -482,10 +485,10 @@ async function submitPool(): Promise<void> {
   try {
     if (poolEditingId.value) {
       await updateStoragePool(poolEditingId.value, payload)
-      ElMessage.success('存储池已更新')
+      ElMessage.success(t('storage.messages.poolUpdated'))
     } else {
       await createStoragePool(payload)
-      ElMessage.success('存储池已创建')
+      ElMessage.success(t('storage.messages.poolCreated'))
     }
     poolFormSnapshot.value = poolFormState()
     poolDialogOpen.value = false
@@ -500,9 +503,9 @@ async function submitPool(): Promise<void> {
 async function activatePool(pool: StoragePool): Promise<void> {
   try {
     await ElMessageBox.confirm(
-      `启用后新上传的图片将按「${poolPolicyLabel[pool.policy]}」策略写入池内后端，已有图片仍从原存储读取。`,
-      '启用存储池',
-      { confirmButtonText: '启用', cancelButtonText: '取消', type: 'warning' },
+      t('storage.confirm.activatePoolMessage', { policy: poolPolicyLabel.value[pool.policy] }),
+      t('storage.confirm.activatePoolTitle'),
+      { confirmButtonText: t('storage.confirm.activatePoolConfirm'), cancelButtonText: t('common.cancel'), type: 'warning' },
     )
   } catch {
     return
@@ -510,7 +513,7 @@ async function activatePool(pool: StoragePool): Promise<void> {
   poolPendingId.value = pool.id
   try {
     await activateStoragePool(pool.id)
-    ElMessage.success('已启用存储池')
+    ElMessage.success(t('storage.messages.poolActivated'))
     await load()
   } catch (error) {
     ElMessage.error(toApiError(error).message)
@@ -522,11 +525,11 @@ async function activatePool(pool: StoragePool): Promise<void> {
 async function removePool(pool: StoragePool): Promise<void> {
   try {
     await ElMessageBox.confirm(
-      `确定删除存储池「${pool.name}」吗？底层存储后端和已有图片不会被删除。`,
-      '删除存储池',
+      t('storage.confirm.deletePoolMessage', { name: pool.name }),
+      t('storage.confirm.deletePoolTitle'),
       {
-        confirmButtonText: '删除',
-        cancelButtonText: '取消',
+        confirmButtonText: t('storage.confirm.deleteConfirm'),
+        cancelButtonText: t('common.cancel'),
         type: 'warning',
         confirmButtonClass: 'el-button--danger',
       },
@@ -537,7 +540,7 @@ async function removePool(pool: StoragePool): Promise<void> {
   poolPendingId.value = pool.id
   try {
     await deleteStoragePool(pool.id)
-    ElMessage.success('存储池已删除')
+    ElMessage.success(t('storage.messages.poolDeleted'))
     await load()
   } catch (error) {
     ElMessage.error(toApiError(error).message)
@@ -552,8 +555,8 @@ onMounted(load)
 <template>
   <div class="ax-page">
     <PageHeader
-      title="存储配置"
-      description="管理图片的写入位置：先添加存储，再按需组合成存储池。"
+      :title="t('storage.page.title')"
+      :description="t('storage.page.description')"
     >
       <template #actions>
         <a
@@ -563,11 +566,11 @@ onMounted(load)
           rel="noopener noreferrer"
         >
           <el-icon :size="14"><QuestionFilled /></el-icon>
-          帮助
+          {{ t('storage.actions.help') }}
         </a>
-        <el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button>
+        <el-button :icon="Refresh" :loading="loading" @click="load">{{ t('common.refresh') }}</el-button>
         <el-button v-if="backends.length > 0" type="primary" :icon="Plus" @click="openCreate">
-          新建存储
+          {{ t('storage.actions.create') }}
         </el-button>
       </template>
     </PageHeader>
@@ -575,78 +578,78 @@ onMounted(load)
     <ErrorState v-if="errorMessage" :message="errorMessage" @retry="load" />
 
     <div v-else-if="loading && backends.length === 0">
-      <TableSkeleton :rows="6" :columns="5" title="正在加载存储配置" />
+      <TableSkeleton :rows="6" :columns="5" :title="t('storage.loading')" />
     </div>
 
     <EmptyState
       v-else-if="backends.length === 0"
-      title="还没有存储配置"
-      description="先添加一个本地目录或云存储。添加完成后，可按需把多个存储组合成存储池。"
+      :title="t('storage.empty.title')"
+      :description="t('storage.empty.description')"
     >
-      <el-button type="primary" :icon="Plus" @click="openCreate">新建存储</el-button>
+      <el-button type="primary" :icon="Plus" @click="openCreate">{{ t('storage.actions.create') }}</el-button>
       <a class="storage-empty-help" :href="storageDocsUrl" target="_blank" rel="noopener noreferrer">
-        查看存储说明
+        {{ t('storage.actions.viewDocs') }}
       </a>
     </EmptyState>
 
     <template v-else>
-      <section class="storage-concepts" aria-label="存储与存储池说明">
+      <section class="storage-concepts" :aria-label="t('storage.concepts.ariaLabel')">
         <div class="storage-concept">
           <span class="storage-concept__step">1</span>
           <div>
-            <strong>存储</strong>
-            <p>连接一个具体位置：本地目录或云存储账号。</p>
+            <strong>{{ t('storage.concepts.storageTitle') }}</strong>
+            <p>{{ t('storage.concepts.storageDesc') }}</p>
           </div>
         </div>
         <span class="storage-concept__arrow" aria-hidden="true">→</span>
         <div class="storage-concept">
           <span class="storage-concept__step">2</span>
           <div>
-            <strong>存储池<el-tag size="small" type="info" effect="plain">可选</el-tag></strong>
-            <p>把多个存储组合起来，按权重或优先级分配新上传。</p>
+            <strong>{{ t('storage.concepts.poolTitle') }}<el-tag size="small" type="info" effect="plain">{{ t('common.optional') }}</el-tag></strong>
+            <p>{{ t('storage.concepts.poolDesc') }}</p>
           </div>
         </div>
         <a class="storage-concept__link" :href="storageDocsUrl" target="_blank" rel="noopener noreferrer">
-          了解详情
+          {{ t('storage.actions.learnMore') }}
         </a>
       </section>
 
       <div class="ax-card table-card">
         <div class="ax-card__head">
           <div class="storage-table-head">
-            <h2 class="ax-card__title">存储后端</h2>
+            <h2 class="ax-card__title">{{ t('storage.backends.title') }}</h2>
             <p class="storage-table-head__hint">
               <template v-if="currentBackend">
-                新上传写入「{{ currentBackend.name }}」；切换即时生效，无需重启。
+                {{ t('storage.backends.hintCurrent', { name: currentBackend.name }) }}
               </template>
-              <template v-else>尚未设置默认存储，请在下方选择一个存储并「设为默认」。</template>
+              <template v-else>{{ t('storage.backends.hintNone') }}</template>
             </p>
           </div>
-          <el-tag size="small" type="info" effect="plain">{{ backends.length }} 个</el-tag>
+          <el-tag size="small" type="info" effect="plain">{{ t('storage.backends.count', { count: backends.length }) }}</el-tag>
         </div>
         <div class="ax-table-scroll">
         <el-table :data="backends" style="width: 100%">
-          <el-table-column label="名称" min-width="180">
+          <el-table-column :label="t('storage.backends.columns.name')" min-width="180">
             <template #default="{ row }">
               <span class="storage-name">
                 <el-icon :size="14"><FolderOpened /></el-icon>
                 {{ row.name }}
                 <el-tag v-if="row.is_current" size="small" type="success" effect="plain">
-                  当前默认
+                  {{ t('storage.backends.current') }}
                 </el-tag>
               </span>
             </template>
           </el-table-column>
-          <el-table-column label="类型" width="180">
+          <el-table-column :label="t('storage.backends.columns.type')" width="180">
             <template #default="{ row }">{{ driverLabel[row.driver as StorageDriver] }}</template>
           </el-table-column>
-          <el-table-column label="图片数" width="120">
+          <el-table-column :label="t('storage.backends.columns.images')" width="120">
             <template #default="{ row }">{{ formatNumber(row.image_count) }}</template>
           </el-table-column>
-          <el-table-column label="创建时间" min-width="170">
+          <el-table-column :label="t('storage.backends.columns.createdAt')" min-width="170">
             <template #default="{ row }">{{ formatDateTime(row.created_at) }}</template>
           </el-table-column>
-          <el-table-column label="操作" fixed="right" width="290" align="right">
+          <el-table-column :label="t('storage.backends.columns.actions')" fixed="right" width="290" align="right">
             <template #default="{ row }">
               <div class="ax-row-actions">
                 <el-button
@@ -657,9 +660,9 @@ onMounted(load)
                   :loading="pendingId === row.id"
                   @click="activate(row)"
                 >
-                  设为默认
+                  {{ t('storage.actions.setDefault') }}
                 </el-button>
-                <el-button link type="primary" :icon="EditPen" @click="openEdit(row)">编辑</el-button>
+                <el-button link type="primary" :icon="EditPen" @click="openEdit(row)">{{ t('common.edit') }}</el-button>
                 <el-tooltip
                   :disabled="!backendDeleteBlockedReason(row)"
                   :content="backendDeleteBlockedReason(row)"
@@ -674,7 +677,7 @@ onMounted(load)
                       :loading="pendingId === row.id"
                       @click="remove(row)"
                     >
-                      删除
+                      {{ t('common.delete') }}
                     </el-button>
                   </span>
                 </el-tooltip>
@@ -689,50 +692,50 @@ onMounted(load)
       <div class="ax-card table-card pool-card">
         <div class="ax-card__head">
           <div class="storage-table-head">
-            <h2 class="ax-card__title">存储池</h2>
+            <h2 class="ax-card__title">{{ t('storage.pools.title') }}</h2>
             <p class="storage-table-head__hint">
-              池只决定新对象写入哪个存储，已有图片仍从原存储读取。
+              {{ t('storage.pools.hint') }}
             </p>
           </div>
           <div class="storage-head-actions">
-            <el-tag size="small" type="info" effect="plain">{{ pools.length }} 个</el-tag>
+            <el-tag size="small" type="info" effect="plain">{{ t('storage.pools.count', { count: pools.length }) }}</el-tag>
             <el-button
               size="small"
               :icon="Plus"
               :disabled="!canCreatePool"
-              :title="canCreatePool ? '新建存储池' : '至少需要 2 个存储后端'"
+              :title="canCreatePool ? t('storage.pools.newTitle') : t('storage.pools.minBackendsHint')"
               @click="openPoolCreate"
             >
-              新建存储池
+              {{ t('storage.actions.createPool') }}
             </el-button>
           </div>
         </div>
         <div class="ax-table-scroll">
-        <el-table :data="pools" style="width: 100%" empty-text="暂无存储池">
-          <el-table-column label="名称" min-width="180">
+        <el-table :data="pools" style="width: 100%" :empty-text="t('storage.pools.tableEmpty')">
+          <el-table-column :label="t('storage.pools.columns.name')" min-width="180">
             <template #default="{ row }">
               <span class="storage-name">
                 <el-icon :size="14"><FolderOpened /></el-icon>
                 {{ row.name }}
                 <el-tag v-if="row.is_current" size="small" type="success" effect="plain">
-                  当前写入池
+                  {{ t('storage.pools.current') }}
                 </el-tag>
               </span>
             </template>
           </el-table-column>
-          <el-table-column label="策略" width="120">
+          <el-table-column :label="t('storage.pools.columns.policy')" width="120">
             <template #default="{ row }">{{ poolPolicyLabel[row.policy as StoragePoolPolicy] }}</template>
           </el-table-column>
-          <el-table-column label="成员" width="90">
+          <el-table-column :label="t('storage.pools.columns.members')" width="90">
             <template #default="{ row }">{{ row.members.length }}</template>
           </el-table-column>
-          <el-table-column label="图片数" width="110">
+          <el-table-column :label="t('storage.pools.columns.images')" width="110">
             <template #default="{ row }">{{ formatNumber(row.image_count) }}</template>
           </el-table-column>
-          <el-table-column label="占用" width="120">
+          <el-table-column :label="t('storage.pools.columns.size')" width="120">
             <template #default="{ row }">{{ formatBytes(row.size_bytes) }}</template>
           </el-table-column>
-          <el-table-column label="操作" fixed="right" width="250" align="right">
+          <el-table-column :label="t('storage.pools.columns.actions')" fixed="right" width="250" align="right">
             <template #default="{ row }">
               <div class="ax-row-actions">
                 <el-button
@@ -743,9 +746,9 @@ onMounted(load)
                   :loading="poolPendingId === row.id"
                   @click="activatePool(row)"
                 >
-                  启用
+                  {{ t('storage.actions.enable') }}
                 </el-button>
-                <el-button link type="primary" :icon="EditPen" @click="openPoolEdit(row)">编辑</el-button>
+                <el-button link type="primary" :icon="EditPen" @click="openPoolEdit(row)">{{ t('common.edit') }}</el-button>
                 <el-tooltip
                   :disabled="!poolDeleteBlockedReason(row)"
                   :content="poolDeleteBlockedReason(row)"
@@ -760,7 +763,7 @@ onMounted(load)
                       :loading="poolPendingId === row.id"
                       @click="removePool(row)"
                     >
-                      删除
+                      {{ t('common.delete') }}
                     </el-button>
                   </span>
                 </el-tooltip>
@@ -773,14 +776,14 @@ onMounted(load)
     </template>
 
     <div v-else class="ax-card storage-pool-empty pool-card">
-      <span class="storage-pool-empty__badge">可选</span>
+      <span class="storage-pool-empty__badge">{{ t('common.optional') }}</span>
       <div class="storage-pool-empty__text">
-        <h3 class="storage-pool-empty__title">还没有存储池</h3>
+        <h3 class="storage-pool-empty__title">{{ t('storage.pools.emptyTitle') }}</h3>
         <p v-if="canCreatePool">
-          将多个存储组合成池，可按权重或优先级分流新上传；单个存储无需创建池。
+          {{ t('storage.pools.emptyHintCanCreate') }}
         </p>
         <p v-else>
-          存储池用于在多个存储之间分流写入。再添加一个存储后，即可把两个存储组合成池。
+          {{ t('storage.pools.emptyHintNeedMore') }}
         </p>
       </div>
       <el-button
@@ -788,15 +791,15 @@ onMounted(load)
         :icon="Plus"
         @click="openPoolCreate"
       >
-        新建存储池
+        {{ t('storage.actions.createPool') }}
       </el-button>
-      <el-button v-else :icon="Plus" @click="openCreate">再添加一个存储</el-button>
+      <el-button v-else :icon="Plus" @click="openCreate">{{ t('storage.actions.addAnother') }}</el-button>
     </div>
     </template>
 
     <el-dialog
       v-model="poolDialogOpen"
-      :title="poolEditingId ? '编辑存储池' : '新建存储池'"
+      :title="poolEditingId ? t('storage.pools.editTitle') : t('storage.pools.newTitle')"
       width="min(680px, 94vw)"
       append-to-body
       :close-on-click-modal="false"
@@ -804,56 +807,56 @@ onMounted(load)
       @closed="poolFormRef?.clearValidate()"
     >
       <el-form ref="poolFormRef" :model="poolForm" :rules="poolRules" label-position="top">
-        <el-form-item label="名称" prop="name">
-          <el-input v-model="poolForm.name" placeholder="例如：主存储池" maxlength="60" />
+        <el-form-item :label="t('storage.pools.name')" prop="name">
+          <el-input v-model="poolForm.name" :placeholder="t('storage.pools.namePlaceholder')" maxlength="60" />
         </el-form-item>
-        <el-form-item label="放置策略">
+        <el-form-item :label="t('storage.pools.policy')">
           <el-radio-group v-model="poolForm.policy">
-            <el-radio-button value="weighted_rr">加权轮询</el-radio-button>
-            <el-radio-button value="priority">优先级</el-radio-button>
+            <el-radio-button value="weighted_rr">{{ t('storage.pools.policyWeighted') }}</el-radio-button>
+            <el-radio-button value="priority">{{ t('storage.pools.policyPriority') }}</el-radio-button>
           </el-radio-group>
           <p class="storage-hint">
-            加权轮询按 Weight 分配新对象；优先级先使用 Priority 数值更小的成员，同级内加权轮询。
+            {{ t('storage.pools.policyHint') }}
           </p>
         </el-form-item>
 
-        <el-divider content-position="left">成员</el-divider>
+        <el-divider content-position="left">{{ t('storage.pools.members') }}</el-divider>
         <div v-for="(member, index) in poolForm.members" :key="index" class="pool-member-row">
-          <el-select v-model="member.backend_id" placeholder="选择存储后端" style="min-width: 180px">
+          <el-select v-model="member.backend_id" :placeholder="t('storage.pools.memberBackend')" style="min-width: 180px">
             <el-option
               v-for="backend in backends"
               :key="backend.id"
-              :label="`${backend.name}（${driverLabel[backend.driver]}）`"
+              :label="t('storage.pools.backendOption', { name: backend.name, driver: driverLabel[backend.driver] })"
               :value="backend.id"
             />
           </el-select>
           <el-input-number v-model="member.weight" :min="1" :max="10000" controls-position="right" />
-          <span class="pool-member-label">权重</span>
+          <span class="pool-member-label">{{ t('storage.pools.weight') }}</span>
           <el-input-number v-model="member.priority" :min="0" :max="1000" controls-position="right" />
-          <span class="pool-member-label">优先级</span>
-          <el-switch v-model="member.enabled" active-text="启用" />
+          <span class="pool-member-label">{{ t('storage.pools.priority') }}</span>
+          <el-switch v-model="member.enabled" :active-text="t('storage.pools.enabled')" />
           <el-button
             link
             type="danger"
             :disabled="poolForm.members.length <= 1"
             @click="removePoolMember(index)"
           >
-            移除
+            {{ t('common.remove') }}
           </el-button>
         </div>
-        <el-button link type="primary" :icon="Plus" @click="addPoolMember">添加成员</el-button>
+        <el-button link type="primary" :icon="Plus" @click="addPoolMember">{{ t('storage.pools.addMember') }}</el-button>
       </el-form>
       <template #footer>
-        <el-button @click="poolDialogOpen = false">取消</el-button>
+        <el-button @click="poolDialogOpen = false">{{ t('common.cancel') }}</el-button>
         <el-button type="primary" :loading="poolSubmitting" @click="submitPool">
-          {{ poolEditingId ? '保存' : '创建' }}
+          {{ poolEditingId ? t('common.save') : t('storage.actions.createSubmit') }}
         </el-button>
       </template>
     </el-dialog>
 
     <el-dialog
       v-model="dialogOpen"
-      :title="isEdit ? '编辑存储配置' : '新建存储配置'"
+      :title="isEdit ? t('storage.form.editTitle') : t('storage.form.createTitle')"
       width="min(560px, 94vw)"
       append-to-body
       :close-on-click-modal="false"
@@ -861,181 +864,181 @@ onMounted(load)
       @closed="formRef?.clearValidate()"
     >
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
-        <el-form-item label="名称" prop="name">
-          <el-input v-model="form.name" placeholder="例如：本地、阿里云 OSS" maxlength="60" />
+        <el-form-item :label="t('storage.form.name')" prop="name">
+          <el-input v-model="form.name" :placeholder="t('storage.form.namePlaceholder')" maxlength="60" />
         </el-form-item>
 
-        <el-form-item label="存储类型">
+        <el-form-item :label="t('storage.form.driver')">
           <el-radio-group v-model="form.driver" :disabled="isEdit">
-            <el-radio-button value="local">本地</el-radio-button>
-            <el-radio-button value="s3">对象存储 (S3)</el-radio-button>
-            <el-radio-button value="oss">阿里云 OSS</el-radio-button>
-            <el-radio-button value="cos">腾讯云 COS</el-radio-button>
-            <el-radio-button value="qiniu">七牛云</el-radio-button>
+            <el-radio-button value="local">{{ t('storage.driverOptions.local') }}</el-radio-button>
+            <el-radio-button value="s3">{{ t('storage.driverOptions.s3') }}</el-radio-button>
+            <el-radio-button value="oss">{{ t('storage.driverOptions.oss') }}</el-radio-button>
+            <el-radio-button value="cos">{{ t('storage.driverOptions.cos') }}</el-radio-button>
+            <el-radio-button value="qiniu">{{ t('storage.driverOptions.qiniu') }}</el-radio-button>
           </el-radio-group>
         </el-form-item>
 
         <!-- 本地 -->
         <template v-if="form.driver === 'local'">
-          <el-divider content-position="left">本地路径</el-divider>
-          <el-form-item label="根目录">
-            <el-input v-model="form.root" placeholder="留空则使用配置文件中的默认目录" />
+          <el-divider content-position="left">{{ t('storage.form.localPath') }}</el-divider>
+          <el-form-item :label="t('storage.form.root')">
+            <el-input v-model="form.root" :placeholder="t('storage.form.rootPlaceholder')" />
           </el-form-item>
           <p class="storage-hint">
-            相对路径相对于服务启动目录；留空时回退到 config.yaml 的 storage.local.root。
+            {{ t('storage.form.rootHint') }}
           </p>
         </template>
 
         <!-- S3 -->
         <template v-else-if="form.driver === 's3'">
-          <el-divider content-position="left">连接信息</el-divider>
-          <el-form-item label="Endpoint">
-            <el-input v-model="form.endpoint" placeholder="https://s3.amazonaws.com" />
+          <el-divider content-position="left">{{ t('storage.form.connection') }}</el-divider>
+          <el-form-item :label="t('storage.form.endpoint')">
+            <el-input v-model="form.endpoint" :placeholder="t('storage.form.endpointPlaceholder')" />
           </el-form-item>
-          <el-form-item label="Region">
-            <el-input v-model="form.region" placeholder="us-east-1" />
+          <el-form-item :label="t('storage.form.region')">
+            <el-input v-model="form.region" :placeholder="t('storage.form.regionPlaceholderS3')" />
           </el-form-item>
-          <el-form-item label="Bucket">
-            <el-input v-model="form.bucket" placeholder="axmipic" />
+          <el-form-item :label="t('storage.form.bucket')">
+            <el-input v-model="form.bucket" :placeholder="t('storage.form.bucketPlaceholder')" />
           </el-form-item>
-          <el-divider content-position="left">凭据</el-divider>
-          <el-form-item label="Access Key ID">
+          <el-divider content-position="left">{{ t('storage.form.credentials') }}</el-divider>
+          <el-form-item :label="t('storage.form.accessKeyId')">
             <el-input
               v-model="form.access_key_id"
-              :placeholder="isEdit ? '留空表示保持不变' : ''"
+              :placeholder="isEdit ? t('storage.form.keepUnchanged') : ''"
             />
           </el-form-item>
-          <el-form-item label="Secret Access Key">
+          <el-form-item :label="t('storage.form.secretAccessKey')">
             <el-input
               v-model="form.secret_access_key"
               type="password"
               show-password
-              :placeholder="isEdit ? '留空表示保持不变' : ''"
+              :placeholder="isEdit ? t('storage.form.keepUnchanged') : ''"
             />
           </el-form-item>
-          <el-form-item label="公开访问 Base URL（可选）">
-            <el-input v-model="form.public_base_url" placeholder="https://cdn.example.com" />
+          <el-form-item :label="t('storage.form.publicBaseUrl')">
+            <el-input v-model="form.public_base_url" :placeholder="t('storage.form.publicBaseUrlPlaceholder')" />
           </el-form-item>
           <div class="storage-switches">
-            <el-checkbox v-model="form.secure">使用 HTTPS</el-checkbox>
-            <el-checkbox v-model="form.use_path_style">Path Style</el-checkbox>
+            <el-checkbox v-model="form.secure">{{ t('storage.form.useHttps') }}</el-checkbox>
+            <el-checkbox v-model="form.use_path_style">{{ t('storage.form.pathStyle') }}</el-checkbox>
           </div>
         </template>
 
         <!-- 七牛 -->
         <template v-else-if="form.driver === 'qiniu'">
-          <el-divider content-position="left">连接信息</el-divider>
-          <el-form-item label="Bucket">
-            <el-input v-model="form.bucket" placeholder="axmipic" />
+          <el-divider content-position="left">{{ t('storage.form.connection') }}</el-divider>
+          <el-form-item :label="t('storage.form.bucket')">
+            <el-input v-model="form.bucket" :placeholder="t('storage.form.bucketPlaceholder')" />
           </el-form-item>
-          <el-form-item label="访问域名">
-            <el-input v-model="form.domain" placeholder="https://cdn.example.com" />
+          <el-form-item :label="t('storage.form.domain')">
+            <el-input v-model="form.domain" :placeholder="t('storage.form.publicBaseUrlPlaceholder')" />
           </el-form-item>
-          <el-divider content-position="left">凭据</el-divider>
-          <el-form-item label="Access Key">
+          <el-divider content-position="left">{{ t('storage.form.credentials') }}</el-divider>
+          <el-form-item :label="t('storage.form.accessKey')">
             <el-input
               v-model="form.qiniu_access_key"
-              :placeholder="isEdit ? '留空表示保持不变' : ''"
+              :placeholder="isEdit ? t('storage.form.keepUnchanged') : ''"
             />
           </el-form-item>
-          <el-form-item label="Secret Key">
+          <el-form-item :label="t('storage.form.secretKey')">
             <el-input
               v-model="form.qiniu_secret_key"
               type="password"
               show-password
-              :placeholder="isEdit ? '留空表示保持不变' : ''"
+              :placeholder="isEdit ? t('storage.form.keepUnchanged') : ''"
             />
           </el-form-item>
-          <el-form-item label="上传域名（可选）">
-            <el-input v-model="form.upload_host" placeholder="https://upload.qiniup.com" />
+          <el-form-item :label="t('storage.form.uploadHost')">
+            <el-input v-model="form.upload_host" :placeholder="t('storage.form.uploadHostPlaceholder')" />
           </el-form-item>
           <div class="storage-switches">
-            <el-checkbox v-model="form.use_https">使用 HTTPS</el-checkbox>
-            <el-checkbox v-model="form.private">私有空间</el-checkbox>
+            <el-checkbox v-model="form.use_https">{{ t('storage.form.useHttps') }}</el-checkbox>
+            <el-checkbox v-model="form.private">{{ t('storage.form.privateSpace') }}</el-checkbox>
           </div>
         </template>
 
         <!-- 阿里云 OSS -->
         <template v-else-if="form.driver === 'oss'">
-          <el-divider content-position="left">连接信息</el-divider>
-          <el-form-item label="Region">
-            <el-input v-model="form.region" placeholder="cn-hangzhou" />
+          <el-divider content-position="left">{{ t('storage.form.connection') }}</el-divider>
+          <el-form-item :label="t('storage.form.region')">
+            <el-input v-model="form.region" :placeholder="t('storage.form.regionPlaceholderOss')" />
           </el-form-item>
-          <el-form-item label="Endpoint（可选）">
+          <el-form-item :label="t('storage.form.endpointOptional')">
             <el-input
               v-model="form.endpoint"
-              placeholder="留空则由 Region 推导，如 https://oss-cn-hangzhou.aliyuncs.com"
+              :placeholder="t('storage.form.endpointOptionalPlaceholder')"
             />
           </el-form-item>
-          <el-form-item label="Bucket">
-            <el-input v-model="form.bucket" placeholder="axmipic" />
+          <el-form-item :label="t('storage.form.bucket')">
+            <el-input v-model="form.bucket" :placeholder="t('storage.form.bucketPlaceholder')" />
           </el-form-item>
-          <el-divider content-position="left">凭据</el-divider>
-          <el-form-item label="AccessKey ID">
+          <el-divider content-position="left">{{ t('storage.form.credentials') }}</el-divider>
+          <el-form-item :label="t('storage.form.ossAccessKeyId')">
             <el-input
               v-model="form.oss_access_key_id"
-              :placeholder="isEdit ? '留空表示保持不变' : ''"
+              :placeholder="isEdit ? t('storage.form.keepUnchanged') : ''"
             />
           </el-form-item>
-          <el-form-item label="AccessKey Secret">
+          <el-form-item :label="t('storage.form.ossAccessKeySecret')">
             <el-input
               v-model="form.oss_access_key_secret"
               type="password"
               show-password
-              :placeholder="isEdit ? '留空表示保持不变' : ''"
+              :placeholder="isEdit ? t('storage.form.keepUnchanged') : ''"
             />
           </el-form-item>
-          <el-form-item label="访问域名（可选）">
-            <el-input v-model="form.domain" placeholder="https://cdn.example.com" />
+          <el-form-item :label="t('storage.form.domainOptional')">
+            <el-input v-model="form.domain" :placeholder="t('storage.form.publicBaseUrlPlaceholder')" />
           </el-form-item>
           <div class="storage-switches">
-            <el-checkbox v-model="form.use_https">使用 HTTPS</el-checkbox>
-            <el-checkbox v-model="form.private">私有 Bucket</el-checkbox>
+            <el-checkbox v-model="form.use_https">{{ t('storage.form.useHttps') }}</el-checkbox>
+            <el-checkbox v-model="form.private">{{ t('storage.form.privateBucket') }}</el-checkbox>
           </div>
         </template>
 
         <!-- 腾讯云 COS -->
         <template v-else-if="form.driver === 'cos'">
-          <el-divider content-position="left">连接信息</el-divider>
-          <el-form-item label="Region">
-            <el-input v-model="form.region" placeholder="ap-guangzhou" />
+          <el-divider content-position="left">{{ t('storage.form.connection') }}</el-divider>
+          <el-form-item :label="t('storage.form.region')">
+            <el-input v-model="form.region" :placeholder="t('storage.form.regionPlaceholderCos')" />
           </el-form-item>
-          <el-form-item label="Bucket">
-            <el-input v-model="form.bucket" placeholder="axmipic-1250000000" />
-            <p class="storage-hint">格式为「存储桶名称-APPID」，例如 axmipic-1250000000。</p>
+          <el-form-item :label="t('storage.form.bucket')">
+            <el-input v-model="form.bucket" :placeholder="t('storage.form.bucketPlaceholderCos')" />
+            <p class="storage-hint">{{ t('storage.form.bucketHintCos') }}</p>
           </el-form-item>
-          <el-divider content-position="left">凭据</el-divider>
-          <el-form-item label="SecretId">
+          <el-divider content-position="left">{{ t('storage.form.credentials') }}</el-divider>
+          <el-form-item :label="t('storage.form.secretId')">
             <el-input
               v-model="form.cos_secret_id"
-              :placeholder="isEdit ? '留空表示保持不变' : ''"
+              :placeholder="isEdit ? t('storage.form.keepUnchanged') : ''"
             />
           </el-form-item>
-          <el-form-item label="SecretKey">
+          <el-form-item :label="t('storage.form.secretKeyCos')">
             <el-input
               v-model="form.cos_secret_key"
               type="password"
               show-password
-              :placeholder="isEdit ? '留空表示保持不变' : ''"
+              :placeholder="isEdit ? t('storage.form.keepUnchanged') : ''"
             />
           </el-form-item>
-          <el-form-item label="访问域名（可选）">
-            <el-input v-model="form.domain" placeholder="https://cdn.example.com" />
+          <el-form-item :label="t('storage.form.domainOptional')">
+            <el-input v-model="form.domain" :placeholder="t('storage.form.publicBaseUrlPlaceholder')" />
           </el-form-item>
           <div class="storage-switches">
-            <el-checkbox v-model="form.use_https">使用 HTTPS</el-checkbox>
-            <el-checkbox v-model="form.private">私有存储桶</el-checkbox>
+            <el-checkbox v-model="form.use_https">{{ t('storage.form.useHttps') }}</el-checkbox>
+            <el-checkbox v-model="form.private">{{ t('storage.form.privateBucketCos') }}</el-checkbox>
           </div>
         </template>
 
-        <el-form-item v-if="!isEdit" label="创建后立即设为默认">
+        <el-form-item v-if="!isEdit" :label="t('storage.form.activate')">
           <el-switch v-model="form.activate" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialogOpen = false">取消</el-button>
+        <el-button @click="dialogOpen = false">{{ t('common.cancel') }}</el-button>
         <el-button type="primary" :loading="submitting" @click="submit">
-          {{ isEdit ? '保存' : '创建' }}
+          {{ isEdit ? t('common.save') : t('storage.actions.createSubmit') }}
         </el-button>
       </template>
     </el-dialog>

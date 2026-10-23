@@ -1,5 +1,8 @@
 <script setup lang="ts">
-withDefaults(
+import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
+
+const props = withDefaults(
   defineProps<{
     rows?: number
     columns?: number
@@ -8,13 +11,16 @@ withDefaults(
   {
     rows: 6,
     columns: 5,
-    title: '加载中',
+    title: '',
   },
 )
+
+const { t } = useI18n()
+const label = computed(() => props.title || t('tableSkeleton.loading'))
 </script>
 
 <template>
-  <div class="table-skeleton ax-card" aria-busy="true" :aria-label="title">
+  <div class="table-skeleton ax-card" aria-busy="true" :aria-label="label">
     <div class="table-skeleton__head">
       <el-skeleton-item variant="text" class="table-skeleton__title" />
       <el-skeleton-item variant="text" class="table-skeleton__action" />

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import { Check } from '@element-plus/icons-vue'
 
 import { importX, previewXImport, type XImportResult, type XMedia, type XPost } from '@/api/import'
@@ -10,6 +11,7 @@ import { formatDimensions } from '@/utils/format'
 
 const open = defineModel<boolean>({ default: false })
 const emit = defineEmits<{ imported: [result: XImportResult] }>()
+const { t } = useI18n()
 
 const url = ref('')
 const post = ref<XPost | null>(null)
@@ -59,7 +61,7 @@ function toggleAll(): void {
 async function parse(): Promise<void> {
   const value = url.value.trim()
   if (!value) {
-    ElMessage.warning('请粘贴 X 帖子链接')
+    ElMessage.warning(t('xImportDialog.validation.urlRequired'))
     return
   }
   parsing.value = true
@@ -90,16 +92,17 @@ async function submit(): Promise<void> {
     })
     result.value = data
     emit('imported', data)
-    const parts = [`导入 ${data.imported} 张`]
-    if (data.existing > 0) parts.push(`已存在 ${data.existing} 张`)
-    if (data.blocked > 0) parts.push(`审核拦截 ${data.blocked} 张`)
-    if (data.failed > 0) parts.push(`失败 ${data.failed} 张`)
+    const parts = [t('xImportDialog.messages.imported', { count: data.imported })]
+    if (data.existing > 0) parts.push(t('xImportDialog.messages.existing', { count: data.existing }))
+    if (data.blocked > 0) parts.push(t('xImportDialog.messages.blocked', { count: data.blocked }))
+    if (data.failed > 0) parts.push(t('xImportDialog.messages.failed', { count: data.failed }))
+    const summary = parts.join(t('xImportDialog.messages.separator'))
     if (data.failed > 0 && data.imported === 0 && data.existing === 0) {
-      ElMessage.error(parts.join('，'))
+      ElMessage.error(summary)
     } else if (data.blocked > 0 || data.failed > 0) {
-      ElMessage.warning(parts.join('，'))
+      ElMessage.warning(summary)
     } else {
-      ElMessage.success(parts.join('，'))
+      ElMessage.success(summary)
     }
     // 成功导入后关闭弹窗；有失败项时保留，便于查看原因。
     if (data.failed === 0) {
@@ -127,7 +130,7 @@ watch(open, (value) => {
 <template>
   <el-dialog
     v-model="open"
-    title="从 X 导入"
+    :title="t('xImportDialog.title')"
     width="min(720px, 94vw)"
     append-to-body
     :close-on-click-modal="false"
@@ -136,12 +139,12 @@ watch(open, (value) => {
       <div class="x-import__url">
         <el-input
           v-model="url"
-          placeholder="粘贴 X 帖子链接，例如 https://x.com/user/status/123..."
+          :placeholder="t('xImportDialog.urlPlaceholder')"
           clearable
           @keyup.enter="parse"
         />
         <el-button type="primary" :loading="parsing" :disabled="!url.trim()" @click="parse">
-          解析
+          {{ t('xImportDialog.parse') }}
         </el-button>
       </div>
 
@@ -175,7 +178,7 @@ watch(open, (value) => {
               target="_blank"
               rel="noopener noreferrer nofollow"
             >
-              原帖 ↗
+              {{ t('xImportDialog.originalPost') }}
             </a>
           </div>
           <p v-if="post.text" class="x-import__text">{{ post.text }}</p>
@@ -184,14 +187,14 @@ watch(open, (value) => {
             type="warning"
             :closable="false"
             show-icon
-            title="该帖子被标记为敏感内容，导入后仍需经过站内审核。"
+            :title="t('xImportDialog.sensitive')"
           />
         </div>
 
         <div class="x-import__media-head">
-          <span>选择图片（{{ selectedCount }} / {{ media.length }}）</span>
+          <span>{{ t('xImportDialog.mediaHead', { selected: selectedCount, total: media.length }) }}</span>
           <el-button link type="primary" :disabled="!allHaveIDs" @click="toggleAll">
-            {{ allSelected ? '取消全选' : '全选' }}
+            {{ allSelected ? t('xImportDialog.deselectAll') : t('xImportDialog.selectAll') }}
           </el-button>
         </div>
         <div class="x-import__media">
@@ -205,7 +208,7 @@ watch(open, (value) => {
           >
             <img
               :src="item.url"
-              :alt="item.alt || 'X 图片'"
+              :alt="item.alt || t('xImportDialog.mediaAlt')"
               loading="lazy"
               referrerpolicy="no-referrer"
             />
@@ -219,21 +222,21 @@ watch(open, (value) => {
         </div>
 
         <div class="x-import__options">
-          <span class="x-import__options-label">导入后</span>
+          <span class="x-import__options-label">{{ t('xImportDialog.optionsLabel') }}</span>
           <el-radio-group v-model="permission">
-            <el-radio-button value="public">公开到广场</el-radio-button>
-            <el-radio-button value="private">先私有</el-radio-button>
+            <el-radio-button value="public">{{ t('xImportDialog.publicToPlaza') }}</el-radio-button>
+            <el-radio-button value="private">{{ t('xImportDialog.privateFirst') }}</el-radio-button>
           </el-radio-group>
           <span class="x-import__hint">
-            私有导入后可在图片管理中确认公开
+            {{ t('xImportDialog.privateHint') }}
           </span>
         </div>
 
         <div v-if="result" class="x-import__result">
-          <span>成功 {{ result.imported }}</span>
-          <span>已存在 {{ result.existing }}</span>
-          <span v-if="result.blocked">审核拦截 {{ result.blocked }}</span>
-          <span v-if="result.failed">失败 {{ result.failed }}</span>
+          <span>{{ t('xImportDialog.result.imported', { count: result.imported }) }}</span>
+          <span>{{ t('xImportDialog.result.existing', { count: result.existing }) }}</span>
+          <span v-if="result.blocked">{{ t('xImportDialog.result.blocked', { count: result.blocked }) }}</span>
+          <span v-if="result.failed">{{ t('xImportDialog.result.failed', { count: result.failed }) }}</span>
         </div>
         <ul v-if="failures.length" class="x-import__failures">
           <li v-for="(item, index) in failures" :key="index">{{ item.error }}</li>
@@ -241,14 +244,14 @@ watch(open, (value) => {
       </template>
 
       <p v-else class="x-import__empty">
-        支持 x.com / twitter.com 的状态链接。解析成功后可选择图片与导入后的可见性。
+        {{ t('xImportDialog.empty') }}
       </p>
     </div>
 
     <template #footer>
-      <el-button @click="open = false">取消</el-button>
+      <el-button @click="open = false">{{ t('common.cancel') }}</el-button>
       <el-button type="primary" :loading="importing" :disabled="!canImport" @click="submit">
-        导入 {{ selectedCount }} 张
+        {{ t('xImportDialog.importCount', { count: selectedCount }) }}
       </el-button>
     </template>
   </el-dialog>

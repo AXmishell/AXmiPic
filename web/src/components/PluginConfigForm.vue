@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 
 import { getPluginConfig, updatePluginConfig, type PluginConfig } from '@/api/billing'
 import { toApiError } from '@/api/client'
 
+const { t } = useI18n()
 const props = defineProps<{ name: string }>()
 const emit = defineEmits<{ (event: 'saved'): void }>()
 
@@ -83,7 +85,7 @@ async function save(): Promise<void> {
   saving.value = true
   try {
     await updatePluginConfig(props.name, payload)
-    ElMessage.success('插件配置已保存并即时生效')
+    ElMessage.success(t('pluginConfig.saved'))
     await load()
     emit('saved')
   } catch (error) {
@@ -119,7 +121,7 @@ defineExpose({ reload: load })
             v-model="secretInputs[field.key]"
             type="password"
             show-password
-            :placeholder="config?.secrets?.[field.key] ? '已设置，留空保持不变' : '请输入'"
+            :placeholder="config?.secrets?.[field.key] ? t('pluginConfig.secretSetPlaceholder') : t('pluginConfig.inputPlaceholder')"
           />
           <el-input
             v-else
@@ -131,7 +133,7 @@ defineExpose({ reload: load })
     </el-form>
 
     <div class="plugin-config__actions">
-      <el-button type="primary" :loading="saving" @click="save">保存配置</el-button>
+      <el-button type="primary" :loading="saving" @click="save">{{ t('pluginConfig.save') }}</el-button>
     </div>
   </div>
 </template>

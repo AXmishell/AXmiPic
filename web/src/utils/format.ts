@@ -1,3 +1,5 @@
+import { getLocale, translate } from '@/i18n'
+
 const BYTE_UNITS = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'] as const
 
 export function formatBytes(bytes: number | null | undefined, fractionDigits = 1): string {
@@ -24,11 +26,11 @@ export function formatDateTime(input?: string | null): string {
 }
 
 export function formatNumber(value: number | null | undefined): string {
-  return new Intl.NumberFormat('zh-CN').format(value ?? 0)
+  return new Intl.NumberFormat(getLocale()).format(value ?? 0)
 }
 
 export function formatMime(mime: string | null | undefined): string {
-  if (!mime) return '未知'
+  if (!mime) return translate('format.unknownMime')
   const sub = mime.split('/')[1] ?? mime
   return sub.replace('svg+xml', 'svg').replace('jpeg', 'jpg').split(';')[0].toUpperCase()
 }

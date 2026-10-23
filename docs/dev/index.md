@@ -45,3 +45,5 @@ cd web && pnpm dev              # 终端 1：Vite
 构建前端请用 `make web`（会构建到 `../internal/webui/dist` 并补回占位文件
 `.gitkeep`，供 Go 内嵌）；直接 `pnpm build` 会清空 `dist` 从而删除占位文件。
 修改前端后重新执行 `make build`（或 `make web && make build-go`），嵌入的资源才会更新。
+
+界面文案使用 vue-i18n 管理，支持中英双语，详见 [前端国际化](/dev/i18n)。

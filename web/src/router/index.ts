@@ -3,6 +3,7 @@ import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
+import { translate } from '@/i18n'
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -24,44 +25,44 @@ const routes: RouteRecordRaw[] = [
     path: '/',
     name: 'home',
     component: () => import('@/views/HomeView.vue'),
-    meta: { title: '首页', public: true },
+    meta: { title: 'routes.home', public: true },
   },
   {
     path: '/s/:token',
     name: 'share',
     component: () => import('@/views/ShareView.vue'),
-    meta: { title: '分享', public: true },
+    meta: { title: 'routes.share', public: true },
   },
   {
     path: '/p/:slug',
     name: 'page',
     component: () => import('@/views/PublicPageView.vue'),
-    meta: { title: '页面', public: true },
+    meta: { title: 'routes.page', public: true },
   },
   {
     path: '/login',
     name: 'login',
     component: () => import('@/views/LoginView.vue'),
-    meta: { title: '登录', public: true },
+    meta: { title: 'routes.login', public: true },
   },
   {
     path: '/admin/login',
     name: 'admin-login',
     component: () => import('@/views/LoginView.vue'),
     props: { adminOnly: true },
-    meta: { title: '管理员登录', public: true },
+    meta: { title: 'routes.adminLogin', public: true },
   },
   {
     path: '/install',
     name: 'install',
     component: () => import('@/views/InstallView.vue'),
-    meta: { title: '初始化模式', public: true },
+    meta: { title: 'routes.install', public: true },
   },
   {
     path: '/plaza',
     name: 'public-plaza',
     component: () => import('@/views/PublicPlazaView.vue'),
-    meta: { title: '图片广场', public: true },
+    meta: { title: 'routes.publicPlaza', public: true },
   },
 
   // ---- 普通用户控制台 ----
@@ -74,61 +75,61 @@ const routes: RouteRecordRaw[] = [
         path: '',
         name: 'user-dashboard',
         component: () => import('@/views/user/UserDashboardView.vue'),
-        meta: { title: '用户中心' },
+        meta: { title: 'routes.userDashboard' },
       },
       {
         path: 'images',
         name: 'user-images',
         component: () => import('@/views/ImagesView.vue'),
-        meta: { title: '我的图片' },
+        meta: { title: 'routes.userImages' },
       },
       {
         path: 'processing',
         name: 'user-processing',
         component: () => import('@/views/ProcessingView.vue'),
-        meta: { title: '图片处理' },
+        meta: { title: 'routes.userProcessing' },
       },
       {
         path: 'albums',
         name: 'user-albums',
         component: () => import('@/views/AlbumsView.vue'),
-        meta: { title: '我的相册' },
+        meta: { title: 'routes.userAlbums' },
       },
       {
         path: 'plaza',
         name: 'user-plaza',
         component: () => import('@/views/PlazaView.vue'),
-        meta: { title: '图片广场' },
+        meta: { title: 'routes.userPlaza' },
       },
       {
         path: 'shares',
         name: 'user-shares',
         component: () => import('@/views/SharesView.vue'),
-        meta: { title: '我的分享' },
+        meta: { title: 'routes.userShares' },
       },
       {
         path: 'tokens',
         name: 'user-tokens',
         component: () => import('@/views/TokensView.vue'),
-        meta: { title: '访问令牌' },
+        meta: { title: 'routes.userTokens' },
       },
       {
         path: 'pricing',
         name: 'user-pricing',
         component: () => import('@/views/PricingView.vue'),
-        meta: { title: '套餐' },
+        meta: { title: 'routes.userPricing' },
       },
       {
         path: 'tickets',
         name: 'user-tickets',
         component: () => import('@/views/TicketsView.vue'),
-        meta: { title: '工单' },
+        meta: { title: 'routes.userTickets' },
       },
       {
         path: 'settings',
         name: 'user-settings',
         component: () => import('@/views/SettingsView.vue'),
-        meta: { title: '账号设置' },
+        meta: { title: 'routes.userSettings' },
       },
     ],
   },
@@ -143,67 +144,67 @@ const routes: RouteRecordRaw[] = [
         path: '',
         name: 'admin-dashboard',
         component: () => import('@/views/DashboardView.vue'),
-        meta: { title: '仪表盘', group: '概览' },
+        meta: { title: 'routes.adminDashboard', group: 'nav.groups.overview' },
       },
       {
         path: 'users',
         name: 'admin-users',
         component: () => import('@/views/UsersView.vue'),
-        meta: { title: '用户管理', group: '内容' },
+        meta: { title: 'routes.adminUsers', group: 'nav.groups.content' },
       },
       {
         path: 'plaza',
         name: 'admin-plaza',
         component: () => import('@/views/PlazaView.vue'),
-        meta: { title: '图片广场', group: '内容' },
+        meta: { title: 'routes.adminPlaza', group: 'nav.groups.content' },
       },
       {
         path: 'site',
         name: 'admin-site',
         component: () => import('@/views/SiteView.vue'),
-        meta: { title: '站点内容', group: '内容' },
+        meta: { title: 'routes.adminSite', group: 'nav.groups.content' },
       },
       {
         path: 'policies',
         name: 'admin-policies',
         component: () => import('@/views/PoliciesView.vue'),
-        meta: { title: '角色策略', group: '运营' },
+        meta: { title: 'routes.adminPolicies', group: 'nav.groups.operations' },
       },
       {
         path: 'billing',
         name: 'admin-billing',
         component: () => import('@/views/BillingView.vue'),
-        meta: { title: '计费管理', group: '运营' },
+        meta: { title: 'routes.adminBilling', group: 'nav.groups.operations' },
       },
       {
         path: 'storage',
         name: 'admin-storage',
         component: () => import('@/views/StorageView.vue'),
-        meta: { title: '存储配置', group: '运营' },
+        meta: { title: 'routes.adminStorage', group: 'nav.groups.operations' },
       },
       {
         path: 'system',
         name: 'admin-system',
         component: () => import('@/views/SystemView.vue'),
-        meta: { title: '系统设置', group: '系统' },
+        meta: { title: 'routes.adminSystem', group: 'nav.groups.system' },
       },
       {
         path: 'plugins',
         name: 'admin-plugins',
         component: () => import('@/views/PluginsView.vue'),
-        meta: { title: '插件市场', group: '系统' },
+        meta: { title: 'routes.adminPlugins', group: 'nav.groups.system' },
       },
       {
         path: 'mail-logs',
         name: 'admin-mail-logs',
         component: () => import('@/views/NotifyLogsView.vue'),
-        meta: { title: '邮件日志', group: '系统' },
+        meta: { title: 'routes.adminMailLogs', group: 'nav.groups.system' },
       },
       {
         path: 'settings',
         name: 'admin-settings',
         component: () => import('@/views/SettingsView.vue'),
-        meta: { title: '账号设置', group: '账户' },
+        meta: { title: 'routes.adminSettings', group: 'nav.groups.account' },
       },
     ],
   },
@@ -212,7 +213,7 @@ const routes: RouteRecordRaw[] = [
     path: '/:pathMatch(.*)*',
     name: 'not-found',
     component: () => import('@/views/NotFoundView.vue'),
-    meta: { title: '页面不存在', public: true },
+    meta: { title: 'routes.notFound', public: true },
   },
 ]
 
@@ -231,7 +232,6 @@ router.beforeEach(async (to) => {
   const auth = useAuthStore()
   const app = useAppStore()
   auth.hydrate()
-  document.title = to.meta.title ? `${to.meta.title} · AXmiPic` : 'AXmiPic 图床'
 
   // 管理员安全入口：开启且当前浏览器没有入口 Cookie 时，普通管理员登录页
   // 与未登录的管理后台都按 404 处理；已登录管理员仍可正常使用后台。
@@ -276,7 +276,7 @@ router.beforeEach(async (to) => {
   }
 
   if (to.meta.requiresAdmin && !auth.isAdmin) {
-    ElMessage.warning('权限不足')
+    ElMessage.warning(translate('errors.insufficientPermission'))
     return { path: '/user' }
   }
 

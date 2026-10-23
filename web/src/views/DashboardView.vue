@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import {
   Coin,
   DataLine,
@@ -23,6 +24,7 @@ import UserAvatar from '@/components/UserAvatar.vue'
 import { useAuthStore } from '@/stores/auth'
 import { formatBytes, formatDateTime, formatNumber } from '@/utils/format'
 
+const { t } = useI18n()
 const auth = useAuthStore()
 
 const loading = ref(true)
@@ -35,7 +37,7 @@ const isAdmin = computed(() => auth.isAdmin)
 const trend = computed(() => stats.value?.trend ?? [])
 const formatCount = computed(() => stats.value?.formats?.length ?? 0)
 const remainingLabel = computed(() => {
-  if (!me.value || !me.value.quota_bytes || me.value.quota_bytes <= 0) return '不限'
+  if (!me.value || !me.value.quota_bytes || me.value.quota_bytes <= 0) return t('quotaMeter.unlimited')
   return formatBytes(Math.max(0, me.value.quota_bytes - me.value.used_bytes))
 })
 
@@ -48,14 +50,38 @@ interface QuickAction {
 const quickActions = computed<QuickAction[]>(() =>
   isAdmin.value
     ? [
-        { title: '用户管理', description: '查看用户、调整角色组或禁用账号', to: '/admin/users' },
-        { title: '站点内容', description: '发布公告、处理举报与独立页面', to: '/admin/site' },
-        { title: '计费管理', description: '维护套餐、优惠券与工单', to: '/admin/billing' },
+        {
+          title: t('nav.items.users'),
+          description: t('dashboard.quickActions.users'),
+          to: '/admin/users',
+        },
+        {
+          title: t('nav.items.site'),
+          description: t('dashboard.quickActions.site'),
+          to: '/admin/site',
+        },
+        {
+          title: t('nav.items.billing'),
+          description: t('dashboard.quickActions.billing'),
+          to: '/admin/billing',
+        },
       ]
     : [
-        { title: '我的图片', description: '上传、整理与复制图片链接', to: '/user/images' },
-        { title: '图片处理', description: '实时预览缩放、滤镜与水印', to: '/user/processing' },
-        { title: '访问令牌', description: '创建用于 API 上传的令牌', to: '/user/tokens' },
+        {
+          title: t('nav.items.images'),
+          description: t('dashboard.quickActions.images'),
+          to: '/user/images',
+        },
+        {
+          title: t('nav.items.processing'),
+          description: t('dashboard.quickActions.processing'),
+          to: '/user/processing',
+        },
+        {
+          title: t('nav.items.tokens'),
+          description: t('dashboard.quickActions.tokens'),
+          to: '/user/tokens',
+        },
       ],
 )
 
@@ -75,7 +101,8 @@ async function load(): Promise<void> {
       // 公告加载失败不影响仪表盘其余内容。
     }
   } catch (error) {
-    errorMessage.value = error instanceof ApiError ? error.message : '加载失败，请稍后重试'
+    errorMessage.value =
+      error instanceof ApiError ? error.message : t('dashboard.errors.loadFailed')
   } finally {
     loading.value = false
   }
@@ -87,11 +114,11 @@ onMounted(load)
 <template>
   <div class="ax-page">
     <PageHeader
-      title="仪表盘"
-      :description="isAdmin ? '系统运行概览与账户状态' : '你的账户信息与存储用量'"
+      :title="t('dashboard.title')"
+      :description="isAdmin ? t('dashboard.description.admin') : t('dashboard.description.user')"
     >
       <template #actions>
-        <el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button>
+        <el-button :icon="Refresh" :loading="loading" @click="load">{{ t('common.refresh') }}</el-button>
       </template>
     </PageHeader>
 
@@ -114,7 +141,11 @@ onMounted(load)
     </div>
 
     <template v-else-if="me">
-      <section v-if="announcements.length > 0" class="dash-announcements" aria-label="站内公告">
+      <section
+        v-if="announcements.length > 0"
+        class="dash-announcements"
+        :aria-label="t('dashboard.announcements.label')"
+      >
         <el-alert
           v-for="item in announcements"
           :key="item.id"
@@ -132,74 +163,74 @@ onMounted(load)
               effect="plain"
               class="dash-announcement__pin"
             >
-              置顶
+              {{ t('dashboard.announcements.pinned') }}
             </el-tag>
           </template>
           <p v-if="item.content" class="dash-announcement__content">{{ item.content }}</p>
         </el-alert>
       </section>
 
-      <section class="dash-kpis" aria-label="概览统计">
+      <section class="dash-kpis" :aria-label="t('dashboard.kpis.label')">
         <template v-if="isAdmin && stats">
           <StatCard
-            label="管理员"
+            :label="t('dashboard.stats.admins')"
             :value="formatNumber(stats.admins)"
             :icon="User"
-            hint="特权账号"
+            :hint="t('dashboard.stats.adminsHint')"
           />
           <StatCard
-            label="普通用户"
+            :label="t('dashboard.stats.customers')"
             :value="formatNumber(stats.customers)"
             :icon="UserFilled"
-            hint="已注册账号"
+            :hint="t('dashboard.stats.customersHint')"
           />
           <StatCard
-            label="图片数"
+            :label="t('dashboard.stats.images')"
             :value="formatNumber(stats.images)"
             :icon="Picture"
             tone="success"
-            hint="全部账号累计"
+            :hint="t('dashboard.stats.imagesHint')"
           />
           <StatCard
-            label="存储用量"
+            :label="t('quotaMeter.label')"
             :value="formatBytes(stats.total_bytes)"
             :icon="Coin"
             tone="warning"
-            hint="全站已占用空间"
+            :hint="t('dashboard.stats.storageHint')"
           />
         </template>
         <template v-else>
           <StatCard
-            label="已用空间"
+            :label="t('dashboard.stats.used')"
             :value="formatBytes(me.used_bytes)"
             :icon="Coin"
-            hint="当前账号占用"
+            :hint="t('dashboard.stats.usedHint')"
           />
           <StatCard
-            label="剩余配额"
+            :label="t('dashboard.stats.remaining')"
             :value="remainingLabel"
             :icon="DataLine"
             tone="success"
-            hint="配额为 0 表示不限"
+            :hint="t('dashboard.stats.remainingHint')"
           />
           <StatCard
-            label="注册时间"
+            :label="t('dashboard.stats.createdAt')"
             :value="formatDateTime(me.created_at)"
             :icon="Timer"
             tone="warning"
-            hint="账号创建时间"
+            :hint="t('dashboard.stats.createdAtHint')"
           />
         </template>
       </section>
 
-      <section v-if="isAdmin && stats" class="dash-overview" aria-label="运行概览">
+      <section v-if="isAdmin && stats" class="dash-overview" :aria-label="t('dashboard.trend.label')">
         <article class="ax-card dash-trend">
           <header class="ax-card__head">
             <div class="dash-card-title">
-              <h2 class="ax-card__title">上传趋势</h2>
-              <p class="dash-card-title__hint">近 7 日每日新增图片与占用空间</p>
+              <h2 class="ax-card__title">{{ t('dashboard.trend.title') }}</h2>
+              <p class="dash-card-title__hint">{{ t('dashboard.trend.hint') }}</p>
             </div>
-            <el-tag size="small" type="info" effect="plain">7 天</el-tag>
+            <el-tag size="small" type="info" effect="plain">{{ t('dashboard.trend.range') }}</el-tag>
           </header>
           <div class="ax-card__body">
             <TrendChart :points="trend" />
@@ -209,22 +240,22 @@ onMounted(load)
         <article class="ax-card dash-runtime">
           <header class="ax-card__head">
             <div class="dash-card-title">
-              <h2 class="ax-card__title">运行环境</h2>
-              <p class="dash-card-title__hint">当前实例的存储与处理能力</p>
+              <h2 class="ax-card__title">{{ t('dashboard.runtime.title') }}</h2>
+              <p class="dash-card-title__hint">{{ t('dashboard.runtime.hint') }}</p>
             </div>
           </header>
           <div class="ax-card__body">
             <dl class="runtime-list">
               <div class="runtime-list__row">
-                <dt>存储驱动</dt>
+                <dt>{{ t('dashboard.runtime.storageDriver') }}</dt>
                 <dd class="ax-mono">{{ stats.storage_driver }}</dd>
               </div>
               <div class="runtime-list__row">
-                <dt>图片处理器</dt>
+                <dt>{{ t('dashboard.runtime.processor') }}</dt>
                 <dd class="ax-mono">{{ stats.processor || '—' }}</dd>
               </div>
               <div class="runtime-list__row">
-                <dt>输出格式</dt>
+                <dt>{{ t('dashboard.runtime.formats') }}</dt>
                 <dd>
                   <span v-if="formatCount === 0" class="ax-muted">—</span>
                   <span v-else class="ax-cluster runtime-list__formats">
@@ -241,14 +272,14 @@ onMounted(load)
                 </dd>
               </div>
               <div class="runtime-list__row">
-                <dt>图片总数</dt>
-                <dd>{{ formatNumber(stats.images) }} 张</dd>
+                <dt>{{ t('dashboard.runtime.images') }}</dt>
+                <dd>{{ t('dashboard.runtime.imageCount', { count: formatNumber(stats.images) }) }}</dd>
               </div>
             </dl>
             <p class="runtime-list__hint">
-              存储后端与处理器可在
-              <router-link to="/admin/system">系统设置</router-link>
-              中调整。
+              {{ t('dashboard.runtime.settingsHintBefore') }}
+              <router-link to="/admin/system">{{ t('dashboard.runtime.settingsLink') }}</router-link>
+              {{ t('dashboard.runtime.settingsHintAfter') }}
             </p>
           </div>
         </article>
@@ -257,9 +288,9 @@ onMounted(load)
       <section class="dash-cols">
         <article class="ax-card">
           <header class="ax-card__head">
-            <h2 class="ax-card__title">我的账户</h2>
+            <h2 class="ax-card__title">{{ t('dashboard.account.title') }}</h2>
             <el-tag size="small" :type="isAdmin ? 'primary' : 'info'" effect="plain">
-              {{ isAdmin ? '管理员' : '用户' }}
+              {{ isAdmin ? t('topbar.roleAdmin') : t('topbar.roleUser') }}
             </el-tag>
           </header>
           <div class="ax-card__body account">
@@ -268,18 +299,18 @@ onMounted(load)
               <div class="account__meta">
                 <p class="account__name">{{ me.username }}</p>
                 <span class="account__role">
-                  {{ isAdmin ? '拥有实例管理权限' : '普通账户' }}
+                  {{ isAdmin ? t('dashboard.account.adminHint') : t('dashboard.account.userHint') }}
                 </span>
               </div>
             </div>
             <QuotaMeter :used="me.used_bytes" :quota="me.quota_bytes" />
             <dl class="info-list">
               <div class="info-list__row">
-                <dt>用户 ID</dt>
+                <dt>{{ t('dashboard.account.userId') }}</dt>
                 <dd class="ax-mono account__id" :title="me.id">{{ me.id }}</dd>
               </div>
               <div class="info-list__row">
-                <dt>注册时间</dt>
+                <dt>{{ t('dashboard.account.createdAt') }}</dt>
                 <dd>{{ formatDateTime(me.created_at) }}</dd>
               </div>
             </dl>
@@ -288,7 +319,7 @@ onMounted(load)
 
         <article class="ax-card">
           <header class="ax-card__head">
-            <h2 class="ax-card__title">快捷操作</h2>
+            <h2 class="ax-card__title">{{ t('nav.items.shortcuts') }}</h2>
           </header>
           <div class="ax-card__body stack-actions">
             <router-link

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import { CopyDocument, Refresh } from '@element-plus/icons-vue'
 
 import { toApiError } from '@/api/client'
@@ -10,6 +11,8 @@ import CopyField from '@/components/CopyField.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import PageHeader from '@/components/PageHeader.vue'
 import { copyText } from '@/utils/clipboard'
+
+const { t } = useI18n()
 
 const images = ref<ImageItem[]>([])
 const loading = ref(false)
@@ -59,14 +62,14 @@ const params = computed<TransformParams>(() => ({
 const previewUrl = computed(() => (selected.value ? transformUrl(selected.value.url, params.value) : ''))
 const previewFailed = ref(false)
 
-const formatOptions = [
-  { value: '', label: '保持原格式' },
+const formatOptions = computed(() => [
+  { value: '', label: t('processing.format.keepOriginal') },
   { value: 'jpeg', label: 'JPEG' },
   { value: 'png', label: 'PNG' },
   { value: 'gif', label: 'GIF' },
   { value: 'webp', label: 'WebP' },
   { value: 'avif', label: 'AVIF' },
-]
+])
 
 const positionOptions = ['top-left', 'top-right', 'bottom-left', 'bottom-right', 'center']
 
@@ -109,8 +112,8 @@ function reset(): void {
 
 async function copyPreview(): Promise<void> {
   const ok = await copyText(previewUrl.value)
-  if (ok) ElMessage.success('已复制处理后的链接')
-  else ElMessage.error('复制失败')
+  if (ok) ElMessage.success(t('processing.messages.copied'))
+  else ElMessage.error(t('processing.messages.copyFailed'))
 }
 
 watch(previewUrl, () => {
@@ -122,10 +125,10 @@ onMounted(load)
 
 <template>
   <div class="ax-page">
-    <PageHeader title="图片处理" description="通过 URL 参数实时缩放、裁剪、旋转、翻转、滤镜与水印。">
+    <PageHeader :title="t('processing.title')" :description="t('processing.description')">
       <template #actions>
-        <el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button>
-        <el-button @click="reset">重置参数</el-button>
+        <el-button :icon="Refresh" :loading="loading" @click="load">{{ t('common.refresh') }}</el-button>
+        <el-button @click="reset">{{ t('processing.actions.resetParams') }}</el-button>
       </template>
     </PageHeader>
 
@@ -133,15 +136,15 @@ onMounted(load)
 
     <EmptyState
       v-else-if="!loading && images.length === 0"
-      title="还没有可处理的图片"
-      description="先上传图片，再回到这里调试处理参数。"
+      :title="t('processing.empty.title')"
+      :description="t('processing.empty.description')"
     />
 
     <div v-else class="editor">
       <aside class="editor__panel ax-card">
         <div class="ax-card__body">
           <div class="field">
-            <label class="field__label">选择图片</label>
+            <label class="field__label">{{ t('processing.labels.selectImage') }}</label>
             <el-select v-model="selectedId" filterable style="width: 100%">
               <el-option
                 v-for="image in images"
@@ -154,15 +157,15 @@ onMounted(load)
 
           <div class="field-grid">
             <div class="field">
-              <label class="field__label">宽度</label>
+              <label class="field__label">{{ t('processing.labels.width') }}</label>
               <el-input-number v-model="form.width" :min="0" :max="4096" />
             </div>
             <div class="field">
-              <label class="field__label">高度</label>
+              <label class="field__label">{{ t('processing.labels.height') }}</label>
               <el-input-number v-model="form.height" :min="0" :max="4096" />
             </div>
             <div class="field">
-              <label class="field__label">适配</label>
+              <label class="field__label">{{ t('processing.labels.fit') }}</label>
               <el-select v-model="form.fit">
                 <el-option label="contain" value="contain" />
                 <el-option label="cover" value="cover" />
@@ -170,76 +173,80 @@ onMounted(load)
               </el-select>
             </div>
             <div class="field">
-              <label class="field__label">输出格式</label>
+              <label class="field__label">{{ t('processing.labels.format') }}</label>
               <el-select v-model="form.format">
                 <el-option v-for="o in formatOptions" :key="o.value" :label="o.label" :value="o.value" />
               </el-select>
             </div>
             <div class="field">
-              <label class="field__label">质量</label>
+              <label class="field__label">{{ t('processing.labels.quality') }}</label>
               <el-input-number v-model="form.quality" :min="0" :max="100" />
             </div>
             <div class="field">
-              <label class="field__label">旋转</label>
+              <label class="field__label">{{ t('processing.labels.rotate') }}</label>
               <el-select v-model="form.rotate">
-                <el-option label="不旋转" :value="0" />
+                <el-option :label="t('processing.rotate.none')" :value="0" />
                 <el-option label="90°" :value="90" />
                 <el-option label="180°" :value="180" />
                 <el-option label="270°" :value="270" />
               </el-select>
             </div>
             <div class="field">
-              <label class="field__label">翻转</label>
+              <label class="field__label">{{ t('processing.labels.flip') }}</label>
               <el-select v-model="form.flip">
-                <el-option label="不翻转" value="" />
-                <el-option label="水平" value="h" />
-                <el-option label="垂直" value="v" />
-                <el-option label="水平+垂直" value="hv" />
+                <el-option :label="t('processing.flip.none')" value="" />
+                <el-option :label="t('processing.flip.horizontal')" value="h" />
+                <el-option :label="t('processing.flip.vertical')" value="v" />
+                <el-option :label="t('processing.flip.both')" value="hv" />
               </el-select>
             </div>
             <div class="field">
-              <label class="field__label">允许放大</label>
+              <label class="field__label">{{ t('processing.labels.enlarge') }}</label>
               <el-switch v-model="form.enlarge" />
             </div>
           </div>
 
           <div class="field-grid">
             <div class="field">
-              <label class="field__label">灰度</label>
+              <label class="field__label">{{ t('processing.labels.grayscale') }}</label>
               <el-switch v-model="form.grayscale" />
             </div>
             <div class="field">
-              <label class="field__label">模糊强度</label>
+              <label class="field__label">{{ t('processing.labels.blur') }}</label>
               <el-slider v-model="form.blur" :min="0" :max="20" :step="0.5" />
             </div>
             <div class="field">
-              <label class="field__label">锐化强度</label>
+              <label class="field__label">{{ t('processing.labels.sharpen') }}</label>
               <el-slider v-model="form.sharpen" :min="0" :max="20" :step="0.5" />
             </div>
           </div>
 
-          <el-divider content-position="left">文字水印</el-divider>
+          <el-divider content-position="left">{{ t('processing.labels.watermark') }}</el-divider>
           <div class="field">
-            <label class="field__label">水印文字</label>
-            <el-input v-model="form.watermark" placeholder="例如 AXmiPic" maxlength="200" />
+            <label class="field__label">{{ t('processing.labels.watermarkText') }}</label>
+            <el-input
+              v-model="form.watermark"
+              :placeholder="t('processing.watermarkPlaceholder')"
+              maxlength="200"
+            />
           </div>
           <div class="field-grid">
             <div class="field">
-              <label class="field__label">位置</label>
+              <label class="field__label">{{ t('processing.labels.position') }}</label>
               <el-select v-model="form.watermarkPosition">
                 <el-option v-for="p in positionOptions" :key="p" :label="p" :value="p" />
               </el-select>
             </div>
             <div class="field">
-              <label class="field__label">不透明度</label>
+              <label class="field__label">{{ t('processing.labels.opacity') }}</label>
               <el-slider v-model="form.watermarkOpacity" :min="0" :max="100" />
             </div>
             <div class="field">
-              <label class="field__label">字号（0 自适应）</label>
+              <label class="field__label">{{ t('processing.labels.fontSize') }}</label>
               <el-input-number v-model="form.watermarkSize" :min="0" :max="400" />
             </div>
             <div class="field">
-              <label class="field__label">颜色</label>
+              <label class="field__label">{{ t('processing.labels.color') }}</label>
               <el-color-picker v-model="form.watermarkColor" />
             </div>
           </div>
@@ -248,20 +255,20 @@ onMounted(load)
 
       <section class="editor__preview ax-card">
         <header class="ax-card__head">
-          <h2 class="ax-card__title">实时预览</h2>
+          <h2 class="ax-card__title">{{ t('processing.preview.title') }}</h2>
           <el-button size="small" :icon="CopyDocument" :disabled="!previewUrl" @click="copyPreview">
-            复制链接
+            {{ t('processing.actions.copyLink') }}
           </el-button>
         </header>
         <div class="ax-card__body preview">
           <img
             v-if="previewUrl && !previewFailed"
             :src="previewUrl"
-            :alt="selected?.original_name || '预览'"
+            :alt="selected?.original_name || t('processing.preview.alt')"
             @error="previewFailed = true"
           />
-          <p v-else class="ax-muted">预览不可用，请检查处理参数。</p>
-          <CopyField label="处理后的链接" :value="previewUrl" />
+          <p v-else class="ax-muted">{{ t('processing.preview.unavailable') }}</p>
+          <CopyField :label="t('processing.preview.linkLabel')" :value="previewUrl" />
         </div>
       </section>
     </div>

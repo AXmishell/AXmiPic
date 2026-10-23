@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { ArrowRight, Close, Management, Setting, User } from '@element-plus/icons-vue'
 
 import BrandMark from '@/components/BrandMark.vue'
@@ -17,6 +18,7 @@ const props = withDefaults(
 )
 const emit = defineEmits<{ (event: 'close'): void }>()
 
+const { t } = useI18n()
 const auth = useAuthStore()
 const route = useRoute()
 
@@ -31,26 +33,26 @@ function isActive(item: NavItem): boolean {
   <aside
     class="sidebar"
     :class="{ 'is-open': open, 'is-collapsed': props.collapsed }"
-    aria-label="主导航"
+    :aria-label="t('sidebar.mainNav')"
   >
     <div class="sidebar__brand">
-      <router-link :to="variant === 'admin' ? '/admin' : '/user'" class="brand" aria-label="AXmiPic 控制台首页">
+      <router-link :to="variant === 'admin' ? '/admin' : '/user'" class="brand" :aria-label="t('sidebar.brandHome')">
         <span class="brand__mark" aria-hidden="true">
           <BrandMark :size="18" />
         </span>
         <span class="brand__text">
           <span class="brand__name">AXmiPic</span>
-          <span class="brand__sub">{{ variant === 'admin' ? '管理控制台' : '用户中心' }}</span>
+          <span class="brand__sub">{{ variant === 'admin' ? t('sidebar.adminConsole') : t('sidebar.userCenter') }}</span>
         </span>
       </router-link>
-      <button class="sidebar__close" type="button" aria-label="关闭导航菜单" @click="emit('close')">
+      <button class="sidebar__close" type="button" :aria-label="t('topbar.closeMenu')" @click="emit('close')">
         <el-icon :size="14"><Close /></el-icon>
       </button>
     </div>
 
     <nav class="sidebar__nav">
-      <div v-for="group in groups" :key="group.label" class="sidebar__group">
-        <p class="sidebar__section">{{ group.label }}</p>
+      <div v-for="group in groups" :key="group.labelKey" class="sidebar__group">
+        <p class="sidebar__section">{{ t(group.labelKey) }}</p>
         <ul class="sidebar__list">
           <li v-for="item in group.items" :key="item.to">
             <router-link
@@ -58,12 +60,12 @@ function isActive(item: NavItem): boolean {
               class="nav-item"
               :class="{ 'is-active': isActive(item) }"
               :aria-current="isActive(item) ? 'page' : undefined"
-              :title="collapsed ? item.label : undefined"
+              :title="collapsed ? t(item.labelKey) : undefined"
               @click="emit('close')"
             >
               <span class="nav-item__rail" aria-hidden="true" />
               <el-icon :size="16" class="nav-item__icon"><component :is="item.icon" /></el-icon>
-              <span class="nav-item__label">{{ item.label }}</span>
+              <span class="nav-item__label">{{ t(item.labelKey) }}</span>
             </router-link>
           </li>
         </ul>
@@ -82,24 +84,24 @@ function isActive(item: NavItem): boolean {
         v-if="variant === 'admin'"
         to="/user"
         class="nav-item nav-item--footer"
-        :title="collapsed ? '用户中心' : undefined"
+        :title="collapsed ? t('sidebar.userCenter') : undefined"
         @click="emit('close')"
       >
         <span class="nav-item__rail" aria-hidden="true" />
         <el-icon :size="16" class="nav-item__icon"><User /></el-icon>
-        <span class="nav-item__label">用户中心</span>
+        <span class="nav-item__label">{{ t('sidebar.userCenter') }}</span>
         <el-icon :size="12" class="nav-item__arrow"><ArrowRight /></el-icon>
       </router-link>
       <router-link
         v-if="variant !== 'admin' && auth.isAdmin"
         to="/admin"
         class="nav-item nav-item--footer"
-        :title="collapsed ? '管理控制台' : undefined"
+        :title="collapsed ? t('sidebar.adminConsole') : undefined"
         @click="emit('close')"
       >
         <span class="nav-item__rail" aria-hidden="true" />
         <el-icon :size="16" class="nav-item__icon"><Management /></el-icon>
-        <span class="nav-item__label">管理控制台</span>
+        <span class="nav-item__label">{{ t('sidebar.adminConsole') }}</span>
         <el-icon :size="12" class="nav-item__arrow"><ArrowRight /></el-icon>
       </router-link>
       <router-link
@@ -107,12 +109,12 @@ function isActive(item: NavItem): boolean {
         class="nav-item nav-item--footer"
         :class="{ 'is-active': route.path.endsWith('/settings') }"
         :aria-current="route.path.endsWith('/settings') ? 'page' : undefined"
-        :title="collapsed ? '账号设置' : undefined"
+        :title="collapsed ? t('sidebar.accountSettings') : undefined"
         @click="emit('close')"
       >
         <span class="nav-item__rail" aria-hidden="true" />
         <el-icon :size="16" class="nav-item__icon"><Setting /></el-icon>
-        <span class="nav-item__label">账号设置</span>
+        <span class="nav-item__label">{{ t('sidebar.accountSettings') }}</span>
         <el-icon :size="12" class="nav-item__arrow"><ArrowRight /></el-icon>
       </router-link>
     </div>

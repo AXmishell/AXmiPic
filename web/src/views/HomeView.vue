@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import {
   CopyDocument,
   Grid,
@@ -23,6 +24,7 @@ import PlazaMasonry from '@/components/PlazaMasonry.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
 
+const { t } = useI18n()
 const router = useRouter()
 const auth = useAuthStore()
 const theme = useThemeStore()
@@ -40,10 +42,10 @@ const dbChecking = ref(false)
 const DB_CHECK_INTERVAL = 30_000
 let dbTimer: number | undefined
 
-const displayName = computed(() => (auth.isAuthenticated ? auth.username : '访客'))
+const displayName = computed(() => (auth.isAuthenticated ? auth.username : t('home.guest')))
 
 function validateFile(file: { size: number; type: string; name: string }): string | null {
-  if (!ACCEPT.split(',').includes(file.type)) return `不支持的格式：${file.name}`
+  if (!ACCEPT.split(',').includes(file.type)) return t('home.unsupportedFormat', { name: file.name })
   return null
 }
 
@@ -58,7 +60,7 @@ async function uploadFiles(files: File[]): Promise<void> {
   uploading.value = true
   try {
     uploaded.value = await uploadImage(file)
-    ElMessage.success('上传成功')
+    ElMessage.success(t('home.uploadSuccess'))
     if (auth.isAuthenticated) {
       // 已登录用户可在用户中心继续管理。
     }
@@ -137,9 +139,9 @@ async function checkDatabase(): Promise<void> {
     const health = await fetchHealthStatus()
     dbIssue.value = isDatabaseHealthy(health)
       ? null
-      : health.database?.message || '数据库连接不可用'
+      : health.database?.message || t('home.dbUnavailable')
   } catch {
-    dbIssue.value = '无法连接到服务器，请确认后端服务与数据库是否正常运行'
+    dbIssue.value = t('home.dbConnectFailed')
   } finally {
     dbChecking.value = false
   }
@@ -155,7 +157,7 @@ async function checkDatabase(): Promise<void> {
     @drop="onDrop"
   >
     <header class="home__topbar">
-      <router-link to="/" class="brand" aria-label="AXmiPic 首页">
+      <router-link to="/" class="brand" :aria-label="t('home.aria.brandHome')">
         <span class="brand__mark" aria-hidden="true">
           <BrandMark :size="18" />
         </span>
@@ -168,8 +170,8 @@ async function checkDatabase(): Promise<void> {
           href="https://github.com/AXmishell/AXmiPic"
           target="_blank"
           rel="noopener noreferrer"
-          aria-label="GitHub 仓库"
-          title="GitHub 仓库"
+          :aria-label="t('home.aria.githubRepo')"
+          :title="t('home.aria.githubRepo')"
         >
           <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="currentColor">
             <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z" />
@@ -178,27 +180,27 @@ async function checkDatabase(): Promise<void> {
         <button
           class="icon-btn"
           type="button"
-          :aria-label="theme.isDark ? '切换到浅色主题' : '切换到深色主题'"
+          :aria-label="theme.isDark ? t('topbar.switchToLight') : t('topbar.switchToDark')"
           @click="theme.toggle()"
         >
           <el-icon :size="16"><component :is="theme.isDark ? Sunny : Moon" /></el-icon>
         </button>
         <el-button v-if="auth.isAuthenticated" type="primary" :icon="User" @click="goUserCenter">
-          {{ auth.isAdmin ? '管理控制台' : '用户中心' }}
+          {{ auth.isAdmin ? t('topbar.adminConsole') : t('topbar.userCenter') }}
         </el-button>
-        <el-button v-else type="primary" @click="router.push('/login')">登录 / 注册</el-button>
+        <el-button v-else type="primary" @click="router.push('/login')">{{ t('home.loginRegister') }}</el-button>
       </div>
     </header>
 
     <main class="home__main">
       <section v-if="dbIssue" class="home__db-alert" aria-live="polite">
         <el-alert type="error" :closable="false" show-icon>
-          <template #title>数据库连接异常</template>
+          <template #title>{{ t('home.dbAlertTitle') }}</template>
           <div class="home__db-alert-body">
             <span>{{ dbIssue }}</span>
-            <el-button size="small" :loading="dbChecking" @click="checkDatabase">重试</el-button>
+            <el-button size="small" :loading="dbChecking" @click="checkDatabase">{{ t('common.retry') }}</el-button>
             <el-button size="small" link type="primary" @click="router.push('/install')">
-              前往初始化
+              {{ t('home.goInstall') }}
             </el-button>
           </div>
         </el-alert>
@@ -206,14 +208,14 @@ async function checkDatabase(): Promise<void> {
 
       <section class="hero">
         <div class="hero__glow" aria-hidden="true" />
-        <span class="hero__eyebrow">单二进制 · 可自托管 · 开源</span>
-        <h1 class="hero__title">轻量、可靠的自托管图床</h1>
+        <span class="hero__eyebrow">{{ t('home.hero.eyebrow') }}</span>
+        <h1 class="hero__title">{{ t('home.hero.title') }}</h1>
         <p class="hero__desc">
-          拖拽、粘贴或点击即可上传图片，实时获得可分享的直链。
+          {{ t('home.hero.desc') }}
         </p>
       </section>
 
-      <section v-if="announcements.length > 0" class="home__announcements" aria-label="站内公告">
+      <section v-if="announcements.length > 0" class="home__announcements" :aria-label="t('home.aria.announcements')">
         <el-alert
           v-for="item in announcements.slice(0, 3)"
           :key="item.id"
@@ -230,10 +232,10 @@ async function checkDatabase(): Promise<void> {
         <div class="upload-card__head">
           <h2 class="upload-card__title">
             <el-icon :size="16"><Upload /></el-icon>
-            上传图片
+            {{ t('home.upload.title') }}
           </h2>
           <span class="upload-card__hint">
-            支持 JPG / PNG / GIF / WebP · 当前身份：{{ displayName }}
+            {{ t('home.upload.hint', { name: displayName }) }}
           </span>
         </div>
 
@@ -249,10 +251,10 @@ async function checkDatabase(): Promise<void> {
         >
           <el-icon class="upload-card__icon" :size="40"><UploadFilled /></el-icon>
           <div class="upload-card__text">
-            将图片拖到此处，或<em>点击上传</em>
+            {{ t('home.upload.dropPrefix') }}<em>{{ t('home.upload.dropAction') }}</em>
           </div>
           <template #tip>
-            <p class="upload-card__tip">未登录访客也可上传，登录后可获得更大的配额与完整管理能力。</p>
+            <p class="upload-card__tip">{{ t('home.upload.tip') }}</p>
           </template>
         </el-upload>
 
@@ -268,47 +270,47 @@ async function checkDatabase(): Promise<void> {
             <p class="upload-result__name">
               {{ uploaded.original_name || uploaded.filename || uploaded.key }}
             </p>
-            <CopyField label="图片直链" :value="uploaded.url" />
+            <CopyField :label="t('home.upload.imageLink')" :value="uploaded.url" />
             <div class="upload-result__actions">
               <el-button
                 size="small"
                 :icon="CopyDocument"
                 @click="router.push(auth.isAuthenticated ? (auth.isAdmin ? '/admin' : '/user/images') : '/login')"
               >
-                {{ auth.isAuthenticated ? '去用户中心管理' : '登录以管理' }}
+                {{ auth.isAuthenticated ? t('home.upload.goManage') : t('home.upload.loginToManage') }}
               </el-button>
             </div>
           </div>
         </div>
       </section>
 
-      <section class="home__steps" aria-label="使用流程">
+      <section class="home__steps" :aria-label="t('home.aria.steps')">
         <div class="home__step">
           <span class="home__step-index">01</span>
-          <h3 class="home__step-title">上传</h3>
-          <p class="home__step-desc">拖拽、粘贴或点击选择图片</p>
+          <h3 class="home__step-title">{{ t('home.steps.upload.title') }}</h3>
+          <p class="home__step-desc">{{ t('home.steps.upload.desc') }}</p>
         </div>
         <div class="home__step">
           <span class="home__step-index">02</span>
-          <h3 class="home__step-title">处理</h3>
-          <p class="home__step-desc">通过 URL 参数实时缩放与转码</p>
+          <h3 class="home__step-title">{{ t('home.steps.process.title') }}</h3>
+          <p class="home__step-desc">{{ t('home.steps.process.desc') }}</p>
         </div>
         <div class="home__step">
           <span class="home__step-index">03</span>
-          <h3 class="home__step-title">分发</h3>
-          <p class="home__step-desc">复制直链，或生成带权限的分享</p>
+          <h3 class="home__step-title">{{ t('home.steps.distribute.title') }}</h3>
+          <p class="home__step-desc">{{ t('home.steps.distribute.desc') }}</p>
         </div>
       </section>
     </main>
 
-    <section class="home__plaza" aria-label="图片广场">
+    <section class="home__plaza" :aria-label="t('home.aria.plaza')">
       <div class="home__plaza-inner">
         <div class="home__section-head">
           <div>
-            <h2 class="home__section-title"><el-icon :size="16"><Grid /></el-icon>图片广场</h2>
-            <p class="home__section-desc">来自所有用户的公开图片，瀑布流浏览。</p>
+            <h2 class="home__section-title"><el-icon :size="16"><Grid /></el-icon>{{ t('home.plaza.title') }}</h2>
+            <p class="home__section-desc">{{ t('home.plaza.desc') }}</p>
           </div>
-          <router-link class="home__section-link" to="/plaza">查看全部 →</router-link>
+          <router-link class="home__section-link" to="/plaza">{{ t('home.plaza.viewAll') }}</router-link>
         </div>
         <PlazaMasonry />
       </div>
@@ -321,11 +323,11 @@ async function checkDatabase(): Promise<void> {
             <BrandMark :size="14" />
           </span>
           <span>AXmiPic</span>
-          <span class="home__footer-muted">自托管图床 · MIT License</span>
+          <span class="home__footer-muted">{{ t('home.footer.muted') }}</span>
         </div>
-        <nav class="home__footer-links" aria-label="页脚导航">
-          <a href="https://axmipic.gpcn.cc/" target="_blank" rel="noopener noreferrer">文档</a>
-          <router-link to="/plaza">图片广场</router-link>
+        <nav class="home__footer-links" :aria-label="t('home.aria.footerNav')">
+          <a href="https://axmipic.gpcn.cc/" target="_blank" rel="noopener noreferrer">{{ t('home.footer.docs') }}</a>
+          <router-link to="/plaza">{{ t('home.footer.plaza') }}</router-link>
           <a
             href="https://github.com/AXmishell/AXmiPic"
             target="_blank"
@@ -339,7 +341,7 @@ async function checkDatabase(): Promise<void> {
 
     <div v-if="dragActive" class="home__dropzone" aria-hidden="true">
       <el-icon :size="40"><Upload /></el-icon>
-      <span>松开以上传图片</span>
+      <span>{{ t('home.upload.releaseToUpload') }}</span>
     </div>
   </div>
 </template>

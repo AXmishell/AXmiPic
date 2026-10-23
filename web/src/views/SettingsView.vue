@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useI18n } from 'vue-i18n'
 import { EditPen, Key, Refresh, SwitchButton } from '@element-plus/icons-vue'
 import QRCode from 'qrcode'
 
@@ -25,8 +26,9 @@ import UserAvatar from '@/components/UserAvatar.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore, type ThemeMode } from '@/stores/theme'
 import { formatDateTime } from '@/utils/format'
-import { USERNAME_PATTERN, USERNAME_RULE_MESSAGE } from '@/utils/validate'
+import { USERNAME_PATTERN, usernameRuleMessage } from '@/utils/validate'
 
+const { t } = useI18n()
 const auth = useAuthStore()
 const theme = useThemeStore()
 const router = useRouter()
@@ -37,10 +39,10 @@ const errorMessage = ref('')
 const me = computed(() => auth.user)
 const isAdmin = computed(() => auth.isAdmin)
 
-const themeOptions: { value: ThemeMode; label: string }[] = [
-  { value: 'dark', label: '深色' },
-  { value: 'light', label: '浅色' },
-]
+const themeOptions = computed<{ value: ThemeMode; label: string }[]>(() => [
+  { value: 'dark', label: t('settings.theme.dark') },
+  { value: 'light', label: t('settings.theme.light') },
+])
 
 function setTheme(mode: ThemeMode): void {
   theme.setMode(mode)
@@ -114,7 +116,7 @@ async function openSetupTOTP(): Promise<void> {
 
 async function confirmEnableTOTP(): Promise<void> {
   if (!/^\d{6}$/.test(totpCode.value.trim())) {
-    ElMessage.warning('请输入 6 位动态验证码')
+    ElMessage.warning(t('settings.messages.enterTotp6'))
     return
   }
   totpBusy.value = true
@@ -122,7 +124,7 @@ async function confirmEnableTOTP(): Promise<void> {
     await enableTOTP(totpCode.value.trim())
     totpDialog.value = false
     await refreshAccount()
-    ElMessage.success('二次验证已启用')
+    ElMessage.success(t('settings.messages.totpEnabled'))
   } catch (error) {
     ElMessage.error(toApiError(error).message)
   } finally {
@@ -138,7 +140,7 @@ function openDisableTOTP(): void {
 
 async function confirmDisableTOTP(): Promise<void> {
   if (!disableCode.value.trim() && !disablePassword.value) {
-    ElMessage.warning('请输入动态验证码或当前密码')
+    ElMessage.warning(t('settings.messages.enterTotpOrPassword'))
     return
   }
   disableBusy.value = true
@@ -149,7 +151,7 @@ async function confirmDisableTOTP(): Promise<void> {
     })
     disableDialog.value = false
     await refreshAccount()
-    ElMessage.success('二次验证已关闭')
+    ElMessage.success(t('settings.messages.totpDisabled'))
   } catch (error) {
     ElMessage.error(toApiError(error).message)
   } finally {
@@ -166,13 +168,13 @@ function startChangeEmail(): void {
 
 async function sendCode(): Promise<void> {
   if (!emailForm.email.trim()) {
-    ElMessage.warning('请输入邮箱地址')
+    ElMessage.warning(t('settings.messages.enterEmailAddress'))
     return
   }
   emailSending.value = true
   try {
     await sendEmailCode(emailForm.email.trim())
-    ElMessage.success('验证码已发送，请查收邮箱')
+    ElMessage.success(t('settings.messages.codeSent'))
   } catch (error) {
     ElMessage.error(toApiError(error).message)
   } finally {
@@ -182,11 +184,11 @@ async function sendCode(): Promise<void> {
 
 async function bindEmail(): Promise<void> {
   if (!/^\d{6}$/.test(emailForm.code.trim())) {
-    ElMessage.warning('请输入 6 位验证码')
+    ElMessage.warning(t('settings.messages.enterCode6'))
     return
   }
   if (emailBound.value && !emailForm.password) {
-    ElMessage.warning('换绑邮箱需要输入当前密码')
+    ElMessage.warning(t('settings.messages.changeEmailPasswordRequired'))
     return
   }
   emailBinding.value = true
@@ -196,7 +198,7 @@ async function bindEmail(): Promise<void> {
     emailForm.code = ''
     emailForm.password = ''
     await refreshAccount()
-    ElMessage.success('邮箱绑定成功')
+    ElMessage.success(t('settings.messages.emailBound'))
   } catch (error) {
     ElMessage.error(toApiError(error).message)
   } finally {
@@ -206,7 +208,7 @@ async function bindEmail(): Promise<void> {
 
 async function confirmUnbindEmail(): Promise<void> {
   if (!unbindPassword.value) {
-    ElMessage.warning('请输入当前密码')
+    ElMessage.warning(t('settings.messages.enterCurrentPassword'))
     return
   }
   unbindBusy.value = true
@@ -216,7 +218,7 @@ async function confirmUnbindEmail(): Promise<void> {
     unbindPassword.value = ''
     emailEditing.value = false
     await refreshAccount()
-    ElMessage.success('邮箱已解绑')
+    ElMessage.success(t('settings.messages.emailUnbound'))
   } catch (error) {
     ElMessage.error(toApiError(error).message)
   } finally {
@@ -234,15 +236,15 @@ function openChangeUsername(): void {
 async function confirmChangeUsername(): Promise<void> {
   const username = usernameForm.username.trim()
   if (!USERNAME_PATTERN.test(username)) {
-    ElMessage.warning(USERNAME_RULE_MESSAGE)
+    ElMessage.warning(usernameRuleMessage())
     return
   }
   if (!usernameForm.password) {
-    ElMessage.warning('请输入当前密码')
+    ElMessage.warning(t('settings.messages.enterCurrentPassword'))
     return
   }
   if (security.value?.totp_enabled && !/^\d{6}$/.test(usernameForm.totpCode.trim())) {
-    ElMessage.warning('请输入 6 位动态验证码')
+    ElMessage.warning(t('settings.messages.enterTotp6'))
     return
   }
   usernameBusy.value = true
@@ -254,7 +256,7 @@ async function confirmChangeUsername(): Promise<void> {
     })
     usernameDialog.value = false
     await refreshAccount()
-    ElMessage.success('用户名已更新，下次登录请使用新用户名')
+    ElMessage.success(t('settings.messages.usernameUpdated'))
   } catch (error) {
     ElMessage.error(toApiError(error).message)
   } finally {
@@ -271,22 +273,22 @@ function openChangePassword(): void {
 
 async function confirmChangePassword(): Promise<void> {
   if (!passwordForm.current) {
-    ElMessage.warning('请输入当前密码')
+    ElMessage.warning(t('settings.messages.enterCurrentPassword'))
     return
   }
   if (passwordForm.next.length < 8) {
-    ElMessage.warning('新密码至少 8 位')
+    ElMessage.warning(t('settings.messages.newPasswordMin'))
     return
   }
   if (passwordForm.next !== passwordForm.confirm) {
-    ElMessage.warning('两次输入的新密码不一致')
+    ElMessage.warning(t('settings.messages.newPasswordMismatch'))
     return
   }
   passwordBusy.value = true
   try {
     await changePassword(passwordForm.current, passwordForm.next)
     passwordDialog.value = false
-    ElMessage.success('密码已修改')
+    ElMessage.success(t('settings.messages.passwordChanged'))
   } catch (error) {
     ElMessage.error(toApiError(error).message)
   } finally {
@@ -309,16 +311,16 @@ async function load(): Promise<void> {
 
 async function handleLogout(): Promise<void> {
   try {
-    await ElMessageBox.confirm('退出后需要重新登录才能继续使用控制台。', '确定退出登录吗？', {
-      confirmButtonText: '退出登录',
-      cancelButtonText: '取消',
+    await ElMessageBox.confirm(t('settings.logout.message'), t('topbar.logoutConfirmTitle'), {
+      confirmButtonText: t('topbar.logout'),
+      cancelButtonText: t('common.cancel'),
       type: 'warning',
     })
   } catch {
     return
   }
   auth.logout()
-  ElMessage.success('已退出登录')
+  ElMessage.success(t('topbar.loggedOut'))
   await router.replace('/login')
 }
 
@@ -327,9 +329,9 @@ onMounted(load)
 
 <template>
   <div class="ax-page">
-    <PageHeader title="账号设置" description="查看账户信息、配额与登录状态。">
+    <PageHeader :title="t('settings.title')" :description="t('settings.description')">
       <template #actions>
-        <el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button>
+        <el-button :icon="Refresh" :loading="loading" @click="load">{{ t('common.refresh') }}</el-button>
       </template>
     </PageHeader>
 
@@ -343,7 +345,7 @@ onMounted(load)
       <section class="settings-grid">
         <article class="ax-card">
           <header class="ax-card__head">
-            <h2 class="ax-card__title">账户信息</h2>
+            <h2 class="ax-card__title">{{ t('settings.profile.title') }}</h2>
           </header>
           <div class="ax-card__body settings-profile">
             <div class="settings-identity">
@@ -355,32 +357,32 @@ onMounted(load)
                     link
                     type="primary"
                     :icon="EditPen"
-                    title="修改用户名"
-                    aria-label="修改用户名"
+                    :title="t('settings.profile.changeUsername')"
+                    :aria-label="t('settings.profile.changeUsername')"
                     @click="openChangeUsername"
                   />
                 </p>
                 <el-tag size="small" :type="isAdmin ? 'primary' : 'info'" effect="plain">
-                  {{ isAdmin ? '管理员' : '用户' }}
+                  {{ isAdmin ? t('topbar.roleAdmin') : t('topbar.roleUser') }}
                 </el-tag>
               </div>
             </div>
             <dl class="info-list">
               <div class="info-list__row">
-                <dt>用户 ID</dt>
+                <dt>{{ t('settings.profile.userId') }}</dt>
                 <dd class="ax-mono">{{ me.id }}</dd>
               </div>
               <div class="info-list__row">
-                <dt>角色</dt>
-                <dd>{{ isAdmin ? '管理员' : '用户' }}</dd>
+                <dt>{{ t('settings.profile.role') }}</dt>
+                <dd>{{ isAdmin ? t('topbar.roleAdmin') : t('topbar.roleUser') }}</dd>
               </div>
               <div class="info-list__row">
-                <dt>注册时间</dt>
+                <dt>{{ t('settings.profile.createdAt') }}</dt>
                 <dd>{{ formatDateTime(me.created_at) }}</dd>
               </div>
               <div class="info-list__row">
-                <dt>状态</dt>
-                <dd>{{ me.disabled ? '已禁用' : '正常' }}</dd>
+                <dt>{{ t('common.status') }}</dt>
+                <dd>{{ me.disabled ? t('common.disabled') : t('settings.profile.statusActive') }}</dd>
               </div>
             </dl>
           </div>
@@ -388,7 +390,7 @@ onMounted(load)
 
         <article class="ax-card">
           <header class="ax-card__head">
-            <h2 class="ax-card__title">存储配额</h2>
+            <h2 class="ax-card__title">{{ t('settings.quota.title') }}</h2>
           </header>
           <div class="ax-card__body settings-quota">
             <QuotaMeter :used="me.used_bytes" :quota="me.quota_bytes" />
@@ -398,7 +400,7 @@ onMounted(load)
               :icon="Key"
               @click="router.push('/user/tokens')"
             >
-              管理访问令牌
+              {{ t('settings.quota.manageTokens') }}
             </el-button>
           </div>
         </article>
@@ -407,20 +409,20 @@ onMounted(load)
       <section class="settings-grid settings-block">
         <article class="ax-card">
           <header class="ax-card__head">
-            <h2 class="ax-card__title">二次验证（TOTP）</h2>
+            <h2 class="ax-card__title">{{ t('settings.totp.title') }}</h2>
             <el-tag size="small" :type="security?.totp_enabled ? 'success' : 'info'" effect="plain">
-              {{ security?.totp_enabled ? '已启用' : '未启用' }}
+              {{ security?.totp_enabled ? t('common.enabled') : t('settings.totp.notEnabled') }}
             </el-tag>
           </header>
           <div class="ax-card__body security-card">
             <p class="security-card__desc">
-              开启后，登录时除密码外还需输入身份验证器（如 Google Authenticator、1Password）生成的动态验证码。
+              {{ t('settings.totp.description') }}
             </p>
             <el-alert
               v-if="security && !security.totp_available"
               type="warning"
               :closable="false"
-              title="服务端未配置加密主密钥，暂不可启用二次验证。"
+              :title="t('settings.totp.unavailable')"
             />
             <div class="security-card__actions">
               <el-button
@@ -430,30 +432,30 @@ onMounted(load)
                 :disabled="security ? !security.totp_available : true"
                 @click="openSetupTOTP"
               >
-                开启二次验证
+                {{ t('settings.totp.enable') }}
               </el-button>
-              <el-button v-else type="danger" plain @click="openDisableTOTP">关闭二次验证</el-button>
+              <el-button v-else type="danger" plain @click="openDisableTOTP">{{ t('settings.totp.disable') }}</el-button>
             </div>
           </div>
         </article>
 
         <article class="ax-card">
           <header class="ax-card__head">
-            <h2 class="ax-card__title">邮箱绑定</h2>
-            <el-tag v-if="emailBound" size="small" type="success" effect="plain">已验证</el-tag>
-            <el-tag v-else size="small" type="info" effect="plain">未绑定</el-tag>
+            <h2 class="ax-card__title">{{ t('settings.email.title') }}</h2>
+            <el-tag v-if="emailBound" size="small" type="success" effect="plain">{{ t('settings.email.verified') }}</el-tag>
+            <el-tag v-else size="small" type="info" effect="plain">{{ t('settings.email.unbound') }}</el-tag>
           </header>
           <div class="ax-card__body security-card">
             <template v-if="emailBound && !showEmailForm">
               <dl class="info-list">
                 <div class="info-list__row">
-                  <dt>已绑定邮箱</dt>
+                  <dt>{{ t('settings.email.boundEmail') }}</dt>
                   <dd>{{ security?.email }}</dd>
                 </div>
               </dl>
               <div class="security-card__actions">
-                <el-button size="small" @click="startChangeEmail">更换邮箱</el-button>
-                <el-button size="small" type="danger" plain @click="unbindDialog = true">解绑</el-button>
+                <el-button size="small" @click="startChangeEmail">{{ t('settings.email.change') }}</el-button>
+                <el-button size="small" type="danger" plain @click="unbindDialog = true">{{ t('settings.email.unbind') }}</el-button>
               </div>
             </template>
             <template v-else>
@@ -461,23 +463,23 @@ onMounted(load)
                 v-if="security && !security.email_available"
                 type="warning"
                 :closable="false"
-                title="服务端未配置邮件渠道，无法发送验证码。"
+                :title="t('settings.email.unavailable')"
               />
               <div class="email-form">
-                <el-input v-model="emailForm.email" placeholder="you@example.com" autocomplete="email" />
+                <el-input v-model="emailForm.email" :placeholder="t('settings.email.placeholder')" autocomplete="email" />
                 <div class="email-form__row">
                   <el-input
                     v-model="emailForm.code"
                     maxlength="6"
                     inputmode="numeric"
-                    placeholder="6 位验证码"
+                    :placeholder="t('settings.email.codePlaceholder')"
                   />
                   <el-button
                     :loading="emailSending"
                     :disabled="security ? !security.email_available : false"
                     @click="sendCode"
                   >
-                    发送验证码
+                    {{ t('settings.email.sendCode') }}
                   </el-button>
                 </div>
                 <el-input
@@ -485,15 +487,15 @@ onMounted(load)
                   v-model="emailForm.password"
                   type="password"
                   show-password
-                  placeholder="当前密码（换绑需要）"
+                  :placeholder="t('settings.email.currentPasswordForChange')"
                   autocomplete="current-password"
                 />
-                <p class="security-card__hint">每个账号每分钟最多发送 1 条验证码，每天上限 10 条。</p>
+                <p class="security-card__hint">{{ t('settings.email.rateHint') }}</p>
                 <div class="security-card__actions">
                   <el-button type="primary" :loading="emailBinding" @click="bindEmail">
-                    {{ emailBound ? '确认换绑' : '绑定邮箱' }}
+                    {{ emailBound ? t('settings.email.confirmChange') : t('settings.email.bind') }}
                   </el-button>
-                  <el-button v-if="emailBound" @click="emailEditing = false">取消</el-button>
+                  <el-button v-if="emailBound" @click="emailEditing = false">{{ t('common.cancel') }}</el-button>
                 </div>
               </div>
             </template>
@@ -502,14 +504,14 @@ onMounted(load)
 
         <article class="ax-card">
           <header class="ax-card__head">
-            <h2 class="ax-card__title">登录密码</h2>
+            <h2 class="ax-card__title">{{ t('settings.password.title') }}</h2>
           </header>
           <div class="ax-card__body security-card">
             <p class="security-card__desc">
-              定期更换密码有助于保障账号安全。修改密码需要先输入当前密码。
+              {{ t('settings.password.description') }}
             </p>
             <div class="security-card__actions">
-              <el-button type="primary" plain :icon="Key" @click="openChangePassword">修改密码</el-button>
+              <el-button type="primary" plain :icon="Key" @click="openChangePassword">{{ t('settings.password.change') }}</el-button>
             </div>
           </div>
         </article>
@@ -517,12 +519,12 @@ onMounted(load)
 
       <article class="ax-card settings-block">
         <header class="ax-card__head">
-          <h2 class="ax-card__title">外观主题</h2>
+          <h2 class="ax-card__title">{{ t('settings.theme.title') }}</h2>
         </header>
         <div class="ax-card__body settings-theme">
           <div class="settings-theme__text">
-            <strong>界面主题</strong>
-            <span>选择深色或浅色外观，设置会保存在本机浏览器。</span>
+            <strong>{{ t('settings.theme.label') }}</strong>
+            <span>{{ t('settings.theme.description') }}</span>
           </div>
           <el-radio-group :model-value="theme.mode" @change="setTheme($event as ThemeMode)">
             <el-radio-button v-for="option in themeOptions" :key="option.value" :value="option.value">
@@ -534,15 +536,15 @@ onMounted(load)
 
       <article class="ax-card settings-block">
         <header class="ax-card__head">
-          <h2 class="ax-card__title">登录状态</h2>
+          <h2 class="ax-card__title">{{ t('settings.session.title') }}</h2>
         </header>
         <div class="ax-card__body settings-session">
           <div class="settings-session__text">
-            <strong>退出登录</strong>
-            <span>退出当前账号并清除本地会话，需要重新登录。</span>
+            <strong>{{ t('settings.session.logoutTitle') }}</strong>
+            <span>{{ t('settings.session.logoutDesc') }}</span>
           </div>
           <el-button type="danger" plain :icon="SwitchButton" @click="handleLogout">
-            退出登录
+            {{ t('topbar.logout') }}
           </el-button>
         </div>
       </article>
@@ -551,71 +553,71 @@ onMounted(load)
     <!-- TOTP 开启 -->
     <el-dialog
       v-model="totpDialog"
-      title="开启二次验证"
+      :title="t('settings.totp.enable')"
       width="min(420px, 92vw)"
       append-to-body
       :close-on-click-modal="false"
     >
       <div class="totp-setup">
         <p class="security-card__desc">
-          使用身份验证器扫描下方二维码，或手动输入密钥，然后填写生成的 6 位动态验证码。
+          {{ t('settings.totp.setupDesc') }}
         </p>
         <div class="totp-setup__qr">
-          <img v-if="totpQr" :src="totpQr" alt="TOTP 二维码" width="220" height="220" />
+          <img v-if="totpQr" :src="totpQr" :alt="t('settings.totp.qrAlt')" width="220" height="220" />
         </div>
         <el-input :model-value="totpSecret" readonly>
-          <template #prepend>密钥</template>
+          <template #prepend>{{ t('settings.totp.secret') }}</template>
         </el-input>
         <el-input
           v-model="totpCode"
           maxlength="6"
           inputmode="numeric"
-          placeholder="输入验证器上的 6 位验证码"
+          :placeholder="t('settings.totp.setupCodePlaceholder')"
         />
       </div>
       <template #footer>
-        <el-button @click="totpDialog = false">取消</el-button>
-        <el-button type="primary" :loading="totpBusy" @click="confirmEnableTOTP">确认开启</el-button>
+        <el-button @click="totpDialog = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="totpBusy" @click="confirmEnableTOTP">{{ t('settings.totp.confirmEnable') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- TOTP 关闭 -->
-    <el-dialog v-model="disableDialog" title="关闭二次验证" width="min(420px, 92vw)" append-to-body>
-      <p class="security-card__desc">请输入动态验证码，或输入当前密码以关闭二次验证。</p>
+    <el-dialog v-model="disableDialog" :title="t('settings.totp.disable')" width="min(420px, 92vw)" append-to-body>
+      <p class="security-card__desc">{{ t('settings.totp.disableDesc') }}</p>
       <el-input
         v-model="disableCode"
         maxlength="6"
         inputmode="numeric"
-        placeholder="6 位动态验证码"
+        :placeholder="t('settings.totp.dynamicCodePlaceholder')"
         class="dialog-field"
       />
       <el-input
         v-model="disablePassword"
         type="password"
         show-password
-        placeholder="当前密码（可选）"
+        :placeholder="t('settings.totp.currentPasswordOptional')"
         class="dialog-field"
       />
       <template #footer>
-        <el-button @click="disableDialog = false">取消</el-button>
-        <el-button type="danger" :loading="disableBusy" @click="confirmDisableTOTP">确认关闭</el-button>
+        <el-button @click="disableDialog = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="danger" :loading="disableBusy" @click="confirmDisableTOTP">{{ t('settings.totp.confirmDisable') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 解绑邮箱 -->
-    <el-dialog v-model="unbindDialog" title="解绑邮箱" width="min(420px, 92vw)" append-to-body>
-      <p class="security-card__desc">解绑后需重新验证才能绑定新邮箱。请输入当前密码。</p>
-      <el-input v-model="unbindPassword" type="password" show-password placeholder="当前密码" />
+    <el-dialog v-model="unbindDialog" :title="t('settings.email.unbindTitle')" width="min(420px, 92vw)" append-to-body>
+      <p class="security-card__desc">{{ t('settings.email.unbindDesc') }}</p>
+      <el-input v-model="unbindPassword" type="password" show-password :placeholder="t('settings.email.currentPassword')" />
       <template #footer>
-        <el-button @click="unbindDialog = false">取消</el-button>
-        <el-button type="danger" :loading="unbindBusy" @click="confirmUnbindEmail">确认解绑</el-button>
+        <el-button @click="unbindDialog = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="danger" :loading="unbindBusy" @click="confirmUnbindEmail">{{ t('settings.email.confirmUnbind') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 修改用户名 -->
     <el-dialog
       v-model="usernameDialog"
-      title="修改用户名"
+      :title="t('settings.profile.changeUsername')"
       width="min(420px, 92vw)"
       append-to-body
       :close-on-click-modal="false"
@@ -624,14 +626,14 @@ onMounted(load)
         <el-input
           v-model="usernameForm.username"
           maxlength="64"
-          placeholder="新用户名（3-64 位）"
+          :placeholder="t('settings.profile.newUsernamePlaceholder')"
           autocomplete="username"
         />
         <el-input
           v-model="usernameForm.password"
           type="password"
           show-password
-          placeholder="当前密码"
+          :placeholder="t('settings.profile.currentPassword')"
           autocomplete="current-password"
         />
         <el-input
@@ -639,17 +641,17 @@ onMounted(load)
           v-model="usernameForm.totpCode"
           maxlength="6"
           inputmode="numeric"
-          placeholder="6 位动态验证码"
+          :placeholder="t('settings.totp.dynamicCodePlaceholder')"
           autocomplete="one-time-code"
         />
         <p class="security-card__hint">
-          修改后当前会话继续有效，旧用户名立即失效，下次登录请使用新用户名。
+          {{ t('settings.profile.usernameHint') }}
         </p>
       </div>
       <template #footer>
-        <el-button @click="usernameDialog = false">取消</el-button>
+        <el-button @click="usernameDialog = false">{{ t('common.cancel') }}</el-button>
         <el-button type="primary" :loading="usernameBusy" @click="confirmChangeUsername">
-          确认修改
+          {{ t('settings.profile.confirmChange') }}
         </el-button>
       </template>
     </el-dialog>
@@ -657,7 +659,7 @@ onMounted(load)
     <!-- 修改密码 -->
     <el-dialog
       v-model="passwordDialog"
-      title="修改密码"
+      :title="t('settings.password.change')"
       width="min(420px, 92vw)"
       append-to-body
       :close-on-click-modal="false"
@@ -667,27 +669,27 @@ onMounted(load)
           v-model="passwordForm.current"
           type="password"
           show-password
-          placeholder="当前密码"
+          :placeholder="t('settings.password.currentPlaceholder')"
           autocomplete="current-password"
         />
         <el-input
           v-model="passwordForm.next"
           type="password"
           show-password
-          placeholder="新密码（至少 8 位）"
+          :placeholder="t('settings.password.newPlaceholder')"
           autocomplete="new-password"
         />
         <el-input
           v-model="passwordForm.confirm"
           type="password"
           show-password
-          placeholder="确认新密码"
+          :placeholder="t('settings.password.confirmPlaceholder')"
           autocomplete="new-password"
         />
       </div>
       <template #footer>
-        <el-button @click="passwordDialog = false">取消</el-button>
-        <el-button type="primary" :loading="passwordBusy" @click="confirmChangePassword">确认修改</el-button>
+        <el-button @click="passwordDialog = false">{{ t('common.cancel') }}</el-button>
+        <el-button type="primary" :loading="passwordBusy" @click="confirmChangePassword">{{ t('settings.password.confirmChange') }}</el-button>
       </template>
     </el-dialog>
   </div>
